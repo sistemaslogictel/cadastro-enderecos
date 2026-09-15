@@ -8,13 +8,13 @@
 </head>
 <body class="login-body">
     <div class="login-box">
-        <h1>📍 Cadastro de Endereços</h1>
+        <h1>Cadastro de Endereços</h1>
         <p class="login-sub">Faça login para continuar</p>
 
         <form id="loginForm">
             <label>
                 Usuário
-                <input type="text" id="userInput" placeholder="Usuário" autocomplete="username" required>
+                <input type="text" id="userInput" placeholder="TR000000" autocomplete="username" required>
             </label>
             <label>
                 Senha
@@ -23,8 +23,6 @@
             <button type="submit" class="btn-primary btn-full">Entrar</button>
             <p id="loginError" class="login-error"></p>
         </form>
-
-        <p class="login-hint">🔑 Padrão inicial: usuário <strong>0</strong> · senha <strong>0</strong></p>
     </div>
 
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>

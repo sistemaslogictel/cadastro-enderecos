@@ -12,26 +12,34 @@ body { background: #f0f2f5; color: #333; }
 .login-box input:focus { outline: none; border-color: #2a5298; }
 .btn-full { width: 100%; padding: 12px; font-size: 1rem; }
 .login-error { color: #c62828; background: #ffebee; padding: 8px; border-radius: 6px; font-size: 0.85rem; display: none; text-align: center; }
-.login-hint { margin-top: 20px; font-size: 0.8rem; color: #888; background: #f5f5f5; padding: 8px; border-radius: 6px; }
 
-/* HEADER */
-header { background: linear-gradient(135deg, #1e3c72, #2a5298); color: white; padding: 20px; text-align: center; box-shadow: 0 2px 10px rgba(0,0,0,0.2); position: relative; }
+/* HEADER FIXO */
+header.sticky-header {
+    position: sticky;
+    top: 0;
+    z-index: 1000;
+    background: linear-gradient(135deg, #1e3c72, #2a5298);
+    color: white;
+    padding: 20px;
+    text-align: center;
+    box-shadow: 0 2px 10px rgba(0,0,0,0.2);
+}
 header h1 { font-size: 1.4rem; }
 .header-user { position: absolute; right: 20px; top: 50%; transform: translateY(-50%); display: flex; align-items: center; gap: 12px; }
-#userLabel { font-size: 0.9rem; opacity: 0.9; }
-.btn-logout { background: rgba(255,255,255,0.15); color: white; border: 1px solid rgba(255,255,255,0.3); padding: 6px 14px; font-size: 0.85rem; border-radius: 6px; }
+#userLabel { font-size: 0.9rem; opacity: 0.95; font-weight: 600; }
+.btn-logout { background: rgba(255,255,255,0.15); color: white; border: 1px solid rgba(255,255,255,0.3); padding: 6px 14px; font-size: 0.85rem; border-radius: 6px; cursor: pointer; font-weight: 600; transition: background 0.2s; }
 .btn-logout:hover { background: rgba(255,255,255,0.25); }
 
 /* SIDE NAV */
 .side-nav { position: fixed; left: 12px; top: 50%; transform: translateY(-50%); display: flex; flex-direction: column; gap: 8px; z-index: 500; }
-.side-nav button { width: 42px; height: 42px; border-radius: 50%; background: white; border: 2px solid #2a5298; color: #2a5298; font-size: 1rem; cursor: pointer; padding: 0; box-shadow: 0 3px 10px rgba(0,0,0,0.15); transition: all 0.2s; }
+.side-nav button { width: 42px; height: 42px; border-radius: 50%; background: white; border: 2px solid #2a5298; color: #2a5298; font-size: 1rem; font-weight: 700; cursor: pointer; padding: 0; box-shadow: 0 3px 10px rgba(0,0,0,0.15); transition: all 0.2s; }
 .side-nav button:hover { background: #2a5298; color: white; transform: scale(1.1); }
 @media (max-width: 900px) { .side-nav { display: none; } }
 
 .container { max-width: 1200px; margin: 20px auto; padding: 0 15px; }
 
 /* PAINÉIS */
-.panel { background: white; border-radius: 10px; box-shadow: 0 2px 8px rgba(0,0,0,0.08); margin-bottom: 15px; overflow: hidden; scroll-margin-top: 20px; }
+.panel { background: white; border-radius: 10px; box-shadow: 0 2px 8px rgba(0,0,0,0.08); margin-bottom: 15px; overflow: hidden; scroll-margin-top: 90px; }
 .panel.highlight { animation: flashPanel 1s ease; }
 @keyframes flashPanel { 0% { box-shadow: 0 0 0 0 rgba(42,82,152,0.7); } 70% { box-shadow: 0 0 0 15px rgba(42,82,152,0); } 100% { box-shadow: 0 2px 8px rgba(0,0,0,0.08); } }
 .panel h2 { font-size: 1.05rem; color: #1e3c72; padding: 14px 20px; background: #f8faff; border-bottom: 1px solid #e5eaf3; display: flex; justify-content: space-between; align-items: center; cursor: pointer; user-select: none; transition: background 0.2s; }
@@ -44,7 +52,7 @@ header h1 { font-size: 1.4rem; }
 
 /* TOP ACTION */
 .top-action { display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px; gap: 10px; flex-wrap: wrap; }
-.btn-nova-area { background: #2e7d32; color: white; padding: 12px 24px; font-size: 0.95rem; font-weight: 600; border-radius: 8px; box-shadow: 0 3px 10px rgba(46,125,50,0.3); }
+.btn-nova-area { background: #2e7d32; color: white; padding: 12px 24px; font-size: 0.95rem; font-weight: 600; border-radius: 8px; box-shadow: 0 3px 10px rgba(46,125,50,0.3); cursor: pointer; border: none; transition: all 0.2s; }
 .btn-nova-area:hover { background: #1b5e20; transform: translateY(-2px); }
 .area-label { font-size: 0.9rem; color: #1e3c72; background: #e3f2fd; padding: 8px 14px; border-radius: 20px; font-weight: 600; }
 
@@ -92,7 +100,7 @@ button:hover { transform: translateY(-1px); box-shadow: 0 4px 8px rgba(0,0,0,0.1
 .btn-primary { background: #2a5298; color: white; }
 .btn-success { background: #2e7d32; color: white; }
 .btn-danger { background: #c62828; color: white; }
-.actions { display: flex; gap: 10px; margin-top: 15px; }
+.actions { display: flex; gap: 10px; margin-top: 15px; flex-wrap: wrap; }
 
 /* TABELA */
 table { width: 100%; border-collapse: collapse; font-size: 0.85rem; }
@@ -112,3 +120,11 @@ table button { padding: 4px 10px; font-size: 0.8rem; background: #c62828; color:
 .zoom-lock-btn.locked:hover { background: #ffcdd2; }
 .zoom-lock-toast { position: fixed; bottom: 30px; left: 50%; transform: translateX(-50%); background: #c62828; color: white; padding: 10px 20px; border-radius: 25px; font-size: 0.9rem; font-weight: 600; z-index: 9999; box-shadow: 0 4px 15px rgba(0,0,0,0.3); opacity: 0; pointer-events: none; transition: opacity 0.3s; }
 .zoom-lock-toast.visible { opacity: 1; }
+
+/* UPLOAD */
+#roteiroFile { padding: 8px; border: 2px dashed #2a5298; border-radius: 6px; background: #f8faff; cursor: pointer; width: 100%; }
+#uploadStatus { margin-top: 15px; font-size: 0.9rem; color: #555; }
+
+/* RODAPÉ */
+.site-footer { background: #1e3c72; color: #cfd8e3; text-align: center; padding: 20px 15px; margin-top: 40px; font-size: 0.85rem; }
+.site-footer strong { color: #fff; }

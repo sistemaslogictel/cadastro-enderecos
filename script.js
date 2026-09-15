@@ -14,7 +14,8 @@ async function iniciar() {
         return;
     }
     usuarioAtual = user;
-    document.getElementById('userLabel').textContent = '👤 ' + (sessionStorage.getItem('usuarioLogado') || '-');
+    const nome = sessionStorage.getItem('usuarioNome') || sessionStorage.getItem('usuarioLogado') || '-';
+    document.getElementById('userLabel').textContent = nome;
 
     await carregarAreaAtual();
     await carregarCadastrados();
@@ -25,6 +26,7 @@ async function iniciar() {
 document.getElementById('logoutBtn').addEventListener('click', async () => {
     await supabase.auth.signOut();
     sessionStorage.removeItem('usuarioLogado');
+    sessionStorage.removeItem('usuarioNome');
     sessionStorage.removeItem('areaAtualId');
     window.location.href = 'login.html';
 });
@@ -51,12 +53,20 @@ const houseIcon = L.divIcon({ className: 'house-marker', html: houseSVG, iconSiz
 // TOGGLE PAINÉIS
 // ============================================
 document.querySelectorAll('.toggle-btn').forEach(btn => {
+    const target = document.getElementById(btn.dataset.target);
+    if (target && target.classList.contains('collapsed')) {
+        btn.classList.add('collapsed');
+        btn.innerHTML = '&#9660;';
+    } else {
+        btn.innerHTML = '&#9660;';
+    }
+
     btn.addEventListener('click', (e) => {
         e.stopPropagation();
         const target = document.getElementById(btn.dataset.target);
         target.classList.toggle('collapsed');
         btn.classList.toggle('collapsed');
-        btn.textContent = target.classList.contains('collapsed') ? '▶' : '▼';
+        btn.innerHTML = '&#9660;';
         if (btn.dataset.target === 'panel2-body' && !target.classList.contains('collapsed')) {
             setTimeout(() => map.invalidateSize(), 300);
         }
@@ -74,6 +84,13 @@ document.querySelectorAll('.side-nav button').forEach(btn => {
     btn.addEventListener('click', () => {
         const target = document.getElementById(btn.dataset.goto);
         if (!target) return;
+        // Abre o painel automaticamente
+        const body = target.querySelector('.panel-body');
+        const toggle = target.querySelector('.toggle-btn');
+        if (body && body.classList.contains('collapsed')) {
+            body.classList.remove('collapsed');
+            if (toggle) toggle.classList.remove('collapsed');
+        }
         target.scrollIntoView({ behavior: 'smooth', block: 'start' });
         target.classList.add('highlight');
         setTimeout(() => target.classList.remove('highlight'), 1000);
@@ -129,8 +146,8 @@ function aplicarDestravamento() {
 
 function toggleZoomLock() {
     zoomTravado = !zoomTravado;
-    if (zoomTravado) { aplicarTravamento(); mostrarToast('🔒 Zoom travado — Ctrl + B para destravar'); }
-    else { aplicarDestravamento(); mostrarToast('🔓 Zoom destravado'); }
+    if (zoomTravado) { aplicarTravamento(); mostrarToast('Zoom travado — Ctrl + B para destravar'); }
+    else { aplicarDestravamento(); mostrarToast('Zoom destravado'); }
 }
 
 document.addEventListener('keydown', (e) => {
@@ -188,7 +205,7 @@ async function buscarSugestoes(query) {
             const div = document.createElement('div');
             div.className = 'suggestion-item';
             const texto = `${data.logradouro || ''}, ${data.bairro || ''}, ${data.localidade || ''} - ${data.uf || ''}, ${data.cep || ''}`.replace(/^,\s*/, '');
-            div.innerHTML = `<span class="suggestion-icon">📮</span><span class="suggestion-text">${escapeHtml(texto)}</span>`;
+            div.innerHTML = `<span class="suggestion-icon">&#128236;</span><span class="suggestion-text">${escapeHtml(texto)}</span>`;
             div.addEventListener('click', () => {
                 searchInput.value = texto;
                 suggestionsBox.style.display = 'none';
@@ -221,7 +238,7 @@ async function buscarSugestoes(query) {
             const lng = parseFloat(item.lon);
             const div = document.createElement('div');
             div.className = 'suggestion-item';
-            div.innerHTML = `<span class="suggestion-icon">📍</span><span class="suggestion-text">${escapeHtml(texto)}</span>`;
+            div.innerHTML = `<span class="suggestion-icon">&#128205;</span><span class="suggestion-text">${escapeHtml(texto)}</span>`;
             div.addEventListener('click', () => {
                 searchInput.value = texto;
                 suggestionsBox.style.display = 'none';
@@ -257,7 +274,7 @@ async function buscarSugestoesNetwin(query, signal) {
             const lng = parseFloat(item.lon);
             const div = document.createElement('div');
             div.className = 'suggestion-item';
-            div.innerHTML = `<span class="suggestion-icon">🌐</span><span class="suggestion-text"><strong>Netwin:</strong> ${escapeHtml(texto)}</span>`;
+            div.innerHTML = `<span class="suggestion-icon">&#127760;</span><span class="suggestion-text"><strong>Netwin:</strong> ${escapeHtml(texto)}</span>`;
             div.addEventListener('click', () => {
                 searchInput.value = texto;
                 suggestionsBox.style.display = 'none';
@@ -276,9 +293,9 @@ function irParaLocal(lat, lng, nome, origem = 'busca') {
     marcadorAtual.bindPopup(`<strong>${escapeHtml(nome)}</strong>`).openPopup();
     document.getElementById('coordsDisplay').textContent = `${lat.toFixed(8)}, ${lng.toFixed(8)}`;
     document.getElementById('origemDisplay').textContent =
-        origem === 'busca' ? '🔍 Busca por texto/endereço' :
-        origem === 'netwin' ? '🌐 Netwin' :
-        '🖱️ Clique no mapa (botão direito)';
+        origem === 'busca' ? 'Busca por texto/endereço' :
+        origem === 'netwin' ? 'Netwin' :
+        'Clique no mapa (botão direito)';
     consultarFontes(lat, lng);
 }
 
@@ -316,9 +333,9 @@ map.on('contextmenu', async (e) => {
     const { lat, lng } = e.latlng;
     if (marcadorAtual) map.removeLayer(marcadorAtual);
     marcadorAtual = L.marker([lat, lng], { icon: houseIcon }).addTo(map);
-    marcadorAtual.bindPopup(`📍 Ponto marcado<br>${lat.toFixed(8)}, ${lng.toFixed(8)}`).openPopup();
+    marcadorAtual.bindPopup(`Ponto marcado<br>${lat.toFixed(8)}, ${lng.toFixed(8)}`).openPopup();
     document.getElementById('coordsDisplay').textContent = `${lat.toFixed(8)}, ${lng.toFixed(8)}`;
-    document.getElementById('origemDisplay').textContent = '🖱️ Clique no mapa (botão direito)';
+    document.getElementById('origemDisplay').textContent = 'Clique no mapa (botão direito)';
     await consultarFontes(lat, lng);
 });
 
@@ -327,7 +344,7 @@ map.on('contextmenu', async (e) => {
 // ============================================
 async function consultarFontes(lat, lng) {
     const list = document.getElementById('enderecosList');
-    list.innerHTML = '<p style="color:#666; font-style:italic;">⏳ Consultando fontes...</p>';
+    list.innerHTML = '<p style="color:#666; font-style:italic;">Consultando fontes...</p>';
 
     const resultados = [];
     let cepOSM = '';
@@ -415,7 +432,7 @@ async function sugerirIA(lat, lng) {
 
         const top = proximos[0];
         aiBox.style.display = 'block';
-        aiBox.innerHTML = `🤖 <strong>Sugestão da IA:</strong> Já existe um endereço cadastrado a <strong>${top.distancia.toFixed(0)}m</strong> desta coordenada:<br><strong>${escapeHtml(top.rua)}, ${top.numero}</strong> — ${top.tipo_complemento || ''} ${top.complemento || ''} ${top.bairro ? '· ' + escapeHtml(top.bairro) : ''}<br><small>(fonte: ${escapeHtml(top.fonte || '-')})</small>`;
+        aiBox.innerHTML = `<strong>Sugestão da IA:</strong> Já existe um endereço cadastrado a <strong>${top.distancia.toFixed(0)}m</strong> desta coordenada:<br><strong>${escapeHtml(top.rua)}, ${top.numero}</strong> — ${top.tipo_complemento || ''} ${top.complemento || ''} ${top.bairro ? '· ' + escapeHtml(top.bairro) : ''}<br><small>(fonte: ${escapeHtml(top.fonte || '-')})</small>`;
     } catch (e) {
         console.error(e);
         aiBox.style.display = 'none';
@@ -454,7 +471,6 @@ Completo: ${r.bruto || '-'}</pre>`;
         list.appendChild(div);
     });
 
-    // Sempre adiciona CadastroBase
     const optBase = document.createElement('option');
     optBase.value = 'base';
     optBase.textContent = 'CadastroBase (manual)';
@@ -515,14 +531,13 @@ document.getElementById('addBtn').addEventListener('click', async () => {
     const { error } = await supabase.from('enderecos').insert(registro);
     if (error) { alert('Erro ao salvar: ' + error.message); return; }
 
-    // Mantém o último número digitado
     localStorage.setItem('ultimoNumero', numero);
 
     document.getElementById('tipoComplemento').value = '';
     document.getElementById('complementoInput').value = '';
 
     await carregarCadastrados();
-    alert('✅ Endereço adicionado!');
+    alert('Endereço adicionado!');
 });
 
 // ============================================
@@ -550,7 +565,6 @@ async function carregarCadastrados() {
     renderizarCadastrados();
     renderizarMarcadoresSalvos();
 
-    // Restaura o último número
     const ultimo = localStorage.getItem('ultimoNumero');
     if (ultimo && !document.getElementById('numeroInput').value) {
         document.getElementById('numeroInput').value = ultimo;
@@ -610,7 +624,7 @@ async function carregarAreaAtual() {
     if (saved) {
         areaAtualId = parseInt(saved);
         const { data } = await supabase.from('areas').select('nome').eq('id', areaAtualId).single();
-        if (data) document.getElementById('areaLabel').textContent = '📁 Área: ' + data.nome;
+        if (data) document.getElementById('areaLabel').textContent = 'Área: ' + data.nome;
     }
 }
 
@@ -618,7 +632,7 @@ document.getElementById('novaAreaBtn').addEventListener('click', async () => {
     const nome = prompt('Nome da nova área (ex: "Vila 1 - Rua Martins Lage"):');
     if (!nome) return;
 
-    const c = confirm('⚠️ Isso vai criar uma nova área e limpar os endereços atuais da tela.\nOs já salvos continuam no banco.\n\nDeseja continuar?');
+    const c = confirm('Isso vai criar uma nova área e limpar os endereços atuais da tela.\nOs já salvos continuam no banco.\n\nDeseja continuar?');
     if (!c) return;
 
     const { data: area, error } = await supabase
@@ -631,9 +645,8 @@ document.getElementById('novaAreaBtn').addEventListener('click', async () => {
 
     areaAtualId = area.id;
     sessionStorage.setItem('areaAtualId', areaAtualId);
-    document.getElementById('areaLabel').textContent = '📁 Área: ' + nome;
+    document.getElementById('areaLabel').textContent = 'Área: ' + nome;
 
-    // Limpa visual
     cadastrados = [];
     renderizarCadastrados();
     renderizarMarcadoresSalvos();
@@ -643,7 +656,7 @@ document.getElementById('novaAreaBtn').addEventListener('click', async () => {
     document.getElementById('aiSuggestion').style.display = 'none';
     if (marcadorAtual) { map.removeLayer(marcadorAtual); marcadorAtual = null; }
 
-    alert(`✅ Área "${nome}" criada!`);
+    alert(`Área "${nome}" criada!`);
 });
 
 // ============================================
@@ -672,11 +685,110 @@ document.getElementById('clearBtn').addEventListener('click', async () => {
 });
 
 // ============================================
+// UPLOAD DE ROTEIRO (CSV/TXT)
+// ============================================
+document.getElementById('uploadBtn').addEventListener('click', async () => {
+    const fileInput = document.getElementById('roteiroFile');
+    const status = document.getElementById('uploadStatus');
+    const file = fileInput.files[0];
+
+    if (!file) {
+        status.textContent = 'Selecione um arquivo antes de importar.';
+        status.style.color = '#c62828';
+        return;
+    }
+
+    status.textContent = 'Lendo arquivo...';
+    status.style.color = '#555';
+
+    const reader = new FileReader();
+    reader.onload = async (e) => {
+        const texto = e.target.result;
+        const linhas = texto.split(/\r?\n/).filter(l => l.trim() !== '');
+        if (linhas.length < 2) {
+            status.textContent = 'Arquivo vazio ou inválido.';
+            status.style.color = '#c62828';
+            return;
+        }
+
+        const sep = linhas[0].includes(';') ? ';' : ',';
+        const headers = linhas[0].split(sep).map(h => h.trim().toLowerCase());
+
+        const idx = {
+            rua: headers.findIndex(h => h.includes('rua') || h.includes('logradouro')),
+            numero: headers.findIndex(h => h.includes('numero') || h.includes('nº') || h === 'num'),
+            bairro: headers.findIndex(h => h.includes('bairro')),
+            cidade: headers.findIndex(h => h.includes('cidade') || h.includes('municipio')),
+            estado: headers.findIndex(h => h.includes('estado') || h === 'uf'),
+            cep: headers.findIndex(h => h.includes('cep')),
+            complemento: headers.findIndex(h => h.includes('complemento')),
+            tipo: headers.findIndex(h => h.includes('tipo')),
+            lat: headers.findIndex(h => h.includes('lat')),
+            lng: headers.findIndex(h => h.includes('lng') || h.includes('lon'))
+        };
+
+        const registros = [];
+        for (let i = 1; i < linhas.length; i++) {
+            const cols = linhas[i].split(sep).map(c => c.trim().replace(/^"|"$/g, ''));
+            const reg = {
+                user_id: usuarioAtual.id,
+                area_id: areaAtualId,
+                rua: idx.rua >= 0 ? cols[idx.rua] : '',
+                numero: idx.numero >= 0 ? cols[idx.numero] : '',
+                bairro: idx.bairro >= 0 ? cols[idx.bairro] : '',
+                cidade: idx.cidade >= 0 ? cols[idx.cidade] : '',
+                estado: idx.estado >= 0 ? cols[idx.estado] : '',
+                cep: idx.cep >= 0 ? cols[idx.cep] : '',
+                complemento: idx.complemento >= 0 ? cols[idx.complemento] : '',
+                tipo_complemento: idx.tipo >= 0 ? cols[idx.tipo] : '',
+                lat: idx.lat >= 0 ? parseFloat(cols[idx.lat]) || null : null,
+                lng: idx.lng >= 0 ? parseFloat(cols[idx.lng]) || null : null,
+                fonte: 'Roteiro Importado'
+            };
+            if (reg.rua || reg.numero) registros.push(reg);
+        }
+
+        if (registros.length === 0) {
+            status.textContent = 'Nenhum registro válido encontrado no arquivo.';
+            status.style.color = '#c62828';
+            return;
+        }
+
+        status.textContent = `Importando ${registros.length} registros...`;
+        status.style.color = '#555';
+
+        const { error } = await supabase.from('enderecos').insert(registros);
+
+        if (error) {
+            status.textContent = 'Erro ao importar: ' + error.message;
+            status.style.color = '#c62828';
+            return;
+        }
+
+        status.textContent = `${registros.length} registros importados com sucesso.`;
+        status.style.color = '#2e7d32';
+        fileInput.value = '';
+        await carregarCadastrados();
+    };
+    reader.readAsText(file, 'UTF-8');
+});
+
+document.getElementById('downloadModeloBtn').addEventListener('click', () => {
+    const headers = ['Rua','Numero','Bairro','Cidade','Estado','CEP','Tipo','Complemento','Lat','Lng'];
+    const exemplo = ['Rua Martins Lage','98','Centro','Rio de Janeiro','RJ','20000-000','Casa','3','-22.90200282','-43.27065822'];
+    const csv = [headers.join(';'), exemplo.join(';')].join('\n');
+    const blob = new Blob(['\ufeff' + csv], { type: 'text/csv;charset=utf-8;' });
+    const link = document.createElement('a');
+    link.href = URL.createObjectURL(blob);
+    link.download = 'modelo_roteiro.csv';
+    link.click();
+});
+
+// ============================================
 // UTILITÁRIOS
 // ============================================
 function escapeHtml(str) {
     return String(str).replace(/[&<>"']/g, m => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[m]);
 }
 
-// Inicializa
 iniciar();
