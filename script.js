@@ -56,10 +56,8 @@ document.querySelectorAll('.toggle-btn').forEach(btn => {
     const target = document.getElementById(btn.dataset.target);
     if (target && target.classList.contains('collapsed')) {
         btn.classList.add('collapsed');
-        btn.innerHTML = '&#9660;';
-    } else {
-        btn.innerHTML = '&#9660;';
     }
+    btn.innerHTML = '&#9660;';
 
     btn.addEventListener('click', (e) => {
         e.stopPropagation();
@@ -84,7 +82,6 @@ document.querySelectorAll('.side-nav button').forEach(btn => {
     btn.addEventListener('click', () => {
         const target = document.getElementById(btn.dataset.goto);
         if (!target) return;
-        // Abre o painel automaticamente
         const body = target.querySelector('.panel-body');
         const toggle = target.querySelector('.toggle-btn');
         if (body && body.classList.contains('collapsed')) {
@@ -157,7 +154,7 @@ document.addEventListener('keydown', (e) => {
 aplicarTravamento();
 
 // ============================================
-// AUTOCOMPLETE (Nominatim)
+// AUTOCOMPLETE
 // ============================================
 const searchInput = document.getElementById('searchInput');
 const suggestionsBox = document.getElementById('suggestions');
@@ -685,7 +682,7 @@ document.getElementById('clearBtn').addEventListener('click', async () => {
 });
 
 // ============================================
-// UPLOAD DE ROTEIRO (CSV/TXT)
+// UPLOAD DE ROTEIRO (XML dos Correios + CSV)
 // ============================================
 document.getElementById('uploadBtn').addEventListener('click', async () => {
     const fileInput = document.getElementById('roteiroFile');
@@ -704,68 +701,127 @@ document.getElementById('uploadBtn').addEventListener('click', async () => {
     const reader = new FileReader();
     reader.onload = async (e) => {
         const texto = e.target.result;
-        const linhas = texto.split(/\r?\n/).filter(l => l.trim() !== '');
-        if (linhas.length < 2) {
-            status.textContent = 'Arquivo vazio ou inválido.';
-            status.style.color = '#c62828';
-            return;
-        }
+        let registros = [];
 
-        const sep = linhas[0].includes(';') ? ';' : ',';
-        const headers = linhas[0].split(sep).map(h => h.trim().toLowerCase());
+        if (file.name.toLowerCase().endsWith('.xml')) {
+            // Parser XML dos Correios
+            try {
+                const parser = new DOMParser();
+                const xml = parser.parseFromString(texto, 'text/xml');
+                const nodes = xml.getElementsByTagName('roteiro');
 
-        const idx = {
-            rua: headers.findIndex(h => h.includes('rua') || h.includes('logradouro')),
-            numero: headers.findIndex(h => h.includes('numero') || h.includes('nº') || h === 'num'),
-            bairro: headers.findIndex(h => h.includes('bairro')),
-            cidade: headers.findIndex(h => h.includes('cidade') || h.includes('municipio')),
-            estado: headers.findIndex(h => h.includes('estado') || h === 'uf'),
-            cep: headers.findIndex(h => h.includes('cep')),
-            complemento: headers.findIndex(h => h.includes('complemento')),
-            tipo: headers.findIndex(h => h.includes('tipo')),
-            lat: headers.findIndex(h => h.includes('lat')),
-            lng: headers.findIndex(h => h.includes('lng') || h.includes('lon'))
-        };
+                for (let i = 0; i < nodes.length; i++) {
+                    const n = nodes[i];
+                    const get = (tag) => {
+                        const el = n.getElementsByTagName(tag)[0];
+                        return el ? el.textContent.trim() : '';
+                    };
+                    const tipo = get('tipo_lograd');
+                    const nome = get('nome_lograd');
+                    const titulo = get('titulo');
+                    const tituloAbrev = get('titulo_abrev');
 
-        const registros = [];
-        for (let i = 1; i < linhas.length; i++) {
-            const cols = linhas[i].split(sep).map(c => c.trim().replace(/^"|"$/g, ''));
-            const reg = {
-                user_id: usuarioAtual.id,
-                area_id: areaAtualId,
-                rua: idx.rua >= 0 ? cols[idx.rua] : '',
-                numero: idx.numero >= 0 ? cols[idx.numero] : '',
-                bairro: idx.bairro >= 0 ? cols[idx.bairro] : '',
-                cidade: idx.cidade >= 0 ? cols[idx.cidade] : '',
-                estado: idx.estado >= 0 ? cols[idx.estado] : '',
-                cep: idx.cep >= 0 ? cols[idx.cep] : '',
-                complemento: idx.complemento >= 0 ? cols[idx.complemento] : '',
-                tipo_complemento: idx.tipo >= 0 ? cols[idx.tipo] : '',
-                lat: idx.lat >= 0 ? parseFloat(cols[idx.lat]) || null : null,
-                lng: idx.lng >= 0 ? parseFloat(cols[idx.lng]) || null : null,
-                fonte: 'Roteiro Importado'
+                    // Monta rua no padrão: "RUA NOME" ou "RUA TITULO NOME"
+                    const partesRua = [tipo, titulo, nome].filter(Boolean);
+                    const rua = partesRua.join(' ').toUpperCase();
+
+                    registros.push({
+                        user_id: usuarioAtual.id,
+                        area_id: areaAtualId,
+                        rua: rua,
+                        numero: '',
+                        bairro: get('bairro'),
+                        cidade: get('municipio'),
+                        estado: get('uf_abrev') || get('uf'),
+                        cep: get('cep'),
+                        pais: 'Brasil',
+                        complemento: '',
+                        tipo_complemento: '',
+                        lat: null,
+                        lng: null,
+                        fonte: 'Roteiro Correios'
+                    });
+                }
+
+                if (registros.length === 0) {
+                    status.textContent = 'Nenhum <roteiro> encontrado no XML.';
+                    status.style.color = '#c62828';
+                    return;
+                }
+            } catch (err) {
+                console.error(err);
+                status.textContent = 'Erro ao processar XML: ' + err.message;
+                status.style.color = '#c62828';
+                return;
+            }
+        } else {
+            // CSV simples
+            const linhas = texto.split(/\r?\n/).filter(l => l.trim() !== '');
+            if (linhas.length < 2) {
+                status.textContent = 'CSV vazio ou inválido.';
+                status.style.color = '#c62828';
+                return;
+            }
+            const sep = linhas[0].includes(';') ? ';' : ',';
+            const headers = linhas[0].split(sep).map(h => h.trim().toLowerCase());
+            const idx = {
+                rua: headers.findIndex(h => h.includes('rua') || h.includes('logradouro')),
+                numero: headers.findIndex(h => h.includes('numero') || h.includes('nº') || h === 'num'),
+                bairro: headers.findIndex(h => h.includes('bairro')),
+                cidade: headers.findIndex(h => h.includes('cidade') || h.includes('municipio')),
+                estado: headers.findIndex(h => h.includes('estado') || h === 'uf'),
+                cep: headers.findIndex(h => h.includes('cep')),
+                complemento: headers.findIndex(h => h.includes('complemento')),
+                tipo: headers.findIndex(h => h.includes('tipo')),
+                lat: headers.findIndex(h => h.includes('lat')),
+                lng: headers.findIndex(h => h.includes('lng') || h.includes('lon'))
             };
-            if (reg.rua || reg.numero) registros.push(reg);
-        }
 
-        if (registros.length === 0) {
-            status.textContent = 'Nenhum registro válido encontrado no arquivo.';
-            status.style.color = '#c62828';
-            return;
+            for (let i = 1; i < linhas.length; i++) {
+                const cols = linhas[i].split(sep).map(c => c.trim().replace(/^"|"$/g, ''));
+                const reg = {
+                    user_id: usuarioAtual.id,
+                    area_id: areaAtualId,
+                    rua: idx.rua >= 0 ? cols[idx.rua] : '',
+                    numero: idx.numero >= 0 ? cols[idx.numero] : '',
+                    bairro: idx.bairro >= 0 ? cols[idx.bairro] : '',
+                    cidade: idx.cidade >= 0 ? cols[idx.cidade] : '',
+                    estado: idx.estado >= 0 ? cols[idx.estado] : '',
+                    cep: idx.cep >= 0 ? cols[idx.cep] : '',
+                    complemento: idx.complemento >= 0 ? cols[idx.complemento] : '',
+                    tipo_complemento: idx.tipo >= 0 ? cols[idx.tipo] : '',
+                    lat: idx.lat >= 0 ? parseFloat(cols[idx.lat]) || null : null,
+                    lng: idx.lng >= 0 ? parseFloat(cols[idx.lng]) || null : null,
+                    fonte: 'Roteiro Importado'
+                };
+                if (reg.rua || reg.numero) registros.push(reg);
+            }
+
+            if (registros.length === 0) {
+                status.textContent = 'Nenhum registro válido encontrado no CSV.';
+                status.style.color = '#c62828';
+                return;
+            }
         }
 
         status.textContent = `Importando ${registros.length} registros...`;
         status.style.color = '#555';
 
-        const { error } = await supabase.from('enderecos').insert(registros);
-
-        if (error) {
-            status.textContent = 'Erro ao importar: ' + error.message;
-            status.style.color = '#c62828';
-            return;
+        // Insere em lotes de 500 para não estourar payload
+        const LOTE = 500;
+        let totalInserido = 0;
+        for (let i = 0; i < registros.length; i += LOTE) {
+            const lote = registros.slice(i, i + LOTE);
+            const { error } = await supabase.from('enderecos').insert(lote);
+            if (error) {
+                status.textContent = `Erro no lote ${i/LOTE + 1}: ${error.message}`;
+                status.style.color = '#c62828';
+                return;
+            }
+            totalInserido += lote.length;
         }
 
-        status.textContent = `${registros.length} registros importados com sucesso.`;
+        status.textContent = `${totalInserido} registros importados com sucesso.`;
         status.style.color = '#2e7d32';
         fileInput.value = '';
         await carregarCadastrados();
@@ -773,6 +829,7 @@ document.getElementById('uploadBtn').addEventListener('click', async () => {
     reader.readAsText(file, 'UTF-8');
 });
 
+// Download de modelo CSV
 document.getElementById('downloadModeloBtn').addEventListener('click', () => {
     const headers = ['Rua','Numero','Bairro','Cidade','Estado','CEP','Tipo','Complemento','Lat','Lng'];
     const exemplo = ['Rua Martins Lage','98','Centro','Rio de Janeiro','RJ','20000-000','Casa','3','-22.90200282','-43.27065822'];
