@@ -34,7 +34,6 @@ let usuarioAtual = null;
             update();
         });
 
-        // Atualiza também se o SO mudar (sem preferência salva)
         window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', (e) => {
             if (!localStorage.getItem('theme')) {
                 html.setAttribute('data-theme', e.matches ? 'dark' : 'light');
@@ -456,7 +455,7 @@ async function consultarFontes(lat, lng) {
         resultados.push({ fonte: 'OpenStreetMap', error: 'Falha na consulta' });
     }
 
-        const tarefas = [];
+    const tarefas = [];
     if (cepOSM.length === 8) {
         tarefas.push(
             fetch(`https://opencep.com/v1/${cepOSM}`)
@@ -478,10 +477,7 @@ async function consultarFontes(lat, lng) {
                 })
                 .catch(() => { /* silencioso */ })
         );
-    }
 
-    // Consulta ViaCEP (caso tenha CEP)
-    if (cepOSM.length === 8) {
         tarefas.push(
             fetch(`https://viacep.com.br/ws/${cepOSM}/json/`)
                 .then(r => r.json())
@@ -504,10 +500,8 @@ async function consultarFontes(lat, lng) {
         );
     }
 
-    // Aguarda todas as consultas paralelas
     await Promise.allSettled(tarefas);
 
-    // Remove duplicatas exatas (mesma rua + número + cidade)
     const vistos = new Set();
     const unicos = resultados.filter(r => {
         if (r.error) return true;
@@ -519,7 +513,6 @@ async function consultarFontes(lat, lng) {
 
     enderecosEncontrados = unicos;
 
-    // Renderiza
     if (unicos.length === 0) {
         list.innerHTML = '<p class="empty-state">Nenhuma fonte retornou dados para este ponto.</p>';
         return;
@@ -557,7 +550,6 @@ async function consultarFontes(lat, lng) {
         list.appendChild(div);
     });
 
-    // Botões "Usar esta fonte"
     list.querySelectorAll('.btn-usar-fonte').forEach(btn => {
         btn.addEventListener('click', () => {
             const r = unicos[parseInt(btn.dataset.idx, 10)];
@@ -573,7 +565,6 @@ async function consultarFontes(lat, lng) {
 // ============================================
 function preencherFormulario(r) {
     const fonteSelect = document.getElementById('fonteSelect');
-    // Adiciona a fonte se ainda não existir
     let option = Array.from(fonteSelect.options).find(o => o.value === r.fonte);
     if (!option) {
         option = document.createElement('option');
@@ -583,7 +574,6 @@ function preencherFormulario(r) {
     }
     fonteSelect.value = r.fonte;
 
-    // Guarda os dados "brutos" para uso no cadastro
     fonteSelect.dataset.rua = r.rua || '';
     fonteSelect.dataset.bairro = r.bairro || '';
     fonteSelect.dataset.cidade = r.cidade || '';
@@ -591,12 +581,10 @@ function preencherFormulario(r) {
     fonteSelect.dataset.cep = r.cep || '';
     fonteSelect.dataset.pais = r.pais || '';
 
-    // Número
     if (r.numero) {
         document.getElementById('numeroInput').value = r.numero;
     }
 
-    // Abre o painel 4 automaticamente
     const formBody = document.getElementById('formBody');
     if (formBody && formBody.classList.contains('collapsed')) {
         formBody.classList.remove('collapsed');
@@ -610,7 +598,7 @@ function preencherFormulario(r) {
 }
 
 // ============================================
-// ADICIONAR À LISTA (botão do formulário)
+// ADICIONAR À LISTA
 // ============================================
 document.getElementById('addBtn').addEventListener('click', async () => {
     const fonteSelect = document.getElementById('fonteSelect');
@@ -629,7 +617,6 @@ document.getElementById('addBtn').addEventListener('click', async () => {
         return;
     }
 
-    // Coordenadas atuais
     const coordsTexto = document.getElementById('coordsDisplay').textContent;
     const [latStr, lngStr] = coordsTexto.split(',').map(s => s.trim());
     if (!latStr || !lngStr || isNaN(parseFloat(latStr))) {
@@ -660,7 +647,6 @@ document.getElementById('addBtn').addEventListener('click', async () => {
 
         showToast('Endereço adicionado', 'Registro salvo com sucesso.', 'success', 2500);
 
-        // Limpa campos
         document.getElementById('numeroInput').value = '';
         document.getElementById('tipoComplemento').value = '';
         document.getElementById('complementoInput').value = '';
@@ -723,7 +709,6 @@ async function carregarCadastrados() {
             tbody.appendChild(tr);
         });
 
-        // Botões "ir para"
         tbody.querySelectorAll('.btn-ir').forEach(btn => {
             btn.addEventListener('click', () => {
                 const r = cadastrados[parseInt(btn.dataset.idx, 10)];
@@ -736,7 +721,6 @@ async function carregarCadastrados() {
             });
         });
 
-        // Botões "remover"
         tbody.querySelectorAll('.btn-remover').forEach(btn => {
             btn.addEventListener('click', async () => {
                 const id = btn.dataset.id;
@@ -753,7 +737,6 @@ async function carregarCadastrados() {
             });
         });
 
-        // Atualiza marcadores salvos no mapa
         marcadoresSalvos.forEach(m => map.removeLayer(m));
         marcadoresSalvos = [];
         cadastrados.forEach(r => {
@@ -908,7 +891,6 @@ document.getElementById('uploadBtn').addEventListener('click', async () => {
             return;
         }
 
-        // Insere em lote
         const payload = registros.map(r => ({
             area_id: areaAtualId,
             rua: r.rua || '',
@@ -985,7 +967,6 @@ function parseXMLRoteiro(texto) {
     const xml = parser.parseFromString(texto, 'text/xml');
     const registros = [];
 
-    // Tenta vários formatos comuns de roteiro
     const nodes = xml.querySelectorAll('endereco, address, registro, item, linha');
     nodes.forEach(node => {
         const get = (tag) => {

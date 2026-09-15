@@ -4,54 +4,296 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Login - Cadastro de Endereços</title>
-    <link rel="stylesheet" href="style.css">
+
+    <script>
+        (function () {
+            const saved = localStorage.getItem('theme');
+            const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+            const theme = saved || (prefersDark ? 'dark' : 'light');
+            document.documentElement.setAttribute('data-theme', theme);
+        })();
+    </script>
+
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+
+    <style>
+        :root {
+            --bg-primary: #ffffff;
+            --bg-secondary: #f5f7fa;
+            --bg-tertiary: #eef1f5;
+            --text-primary: #1a202c;
+            --text-secondary: #4a5568;
+            --text-tertiary: #718096;
+            --border-color: #e2e8f0;
+            --accent: #2a4fd6;
+            --accent-hover: #1e3c72;
+            --danger: #e53e3e;
+            --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.05);
+            --shadow-md: 0 4px 6px rgba(0, 0, 0, 0.07);
+            --shadow-lg: 0 10px 25px rgba(0, 0, 0, 0.1);
+            --radius-md: 10px;
+            --radius-lg: 16px;
+        }
+
+        [data-theme="dark"] {
+            --bg-primary: #1a202c;
+            --bg-secondary: #2d3748;
+            --bg-tertiary: #4a5568;
+            --text-primary: #f7fafc;
+            --text-secondary: #cbd5e0;
+            --text-tertiary: #a0aec0;
+            --border-color: #4a5568;
+            --accent: #5b7fe8;
+            --accent-hover: #7a9bf0;
+            --danger: #fc8181;
+        }
+
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+
+        body {
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+            background: linear-gradient(135deg, var(--bg-secondary) 0%, var(--bg-tertiary) 100%);
+            color: var(--text-primary);
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+        }
+
+        .login-container { width: 100%; max-width: 420px; }
+
+        .login-box {
+            background: var(--bg-primary);
+            border-radius: var(--radius-lg);
+            box-shadow: var(--shadow-lg);
+            padding: 40px;
+            border: 1px solid var(--border-color);
+        }
+
+        .login-header { text-align: center; margin-bottom: 32px; }
+
+        .login-header .logo {
+            width: 64px; height: 64px;
+            margin: 0 auto 16px;
+            display: flex; align-items: center; justify-content: center;
+            background: linear-gradient(135deg, var(--accent) 0%, var(--accent-hover) 100%);
+            border-radius: 16px; color: white;
+            font-size: 28px; font-weight: 700;
+            box-shadow: var(--shadow-md);
+        }
+
+        .login-header h1 { font-size: 24px; font-weight: 700; margin-bottom: 8px; }
+        .login-header p { font-size: 14px; color: var(--text-secondary); }
+
+        .form-group { margin-bottom: 20px; }
+        .form-group label {
+            display: block; font-size: 14px; font-weight: 500;
+            color: var(--text-secondary); margin-bottom: 8px;
+        }
+        .form-group input {
+            width: 100%; padding: 12px 16px; font-size: 15px; font-family: inherit;
+            color: var(--text-primary); background: var(--bg-secondary);
+            border: 1.5px solid var(--border-color); border-radius: var(--radius-md);
+            outline: none; transition: border 0.2s ease, box-shadow 0.2s ease;
+        }
+        .form-group input:focus {
+            border-color: var(--accent);
+            box-shadow: 0 0 0 3px rgba(42, 79, 214, 0.15);
+            background: var(--bg-primary);
+        }
+        .form-group input::placeholder { color: var(--text-tertiary); }
+
+        .btn-login {
+            width: 100%; padding: 14px; font-size: 15px; font-weight: 600;
+            font-family: inherit; color: white;
+            background: linear-gradient(135deg, var(--accent) 0%, var(--accent-hover) 100%);
+            border: none; border-radius: var(--radius-md); cursor: pointer;
+            box-shadow: var(--shadow-md); margin-top: 8px;
+            transition: transform 0.15s ease, box-shadow 0.2s ease, opacity 0.2s ease;
+        }
+        .btn-login:hover:not(:disabled) { transform: translateY(-1px); box-shadow: var(--shadow-lg); }
+        .btn-login:disabled { opacity: 0.6; cursor: not-allowed; }
+
+        .error-message {
+            display: none;
+            background: rgba(229, 62, 62, 0.1);
+            color: var(--danger);
+            border: 1px solid var(--danger);
+            border-radius: var(--radius-md);
+            padding: 12px 16px; font-size: 14px;
+            margin-bottom: 20px; text-align: center;
+            white-space: pre-wrap;
+        }
+        .error-message.show { display: block; }
+
+        .theme-toggle-login {
+            position: fixed; top: 20px; right: 20px;
+            width: 40px; height: 40px; border-radius: 50%;
+            background: var(--bg-primary); border: 1px solid var(--border-color);
+            cursor: pointer; display: flex; align-items: center; justify-content: center;
+            font-size: 18px; box-shadow: var(--shadow-sm);
+        }
+
+        .footer-login { text-align: center; margin-top: 24px; font-size: 12px; color: var(--text-tertiary); }
+
+        @media (max-width: 480px) {
+            .login-box { padding: 28px 24px; }
+            .login-header h1 { font-size: 20px; }
+        }
+    </style>
 </head>
-<body class="login-body">
-    <div class="login-box">
-        <h1>Cadastro de Endereços</h1>
-        <p class="login-sub">Faça login para continuar</p>
+<body>
 
-        <form id="loginForm" autocomplete="on">
-            <label>
-                Código TR
-                <input type="text" id="userInput" placeholder="Ex.: TR682238" autocomplete="username" required>
-            </label>
-            <label>
-                Senha
-                <input type="password" id="passInput" placeholder="Senha" autocomplete="current-password" required>
-            </label>
-            <button type="submit" id="loginBtn" class="btn-primary btn-full">Entrar</button>
-            <p id="loginError" class="login-error"></p>
-        </form>
+    <button id="themeToggle" class="theme-toggle-login" type="button" aria-label="Alternar tema">
+        <span aria-hidden="true">🌙</span>
+    </button>
 
-        <!-- Diagnóstico embutido: só aparece se algo falhar -->
-        <div id="diagBox" style="display:none; margin-top:15px; font-size:0.8rem; text-align:left; color:#c62828; background:#ffebee; padding:10px; border-radius:6px; border:1px solid #ef9a9a; white-space:pre-wrap;"></div>
+    <div class="login-container">
+        <div class="login-box">
+            <div class="login-header">
+                <div class="logo">CE</div>
+                <h1>Cadastro de Endereços</h1>
+                <p>Faça login para continuar</p>
+            </div>
+
+            <div id="errorMessage" class="error-message" role="alert"></div>
+
+            <form id="loginForm" autocomplete="on">
+                <div class="form-group">
+                    <label for="usuario">Usuário</label>
+                    <input type="text" id="usuario" name="usuario"
+                           placeholder="Ex: tr757584"
+                           autocomplete="username" required autofocus>
+                </div>
+
+                <div class="form-group">
+                    <label for="senha">Senha</label>
+                    <input type="password" id="senha" name="senha"
+                           placeholder="Digite sua senha"
+                           autocomplete="current-password" required>
+                </div>
+
+                <button type="submit" id="loginBtn" class="btn-login">Entrar</button>
+            </form>
+
+            <div class="footer-login">
+                &copy; 2026 Nelson Martins. Todos os direitos reservados.
+            </div>
+        </div>
     </div>
 
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <script src="supabase-config.js"></script>
-    <script src="login.js"></script>
 
     <script>
-        // Diagnóstico de carregamento
-        (function () {
-            const diag = document.getElementById('diagBox');
-            const erros = [];
-
-            if (typeof window.supabase === 'undefined') {
-                erros.push('• Biblioteca do Supabase não carregou (verifique a conexão).');
-            }
-            if (typeof supabase === 'undefined') {
-                erros.push('• Objeto "supabase" não foi criado (verifique supabase-config.js).');
-            }
-            if (typeof document.getElementById('loginForm') === 'undefined' || !document.getElementById('loginForm')) {
-                erros.push('• Formulário de login não encontrado no HTML.');
-            }
-            if (erros.length) {
-                diag.textContent = 'Erros detectados:\n' + erros.join('\n');
-                diag.style.display = 'block';
-            }
+        // ============================================
+        // TEMA CLARO / ESCURO
+        // ============================================
+        (function initTheme() {
+            const html = document.documentElement;
+            const btn = document.getElementById('themeToggle');
+            const update = () => {
+                const isDark = html.getAttribute('data-theme') === 'dark';
+                btn.innerHTML = `<span aria-hidden="true">${isDark ? '☀️' : '🌙'}</span>`;
+            };
+            update();
+            btn.addEventListener('click', () => {
+                const isDark = html.getAttribute('data-theme') === 'dark';
+                const novo = isDark ? 'light' : 'dark';
+                html.setAttribute('data-theme', novo);
+                localStorage.setItem('theme', novo);
+                update();
+            });
         })();
+
+        // ============================================
+        // LOGIN
+        // ============================================
+        const form = document.getElementById('loginForm');
+        const errorBox = document.getElementById('errorMessage');
+        const loginBtn = document.getElementById('loginBtn');
+
+        function mostrarErro(msg) {
+            errorBox.textContent = msg;
+            errorBox.classList.add('show');
+        }
+
+        function limparErro() {
+            errorBox.textContent = '';
+            errorBox.classList.remove('show');
+        }
+
+        form.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            limparErro();
+
+            if (typeof supabase === 'undefined' || !supabase) {
+                mostrarErro('Supabase não carregado. Recarregue a página (Ctrl+F5).');
+                return;
+            }
+
+            const usuarioDigitado = document.getElementById('usuario').value.trim().toLowerCase();
+            const senhaDigitada = document.getElementById('senha').value;
+
+            if (!usuarioDigitado || !senhaDigitada) {
+                mostrarErro('Preencha usuário e senha.');
+                return;
+            }
+
+            const emailCompleto = usuarioDigitado.includes('@')
+                ? usuarioDigitado
+                : `${usuarioDigitado}@logictel.local`;
+
+            loginBtn.disabled = true;
+            loginBtn.textContent = 'Entrando...';
+
+            try {
+                const { data, error } = await supabase.auth.signInWithPassword({
+                    email: emailCompleto,
+                    password: senhaDigitada
+                });
+
+                if (error) {
+                    console.error('Erro Supabase:', error);
+                    const msg = (error.message || '').toLowerCase();
+                    if (msg.includes('invalid login credentials')) {
+                        mostrarErro('Usuário ou senha inválidos.');
+                    } else if (msg.includes('email not confirmed')) {
+                        mostrarErro('Usuário não confirmado. Contate o administrador.');
+                    } else if (msg.includes('too many requests') || msg.includes('rate limit')) {
+                        mostrarErro('Muitas tentativas. Aguarde alguns minutos.');
+                    } else if (msg.includes('failed to fetch') || msg.includes('network')) {
+                        mostrarErro('Falha de conexão. Verifique sua internet.');
+                    } else {
+                        mostrarErro('Erro: ' + (error.message || 'desconhecido'));
+                    }
+                    loginBtn.disabled = false;
+                    loginBtn.textContent = 'Entrar';
+                    return;
+                }
+
+                if (!data || !data.user) {
+                    mostrarErro('Erro inesperado. Tente novamente.');
+                    loginBtn.disabled = false;
+                    loginBtn.textContent = 'Entrar';
+                    return;
+                }
+
+                sessionStorage.setItem('usuarioLogado', usuarioDigitado);
+                sessionStorage.setItem('usuarioNome', data.user.user_metadata?.nome || usuarioDigitado);
+
+                window.location.href = 'index.html';
+
+            } catch (err) {
+                console.error('Erro no login:', err);
+                mostrarErro('Erro: ' + (err.message || err));
+                loginBtn.disabled = false;
+                loginBtn.textContent = 'Entrar';
+            }
+        });
     </script>
 </body>
 </html>
