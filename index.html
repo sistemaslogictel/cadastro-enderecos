@@ -153,7 +153,7 @@
             </div>
         </section>
 
-        <!-- 4. Detalhes do Imóvel -->
+        <!-- 4. Detalhes do Imóvel (SIMPLIFICADO) -->
         <section class="panel" id="formPanel" aria-labelledby="formPanel-title">
             <h2 id="formPanel-title">
                 <span>4. Detalhes do Imóvel</span>
@@ -173,12 +173,33 @@
                         <label>Fonte dos dados:
                             <select id="fonteSelect" aria-label="Fonte dos dados do endereço"></select>
                         </label>
-                        <label>Número: *
-                            <input type="text" id="numeroInput" placeholder="Ex: 98" inputmode="numeric" aria-label="Número do imóvel" required>
+
+                        <label class="field-with-check">
+                            <span>Número: *</span>
+                            <span class="check-inline">
+                                <input type="checkbox" id="numeroRecorrente" title="Manter este número para o próximo cadastro">
+                                <small>manter</small>
+                            </span>
+                            <input type="text" id="numeroInput" placeholder="Ex: 98" inputmode="numeric" required>
                         </label>
-                        <label>Tipo do Complemento:
-                            <select id="tipoComplemento" aria-label="Tipo do complemento">
+                    </div>
+                </div>
+
+                <!-- Complemento 1 -->
+                <div class="form-section complemento-bloco">
+                    <h3 class="form-subtitle">
+                        Complemento 1
+                        <span class="check-inline">
+                            <input type="checkbox" id="comp1Recorrente" title="Manter este complemento para o próximo cadastro">
+                            <small>manter</small>
+                        </span>
+                    </h3>
+                    <div class="form-grid">
+                        <label>Tipo:
+                            <select id="comp1Tipo">
                                 <option value="">-- Selecione --</option>
+                                <option>Lote</option>
+                                <option>Quadra</option>
                                 <option>Casa</option>
                                 <option>Apartamento</option>
                                 <option>Bloco</option>
@@ -188,104 +209,75 @@
                                 <option>Outro</option>
                             </select>
                         </label>
-                        <label>Complemento:
-                            <input type="text" id="complementoInput" placeholder="Ex: 3" aria-label="Complemento do imóvel">
-                        </label>
-                        <label>Andar:
-                            <input type="text" id="andarInput" placeholder="Ex: 5" aria-label="Andar do imóvel">
+                        <label>Valor:
+                            <input type="text" id="comp1Valor" placeholder="Ex: 3" inputmode="numeric">
                         </label>
                     </div>
                 </div>
 
-                <div class="form-section">
-                    <h3 class="form-subtitle">Detalhes do imóvel</h3>
+                <!-- Complemento 2 -->
+                <div class="form-section complemento-bloco">
+                    <h3 class="form-subtitle">
+                        Complemento 2
+                        <span class="check-inline">
+                            <input type="checkbox" id="comp2Recorrente" title="Manter este complemento para o próximo cadastro">
+                            <small>manter</small>
+                        </span>
+                    </h3>
                     <div class="form-grid">
-                        <label>Tipo de imóvel: *
-                            <select id="tipoImovel">
+                        <label>Tipo:
+                            <select id="comp2Tipo">
                                 <option value="">-- Selecione --</option>
+                                <option>Lote</option>
+                                <option>Quadra</option>
                                 <option>Casa</option>
                                 <option>Apartamento</option>
-                                <option>Terreno</option>
-                                <option>Comercial</option>
-                                <option>Galpão</option>
-                                <option>Sítio</option>
-                                <option>Fazenda</option>
+                                <option>Bloco</option>
+                                <option>Loja</option>
+                                <option>Sala</option>
+                                <option>Fundos</option>
                                 <option>Outro</option>
                             </select>
                         </label>
-                        <label>Finalidade:
-                            <select id="finalidade">
+                        <label>Valor:
+                            <input type="text" id="comp2Valor" placeholder="Ex: B" inputmode="text">
+                        </label>
+                    </div>
+                </div>
+
+                <!-- Complemento 3 -->
+                <div class="form-section complemento-bloco">
+                    <h3 class="form-subtitle">
+                        Complemento 3
+                        <span class="check-inline">
+                            <input type="checkbox" id="comp3Recorrente" title="Manter este complemento para o próximo cadastro">
+                            <small>manter</small>
+                        </span>
+                    </h3>
+                    <div class="form-grid">
+                        <label>Tipo:
+                            <select id="comp3Tipo">
                                 <option value="">-- Selecione --</option>
-                                <option>Residencial</option>
-                                <option>Comercial</option>
-                                <option>Industrial</option>
-                                <option>Rural</option>
-                                <option>Misto</option>
+                                <option>Lote</option>
+                                <option>Quadra</option>
+                                <option>Casa</option>
+                                <option>Apartamento</option>
+                                <option>Bloco</option>
+                                <option>Loja</option>
+                                <option>Sala</option>
+                                <option>Fundos</option>
+                                <option>Outro</option>
                             </select>
                         </label>
-                        <label>Área do terreno (m²):
-                            <input type="number" id="areaTerreno" placeholder="Ex: 360" inputmode="numeric">
-                        </label>
-                        <label>Área construída (m²):
-                            <input type="number" id="areaConstruida" placeholder="Ex: 120" inputmode="numeric">
-                        </label>
-                        <label>Quartos:
-                            <input type="number" id="quartos" placeholder="Ex: 3" inputmode="numeric">
-                        </label>
-                        <label>Suítes:
-                            <input type="number" id="suites" placeholder="Ex: 1" inputmode="numeric">
-                        </label>
-                        <label>Banheiros:
-                            <input type="number" id="banheiros" placeholder="Ex: 2" inputmode="numeric">
-                        </label>
-                        <label>Vagas:
-                            <input type="number" id="vagas" placeholder="Ex: 2" inputmode="numeric">
-                        </label>
-                    </div>
-                </div>
-
-                <div class="form-section">
-                    <h3 class="form-subtitle">Dados registrais / fiscais</h3>
-                    <div class="form-grid">
-                        <label>Matrícula:
-                            <input type="text" id="matricula" placeholder="Ex: 12345">
-                        </label>
-                        <label>Inscrição imobiliária:
-                            <input type="text" id="inscricaoImobiliaria" placeholder="Ex: 1.234.567-8">
-                        </label>
-                        <label>IPTU anual (R$):
-                            <input type="number" id="iptu" placeholder="Ex: 1200,00" step="0.01">
-                        </label>
-                        <label>Valor de avaliação (R$):
-                            <input type="number" id="valorAvaliacao" placeholder="Ex: 350000" step="0.01">
-                        </label>
-                        <label>Valor de mercado (R$):
-                            <input type="number" id="valorMercado" placeholder="Ex: 420000" step="0.01">
-                        </label>
-                    </div>
-                </div>
-
-                <div class="form-section">
-                    <h3 class="form-subtitle">Proprietário</h3>
-                    <div class="form-grid">
-                        <label>Nome:
-                            <input type="text" id="proprietario" placeholder="Nome completo">
-                        </label>
-                        <label>CPF/CNPJ:
-                            <input type="text" id="cpfCnpjProprietario" placeholder="000.000.000-00">
-                        </label>
-                        <label>Telefone:
-                            <input type="text" id="telefoneProprietario" placeholder="(21) 90000-0000">
-                        </label>
-                        <label>E-mail:
-                            <input type="email" id="emailProprietario" placeholder="exemplo@email.com">
+                        <label>Valor:
+                            <input type="text" id="comp3Valor" placeholder="Ex: 5" inputmode="numeric">
                         </label>
                     </div>
                 </div>
 
                 <div class="form-section">
                     <h3 class="form-subtitle">Observações</h3>
-                    <textarea id="observacoes" placeholder="Anotações adicionais..." rows="3"></textarea>
+                    <textarea id="observacoes" placeholder="Anotações adicionais..." rows="2"></textarea>
                 </div>
 
                 <button id="addBtn" class="btn-primary btn-block" type="button">➕ Adicionar à Lista</button>
@@ -303,7 +295,7 @@
                     <table id="cadastradosTable">
                         <thead>
                             <tr>
-                                <th>Rua</th><th>Nº</th><th>Compl.</th>
+                                <th>Rua</th><th>Nº</th><th>Complementos</th>
                                 <th>Bairro</th><th>Cidade</th><th>CEP</th>
                                 <th>Coords</th><th>Fonte</th><th>Ações</th>
                             </tr>
@@ -333,7 +325,6 @@
                 </div>
                 <div class="actions">
                     <button id="uploadBtn" class="btn-primary" type="button">Importar Roteiro</button>
-                    <button id="downloadModeloBtn" class="btn-success" type="button">Baixar Modelo CSV</button>
                 </div>
                 <div id="uploadStatus" style="margin-top:15px; font-size:0.9rem; color:var(--text-secondary);" role="status" aria-live="polite"></div>
             </div>

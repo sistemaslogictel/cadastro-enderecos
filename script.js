@@ -33,12 +33,6 @@ let usuarioAtual = null;
             localStorage.setItem('theme', novo);
             update();
         });
-        window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', (e) => {
-            if (!localStorage.getItem('theme')) {
-                html.setAttribute('data-theme', e.matches ? 'dark' : 'light');
-                update();
-            }
-        });
     });
 })();
 
@@ -70,12 +64,19 @@ function showToast(titulo, mensagem = '', tipo = 'info', duracao = 4000) {
 // ESTADO GLOBAL
 // ============================================
 async function iniciar() {
-    const { data: { user } } = await supabaseClient.auth.getUser();
+    const { data: { user }, error: authError } = await supabaseClient.auth.getUser();
+
+    if (authError) {
+        console.error('[AUTH] erro ao obter usuário:', authError);
+    }
     if (!user) {
+        console.warn('[AUTH] sem usuário autenticado — redirecionando para login');
         window.location.href = 'login.html';
         return;
     }
     usuarioAtual = user;
+    console.log('[AUTH] usuário logado:', user.id, user.email);
+
     const nome = sessionStorage.getItem('usuarioNome') || sessionStorage.getItem('usuarioLogado') || '-';
     document.getElementById('userLabel').textContent = nome;
 
@@ -584,7 +585,6 @@ function preencherFormulario(r) {
         cep: r.cep || '',
         pais: r.pais || 'Brasil',
         bruto: r.bruto || '',
-        // Campos extras do roteiro (se vierem)
         cod_bairro: r.cod_bairro || '',
         cod_lograd: r.cod_lograd || '',
         id_roteiro: r.id_roteiro || '',
@@ -714,7 +714,7 @@ document.getElementById('btnSalvarNovoEndereco').addEventListener('click', async
 });
 
 // ============================================
-// ADICIONAR À LISTA
+// ADICIONAR À LISTA (SIMPLIFICADO)
 // ============================================
 document.getElementById('addBtn').addEventListener('click', async () => {
     if (!enderecoBaseSelecionado) {
@@ -725,22 +725,34 @@ document.getElementById('addBtn').addEventListener('click', async () => {
     const numero = document.getElementById('numeroInput').value.trim();
     if (!numero) { showToast('Número obrigatório', 'Informe o número do imóvel.', 'warning'); return; }
 
-    const tipoImovel = document.getElementById('tipoImovel').value;
-    if (!tipoImovel) { showToast('Tipo obrigatório', 'Selecione o tipo de imóvel.', 'warning'); return; }
-
     const coordsTexto = document.getElementById('coordsDisplay').textContent;
     const [latStr, lngStr] = coordsTexto.split(',').map(s => s.trim());
     const latitude = !isNaN(parseFloat(latStr)) ? parseFloat(latStr) : (enderecoBaseSelecionado.latitude ?? null);
     const longitude = !isNaN(parseFloat(lngStr)) ? parseFloat(lngStr) : (enderecoBaseSelecionado.longitude ?? null);
 
+    // Lê os 3 complementos
+    const comp1Tipo = document.getElementById('comp1Tipo').value;
+    const comp1Valor = document.getElementById('comp1Valor').value.trim();
+    const comp2Tipo = document.getElementById('comp2Tipo').value;
+    const comp2Valor = document.getElementById('comp2Valor').value.trim();
+        const comp3Tipo = document.getElementById('comp3Tipo').value;
+    const comp3Valor = document.getElementById('comp3Valor').value.trim();
+
+    // Monta array de complementos (só os que têm tipo OU valor)
+    const complementos = [];
+    if (comp1Tipo || comp1Valor) complementos.push({ tipo: comp1Tipo, valor: comp1Valor });
+    if (comp2Tipo || comp2Valor) complementos.push({ tipo: comp2Tipo, valor: comp2Valor });
+    if (comp3Tipo || comp3Valor) complementos.push({ tipo: comp3Tipo, valor: comp3Valor });
+
     const registro = {
         area_id: areaAtualId,
+        // Endereço base
         rua: enderecoBaseSelecionado.rua || '',
         numero: numero,
-        tipo_complemento: document.getElementById('tipoComplemento').value,
-        complemento: document.getElementById('complementoInput').value.trim(),
+        tipo_complemento: complementos.map(c => c.tipo).filter(Boolean).join(' / '),
+        complemento: complementos.map(c => c.valor).filter(Boolean).join(' / '),
         complemento_extra: '',
-        andar: document.getElementById('andarInput').value.trim(),
+        andar: '',
         bairro: enderecoBaseSelecionado.bairro || '',
         cidade: enderecoBaseSelecionado.cidade || '',
         estado: enderecoBaseSelecionado.estado || '',
@@ -749,6 +761,7 @@ document.getElementById('addBtn').addEventListener('click', async () => {
         latitude,
         longitude,
         fonte: enderecoBaseSelecionado.fonte || '',
+        // Campos extras do roteiro
         tipo_lograd: enderecoBaseSelecionado.tipo_lograd || '',
         cod_bairro: enderecoBaseSelecionado.cod_bairro || '',
         cod_lograd: enderecoBaseSelecionado.cod_lograd || '',
@@ -756,23 +769,7 @@ document.getElementById('addBtn').addEventListener('click', async () => {
         id_localidade: enderecoBaseSelecionado.id_localidade || '',
         localidade: enderecoBaseSelecionado.localidade || '',
         localidade_abrev: enderecoBaseSelecionado.localidade_abrev || '',
-        tipo_imovel: tipoImovel,
-        finalidade: document.getElementById('finalidade').value,
-        area_terreno: parseFloat(document.getElementById('areaTerreno').value) || null,
-        area_construida: parseFloat(document.getElementById('areaConstruida').value) || null,
-        quartos: parseInt(document.getElementById('quartos').value, 10) || null,
-        suites: parseInt(document.getElementById('suites').value, 10) || null,
-        banheiros: parseInt(document.getElementById('banheiros').value, 10) || null,
-        vagas: parseInt(document.getElementById('vagas').value, 10) || null,
-        matricula: document.getElementById('matricula').value.trim(),
-        inscricao_imobiliaria: document.getElementById('inscricaoImobiliaria').value.trim(),
-        iptu: parseFloat(document.getElementById('iptu').value) || null,
-        valor_avaliacao: parseFloat(document.getElementById('valorAvaliacao').value) || null,
-        valor_mercado: parseFloat(document.getElementById('valorMercado').value) || null,
-        proprietario: document.getElementById('proprietario').value.trim(),
-        cpf_cnpj_proprietario: document.getElementById('cpfCnpjProprietario').value.trim(),
-        telefone_proprietario: document.getElementById('telefoneProprietario').value.trim(),
-        email_proprietario: document.getElementById('emailProprietario').value.trim(),
+        // Observações
         observacoes: document.getElementById('observacoes').value.trim(),
         usuario_id: usuarioAtual ? usuarioAtual.id : null
     };
@@ -788,13 +785,22 @@ document.getElementById('addBtn').addEventListener('click', async () => {
 
         showToast('Endereço adicionado', 'Registro salvo com sucesso.', 'success', 2500);
 
-        ['numeroInput','complementoInput','andarInput','tipoImovel','finalidade','areaTerreno',
-         'areaConstruida','quartos','suites','banheiros','vagas','matricula','inscricaoImobiliaria',
-         'iptu','valorAvaliacao','valorMercado','proprietario','cpfCnpjProprietario',
-         'telefoneProprietario','emailProprietario','observacoes','tipoComplemento'].forEach(id => {
+        // Limpa SOMENTE os campos que NÃO estão marcados como "manter"
+        const limpar = (id, manterId) => {
+            const manter = document.getElementById(manterId);
+            if (manter && manter.checked) return; // mantém preenchido
             const el = document.getElementById(id);
             if (el) el.value = '';
-        });
+        };
+
+        limpar('numeroInput',      'numeroRecorrente');
+        limpar('comp1Tipo',        'comp1Recorrente');
+        limpar('comp1Valor',       'comp1Recorrente');
+        limpar('comp2Tipo',        'comp2Recorrente');
+        limpar('comp2Valor',       'comp2Recorrente');
+        limpar('comp3Tipo',        'comp3Recorrente');
+        limpar('comp3Valor',       'comp3Recorrente');
+        limpar('observacoes',      null); // observações sempre limpam
 
         await carregarCadastrados();
     } catch (err) {
@@ -820,11 +826,14 @@ async function carregarCadastrados() {
         panel.style.display = 'block';
         cadastrados.forEach((r, idx) => {
             const tr = document.createElement('tr');
-            const compl = [r.tipo_complemento, r.complemento].filter(Boolean).join(' ');
+            // Junta tipo + valor dos complementos em uma string legível
+            const tipos = (r.tipo_complemento || '').split(' / ').filter(Boolean);
+            const valores = (r.complemento || '').split(' / ').filter(Boolean);
+            const complTexto = tipos.map((t, i) => `${t}: ${valores[i] || ''}`.trim()).join(' | ') || '—';
             tr.innerHTML = `
                 <td>${escapeHtml(r.rua || '')}</td>
                 <td>${escapeHtml(r.numero || '')}</td>
-                <td>${escapeHtml(compl || '')}</td>
+                <td>${escapeHtml(complTexto)}</td>
                 <td>${escapeHtml(r.bairro || '')}</td>
                 <td>${escapeHtml(r.cidade || '')}</td>
                 <td class="mono">${escapeHtml(formatarCEP(r.cep || ''))}</td>
@@ -897,18 +906,40 @@ async function carregarAreaAtual() {
 document.getElementById('novaAreaBtn').addEventListener('click', async () => {
     const nome = prompt('Nome da nova área:');
     if (!nome) return;
+
+    // Diagnóstico antes de tentar
+    const { data: { user }, error: authErr } = await supabaseClient.auth.getUser();
+    if (authErr || !user) {
+        console.error('[NOVA ÁREA] Sem usuário autenticado:', authErr);
+        showToast('Não autenticado', 'Faça login novamente. Se persistir, verifique as policies no Supabase.', 'error', 6000);
+        return;
+    }
+
     try {
         const { data, error } = await supabaseClient
-            .from('areas').insert([{ nome, usuario_id: usuarioAtual ? usuarioAtual.id : null }])
+            .from('areas').insert([{ nome, usuario_id: user.id }])
             .select().single();
-        if (error) throw error;
+        if (error) {
+            console.error('[NOVA ÁREA] Erro do Supabase:', error);
+            // Mensagem mais amigável para RLS
+            if ((error.message || '').toLowerCase().includes('permission denied')) {
+                showToast(
+                    'Permissão negada',
+                    'A tabela "areas" está com RLS sem policy para usuários autenticados. Rode o SQL de policies no Supabase.',
+                    'error',
+                    8000
+                );
+                return;
+            }
+            throw error;
+        }
         sessionStorage.setItem('areaAtualId', data.id);
         areaAtualId = data.id;
         document.getElementById('areaLabel').textContent = `Área: ${data.nome}`;
         showToast('Área criada', data.nome, 'success', 2500);
         await carregarCadastrados();
     } catch (err) {
-        console.error(err);
+        console.error('[NOVA ÁREA] Erro:', err);
         showToast('Erro ao criar área', err.message, 'error');
     }
 });
@@ -929,16 +960,14 @@ document.getElementById('exportBtn').addEventListener('click', async () => {
 
         const zip = new JSZip();
 
-        // Nome do ZIP: LOCALIDADE_AAAAMMDDHHMM.zip
         const localidade = (cadastrados[0].localidade || cadastrados[0].cidade || 'localidade')
-            .normalize('NFD').replace(/[\u0300-\u036f]/g, '') // remove acentos
+            .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
             .replace(/\s+/g, '_')
             .toUpperCase();
         const agora = new Date();
         const carimbo = `${agora.getFullYear()}${String(agora.getMonth()+1).padStart(2,'0')}${String(agora.getDate()).padStart(2,'0')}${String(agora.getHours()).padStart(2,'0')}${String(agora.getMinutes()).padStart(2,'0')}`;
         const nomeZipBase = `${localidade}_${carimbo}`;
 
-        // Um XML por registro, dentro de moradiaN/moradiaN.xml
         cadastrados.forEach((r, idx) => {
             const numero = idx + 1;
             const nomePasta = `moradia${numero}`;
@@ -976,40 +1005,29 @@ function gerarXMLEdificio(r, numero) {
             .replace(/'/g, '&apos;');
     };
 
-    // Data: YYYYMMDDHHMMSS
     const agora = new Date();
     const pad = (n) => String(n).padStart(2, '0');
     const dataFormatada =
         `${agora.getFullYear()}${pad(agora.getMonth()+1)}${pad(agora.getDate())}` +
         `${pad(agora.getHours())}${pad(agora.getMinutes())}${pad(agora.getSeconds())}`;
 
-    // Tipo do logradouro: vem de r.tipo_lograd se existir, senão assume "RUA"
     const tipo = (r.tipo_lograd || 'RUA').toString().toUpperCase();
     const nomeLograd = (r.rua || '').toString().toUpperCase();
     const bairro = (r.bairro || '').toString().toUpperCase();
     const municipio = (r.cidade || r.localidade || '').toString().toUpperCase();
     const uf = (r.estado || '').toString().toUpperCase();
-
-    // Código do logradouro: prioriza cod_lograd, depois id_roteiro, depois 0
     const codLograd = r.cod_lograd || r.id_roteiro || '0';
 
-    // Logradouro completo no formato:
-    // "RUA NURETAMA, REALENGO, RIO DE JANEIRO, RIO DE JANEIRO - RJ (9718)"
     const logradouroCompleto =
         `${tipo} ${nomeLograd}, ${bairro}, ${municipio}, ${municipio} - ${uf} (${codLograd})`;
 
-    // XML usa coordX = longitude, coordY = latitude
     const coordX = r.longitude != null ? Number(r.longitude).toFixed(6) : '';
     const coordY = r.latitude != null ? Number(r.latitude).toFixed(6) : '';
 
-    // Zona: usa campos específicos se existirem, senão gera um placeholder
     const codigoZona = r.codigo_zona || '';
     const nomeZona = r.nome_zona || codigoZona;
-
-    // Localidade
     const localidade = r.localidade || r.cidade || '';
 
-    // ID do edifício: usa id_roteiro se existir; senão id do banco; senão o número da moradia
     const idEdificio = r.id_roteiro || r.id || numero;
     const numeroFachada = r.numero || '';
     const cep = (r.cep || '').toString().replace(/\D/g, '');
@@ -1017,15 +1035,12 @@ function gerarXMLEdificio(r, numero) {
     const idRoteiro = r.id_roteiro || r.id || '';
     const idLocalidade = r.id_localidade || '';
 
-    // Técnico: pega do metadata do usuário logado, senão deixa vazio
     const tecnicoNome = (usuarioAtual && usuarioAtual.user_metadata && usuarioAtual.user_metadata.nome) || '';
     const tecnicoId = (usuarioAtual && usuarioAtual.id) || '';
 
-    // Empresa (pode virar configurável depois)
     const empresaId = '6';
     const empresaNome = 'LOGICTEL';
 
-    // Destinação
     const destinacaoMap = {
         'Residencial': 'RESIDENCIA',
         'Comercial': 'COMERCIO',
@@ -1035,7 +1050,6 @@ function gerarXMLEdificio(r, numero) {
     };
     const destinacao = destinacaoMap[r.finalidade] || 'RESIDENCIA';
 
-    // Pisos (numPisos)
     const numPisos = r.andar && !isNaN(parseInt(r.andar, 10)) ? String(parseInt(r.andar, 10)) : '1';
 
     return `<?xml version="1.0" encoding="UTF-8"?><edificio tipo="M" versao="7.9.2">
@@ -1164,7 +1178,14 @@ document.getElementById('uploadBtn').addEventListener('click', async () => {
         }));
 
         const { error } = await supabaseClient.from('enderecos').insert(payload);
-        if (error) throw error;
+        if (error) {
+            if ((error.message || '').toLowerCase().includes('permission denied')) {
+                status.textContent = 'Permissão negada. Verifique as policies no Supabase.';
+                showToast('Permissão negada', 'A tabela "enderecos" está sem policy. Rode o SQL de policies.', 'error', 8000);
+                return;
+            }
+            throw error;
+        }
 
         status.textContent = `${registros.length} registro(s) importado(s).`;
         showToast('Roteiro importado', `${registros.length} registro(s).`, 'success', 3000);
@@ -1232,7 +1253,6 @@ function parseXMLRoteiro(texto) {
         throw new Error('XML inválido: ' + parserError.textContent.substring(0, 200));
     }
 
-    // Procura tanto <roteiro> (Correios) quanto formatos alternativos
     let nodes = Array.from(xml.getElementsByTagName('roteiro'));
     if (nodes.length === 0) {
         nodes = Array.from(xml.querySelectorAll('endereco, address, registro, item, linha, edificio'));
@@ -1274,7 +1294,6 @@ function parseXMLRoteiro(texto) {
             latitude: parseFloat(getText(node, 'coordY')) || null,
             longitude: parseFloat(getText(node, 'coordX')) || null,
             fonte: 'Roteiro XML',
-            // Campos extras do padrão Correios (essenciais para o XML edificio)
             tipo_lograd: tipo,
             cod_bairro: getText(node, 'cod_bairro'),
             cod_lograd: getText(node, 'cod_lograd'),
@@ -1288,27 +1307,6 @@ function parseXMLRoteiro(texto) {
     });
 
     return registros.filter(r => r.rua || r.cep);
-}
-
-// ============================================
-// MODELO CSV
-// ============================================
-const downloadModeloBtn = document.getElementById('downloadModeloBtn');
-if (downloadModeloBtn) {
-    downloadModeloBtn.addEventListener('click', () => {
-        const modelo = [
-            'rua;numero;tipo_complemento;complemento;andar;bairro;cidade;estado;cep;latitude;longitude;fonte',
-            'Rua Exemplo;123;Quadra;B;5;Centro;Rio de Janeiro;RJ;20000-000;-22.90200282;-43.27065822;Modelo'
-        ].join('\n');
-        const blob = new Blob(['\uFEFF' + modelo], { type: 'text/csv;charset=utf-8;' });
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = 'modelo_roteiro.csv';
-        document.body.appendChild(a); a.click(); document.body.removeChild(a);
-        URL.revokeObjectURL(url);
-        showToast('Modelo baixado', 'Preencha e importe novamente.', 'success', 2500);
-    });
 }
 
 // ============================================
