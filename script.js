@@ -7,6 +7,72 @@ if (!sessionStorage.getItem('usuarioLogado')) {
 
 let usuarioAtual = null;
 
+// ============================================
+// TEMA CLARO / ESCURO
+// ============================================
+(function initTheme() {
+    const html = document.documentElement;
+    const saved = localStorage.getItem('theme');
+    const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+    const theme = saved || (prefersDark ? 'dark' : 'light');
+    html.setAttribute('data-theme', theme);
+
+    document.addEventListener('DOMContentLoaded', () => {
+        const btn = document.getElementById('themeToggle');
+        if (!btn) return;
+        const update = () => {
+            const isDark = html.getAttribute('data-theme') === 'dark';
+            btn.innerHTML = `<span aria-hidden="true">${isDark ? '☀️' : '🌙'}</span>`;
+            btn.setAttribute('aria-label', isDark ? 'Mudar para modo claro' : 'Mudar para modo escuro');
+        };
+        update();
+        btn.addEventListener('click', () => {
+            const isDark = html.getAttribute('data-theme') === 'dark';
+            const novo = isDark ? 'light' : 'dark';
+            html.setAttribute('data-theme', novo);
+            localStorage.setItem('theme', novo);
+            update();
+        });
+
+        // Atualiza também se o SO mudar (sem preferência salva)
+        window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', (e) => {
+            if (!localStorage.getItem('theme')) {
+                html.setAttribute('data-theme', e.matches ? 'dark' : 'light');
+                update();
+            }
+        });
+    });
+})();
+
+// ============================================
+// TOASTS — Feedback visual
+// ============================================
+function showToast(titulo, mensagem = '', tipo = 'info', duracao = 4000) {
+    const container = document.getElementById('toastContainer');
+    if (!container) return;
+
+    const icons = { success: '✓', error: '✕', warning: '⚠', info: 'i' };
+    const toast = document.createElement('div');
+    toast.className = `toast ${tipo}`;
+    toast.setAttribute('role', tipo === 'error' ? 'alert' : 'status');
+    toast.innerHTML = `
+        <span class="toast-icon" aria-hidden="true">${icons[tipo] || icons.info}</span>
+        <div class="toast-content">
+            <div class="toast-title">${titulo}</div>
+            ${mensagem ? `<div class="toast-message">${mensagem}</div>` : ''}
+        </div>
+    `;
+    container.appendChild(toast);
+
+    setTimeout(() => {
+        toast.classList.add('hiding');
+        setTimeout(() => toast.remove(), 300);
+    }, duracao);
+}
+
+// ============================================
+// ESTADO GLOBAL
+// ============================================
 async function iniciar() {
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) {
@@ -56,23 +122,30 @@ document.querySelectorAll('.toggle-btn').forEach(btn => {
     const target = document.getElementById(btn.dataset.target);
     if (target && target.classList.contains('collapsed')) {
         btn.classList.add('collapsed');
+        btn.setAttribute('aria-expanded', 'false');
     }
     btn.innerHTML = '&#9660;';
 
     btn.addEventListener('click', (e) => {
         e.stopPropagation();
-        const target = document.getElementById(btn.dataset.target);
-        target.classList.toggle('collapsed');
+        const t = document.getElementById(btn.dataset.target);
+        if (!t) return;
+        t.classList.toggle('collapsed');
         btn.classList.toggle('collapsed');
+        btn.setAttribute('aria-expanded', String(!t.classList.contains('collapsed')));
         btn.innerHTML = '&#9660;';
-        if (btn.dataset.target === 'panel2-body' && !target.classList.contains('collapsed')) {
+        if (btn.dataset.target === 'panel2-body' && !t.classList.contains('collapsed')) {
             setTimeout(() => map.invalidateSize(), 300);
         }
     });
 });
 
 document.querySelectorAll('.panel h2').forEach(h2 => {
-    h2.addEventListener('click', () => { const btn = h2.querySelector('.toggle-btn'); if (btn) btn.click(); });
+    h2.addEventListener('click', (e) => {
+        if (e.target.closest('.toggle-btn')) return;
+        const btn = h2.querySelector('.toggle-btn');
+        if (btn) btn.click();
+    });
 });
 
 // ============================================
@@ -86,11 +159,17 @@ document.querySelectorAll('.side-nav button').forEach(btn => {
         const toggle = target.querySelector('.toggle-btn');
         if (body && body.classList.contains('collapsed')) {
             body.classList.remove('collapsed');
-            if (toggle) toggle.classList.remove('collapsed');
+            if (toggle) {
+                toggle.classList.remove('collapsed');
+                toggle.setAttribute('aria-expanded', 'true');
+            }
         }
         target.scrollIntoView({ behavior: 'smooth', block: 'start' });
         target.classList.add('highlight');
         setTimeout(() => target.classList.remove('highlight'), 1000);
+
+        document.querySelectorAll('.side-nav button').forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
     });
 });
 
@@ -103,7 +182,10 @@ const zoomLockControl = L.Control.extend({
     options: { position: 'topright' },
     onAdd: function () {
         const btn = L.DomUtil.create('button', 'zoom-lock-btn');
-        btn.innerHTML = '🔓'; btn.title = 'Travar zoom (Ctrl + B)'; btn.type = 'button';
+        btn.innerHTML = '🔓';
+        btn.title = 'Travar zoom (Ctrl + B)';
+        btn.type = 'button';
+        btn.setAttribute('aria-label', 'Travar zoom');
         L.DomEvent.disableClickPropagation(btn);
         L.DomEvent.disableScrollPropagation(btn);
         btn.addEventListener('click', (e) => { e.preventDefault(); e.stopPropagation(); toggleZoomLock(); });
@@ -114,37 +196,42 @@ const zoomLockControl = L.Control.extend({
 const zoomLockControlInstance = new zoomLockControl();
 map.addControl(zoomLockControlInstance);
 
-const toast = document.createElement('div');
-toast.className = 'zoom-lock-toast';
-document.body.appendChild(toast);
-
-function mostrarToast(msg) {
-    toast.textContent = msg;
-    toast.classList.add('visible');
-    clearTimeout(toast._t);
-    toast._t = setTimeout(() => toast.classList.remove('visible'), 1800);
+function mostrarToastZoom(msg) {
+    showToast('Zoom', msg, 'info', 1800);
 }
 
 function aplicarTravamento() {
-    map.scrollWheelZoom.disable(); map.doubleClickZoom.disable(); map.touchZoom.disable();
-    map.boxZoom.disable(); map.keyboard.disable();
+    map.scrollWheelZoom.disable();
+    map.doubleClickZoom.disable();
+    map.touchZoom.disable();
+    map.boxZoom.disable();
+    map.keyboard.disable();
     if (map.zoomControl) map.zoomControl.remove();
     const btn = zoomLockControl._btn;
-    btn.innerHTML = '🔒'; btn.title = 'Destravar zoom (Ctrl + B)'; btn.classList.add('locked');
+    btn.innerHTML = '🔒';
+    btn.title = 'Destravar zoom (Ctrl + B)';
+    btn.setAttribute('aria-label', 'Destravar zoom');
+    btn.classList.add('locked');
 }
 
 function aplicarDestravamento() {
-    map.scrollWheelZoom.enable(); map.doubleClickZoom.enable(); map.touchZoom.enable();
-    map.boxZoom.enable(); map.keyboard.enable();
+    map.scrollWheelZoom.enable();
+    map.doubleClickZoom.enable();
+    map.touchZoom.enable();
+    map.boxZoom.enable();
+    map.keyboard.enable();
     if (!map.zoomControl) map.zoomControl = L.control.zoom({ position: 'topleft' }).addTo(map);
     const btn = zoomLockControl._btn;
-    btn.innerHTML = '🔓'; btn.title = 'Travar zoom (Ctrl + B)'; btn.classList.remove('locked');
+    btn.innerHTML = '🔓';
+    btn.title = 'Travar zoom (Ctrl + B)';
+    btn.setAttribute('aria-label', 'Travar zoom');
+    btn.classList.remove('locked');
 }
 
 function toggleZoomLock() {
     zoomTravado = !zoomTravado;
-    if (zoomTravado) { aplicarTravamento(); mostrarToast('Zoom travado — Ctrl + B para destravar'); }
-    else { aplicarDestravamento(); mostrarToast('Zoom destravado'); }
+    if (zoomTravado) { aplicarTravamento(); mostrarToastZoom('Zoom travado — Ctrl + B para destravar'); }
+    else { aplicarDestravamento(); mostrarToastZoom('Zoom destravado'); }
 }
 
 document.addEventListener('keydown', (e) => {
@@ -310,10 +397,16 @@ async function buscarEndereco(query) {
         const url = `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(query)}&addressdetails=1&limit=1&accept-language=pt-BR`;
         const res = await fetch(url);
         const data = await res.json();
-        if (!data || data.length === 0) { alert('Endereço não encontrado.'); return; }
+        if (!data || data.length === 0) {
+            showToast('Endereço não encontrado', 'Tente outro termo ou marque no mapa.', 'warning');
+            return;
+        }
         const item = data[0];
         irParaLocal(parseFloat(item.lat), parseFloat(item.lon), item.display_name, 'busca');
-    } catch (err) { console.error(err); alert('Erro ao buscar endereço.'); }
+    } catch (err) {
+        console.error(err);
+        showToast('Erro ao buscar endereço', err.message, 'error');
+    }
 }
 
 document.getElementById('searchBtn').addEventListener('click', () => {
@@ -341,7 +434,7 @@ map.on('contextmenu', async (e) => {
 // ============================================
 async function consultarFontes(lat, lng) {
     const list = document.getElementById('enderecosList');
-    list.innerHTML = '<p style="color:#666; font-style:italic;">Consultando fontes...</p>';
+    list.innerHTML = '<p class="empty-state"><span class="loading"></span>Consultando fontes...</p>';
 
     const resultados = [];
     let cepOSM = '';
@@ -363,326 +456,427 @@ async function consultarFontes(lat, lng) {
         resultados.push({ fonte: 'OpenStreetMap', error: 'Falha na consulta' });
     }
 
-    const tarefas = [];
+        const tarefas = [];
     if (cepOSM.length === 8) {
-        tarefas.push(fetch(`https://opencep.com/v1/${cepOSM}`).then(r => r.json()).then(data => ({ tipo: 'opencep', data })).catch(() => ({ tipo: 'opencep', erro: true })));
-        tarefas.push(fetch(`https://viacep.com.br/ws/${cepOSM}/json/`).then(r => r.json()).then(data => ({ tipo: 'viacep', data })).catch(() => ({ tipo: 'viacep', erro: true })));
-        tarefas.push(fetch(`https://brasilapi.com.br/api/cep/v2/${cepOSM}`).then(r => r.json()).then(data => ({ tipo: 'brasilapi', data })).catch(() => ({ tipo: 'brasilapi', erro: true })));
+        tarefas.push(
+            fetch(`https://opencep.com/v1/${cepOSM}`)
+                .then(r => r.ok ? r.json() : null)
+                .then(d => {
+                    if (d && !d.erro) {
+                        resultados.push({
+                            fonte: 'OpenCEP',
+                            rua: d.logradouro || '',
+                            numero: '',
+                            bairro: d.bairro || '',
+                            cidade: d.localidade || '',
+                            estado: d.uf || '',
+                            cep: d.cep || '',
+                            pais: 'Brasil',
+                            bruto: `${d.logradouro || ''}, ${d.bairro || ''}, ${d.localidade || ''} - ${d.uf || ''}`
+                        });
+                    }
+                })
+                .catch(() => { /* silencioso */ })
+        );
     }
 
-    const respostas = await Promise.all(tarefas);
+    // Consulta ViaCEP (caso tenha CEP)
+    if (cepOSM.length === 8) {
+        tarefas.push(
+            fetch(`https://viacep.com.br/ws/${cepOSM}/json/`)
+                .then(r => r.json())
+                .then(d => {
+                    if (d && !d.erro) {
+                        resultados.push({
+                            fonte: 'ViaCEP',
+                            rua: d.logradouro || '',
+                            numero: '',
+                            bairro: d.bairro || '',
+                            cidade: d.localidade || '',
+                            estado: d.uf || '',
+                            cep: d.cep || '',
+                            pais: 'Brasil',
+                            bruto: `${d.logradouro || ''}, ${d.bairro || ''}, ${d.localidade || ''} - ${d.uf || ''}`
+                        });
+                    }
+                })
+                .catch(() => { /* silencioso */ })
+        );
+    }
 
-    respostas.forEach(({ tipo, data, erro }) => {
-        if (erro || !data || data.erro) {
-            const nome = tipo === 'opencep' ? 'OpenCEP (Correios)' : tipo === 'viacep' ? 'ViaCEP' : 'BrasilAPI';
-            resultados.push({ fonte: nome, error: cepOSM.length === 8 ? 'CEP não encontrado' : 'CEP não disponível' });
-            return;
-        }
-        if (tipo === 'opencep') resultados.push({ fonte: 'OpenCEP (Correios)', rua: data.logradouro || '', numero: '', bairro: data.bairro || '', cidade: data.localidade || '', estado: data.uf || '', cep: data.cep || '', pais: 'Brasil', bruto: `${data.logradouro}, ${data.bairro}, ${data.localidade} - ${data.uf}, ${data.cep}` });
-        else if (tipo === 'viacep') resultados.push({ fonte: 'ViaCEP', rua: data.logradouro || '', numero: '', bairro: data.bairro || '', cidade: data.localidade || '', estado: data.uf || '', cep: data.cep || '', pais: 'Brasil', bruto: `${data.logradouro}, ${data.bairro}, ${data.localidade} - ${data.uf}, ${data.cep}` });
-        else if (tipo === 'brasilapi') resultados.push({ fonte: 'BrasilAPI', rua: data.street || '', numero: '', bairro: data.neighborhood || '', cidade: data.city || '', estado: data.state || '', cep: data.cep || '', pais: 'Brasil', bruto: `${data.street}, ${data.neighborhood}, ${data.city} - ${data.state}, ${data.cep}` });
+    // Aguarda todas as consultas paralelas
+    await Promise.allSettled(tarefas);
+
+    // Remove duplicatas exatas (mesma rua + número + cidade)
+    const vistos = new Set();
+    const unicos = resultados.filter(r => {
+        if (r.error) return true;
+        const chave = `${(r.rua || '').toLowerCase()}|${(r.numero || '').toLowerCase()}|${(r.cidade || '').toLowerCase()}`;
+        if (vistos.has(chave)) return false;
+        vistos.add(chave);
+        return true;
     });
 
-    if (cepOSM.length !== 8) {
-        ['OpenCEP (Correios)', 'ViaCEP', 'BrasilAPI'].forEach(nome => {
-            if (!resultados.find(r => r.fonte === nome)) resultados.push({ fonte: nome, error: 'CEP não disponível para esta coordenada' });
-        });
+    enderecosEncontrados = unicos;
+
+    // Renderiza
+    if (unicos.length === 0) {
+        list.innerHTML = '<p class="empty-state">Nenhuma fonte retornou dados para este ponto.</p>';
+        return;
     }
 
-    renderizarResultados(resultados);
-    await sugerirIA(lat, lng);
+    list.innerHTML = '';
+    unicos.forEach((r, idx) => {
+        const div = document.createElement('div');
+        div.className = 'endereco-card';
+        div.setAttribute('role', 'listitem');
+
+        if (r.error) {
+            div.innerHTML = `
+                <div class="endereco-header">
+                    <span class="fonte-badge">${escapeHtml(r.fonte)}</span>
+                    <span class="erro-badge">indisponível</span>
+                </div>
+                <p class="endereco-erro">${escapeHtml(r.error)}</p>
+            `;
+        } else {
+            const linha1 = [r.rua, r.numero].filter(Boolean).join(', ') || '—';
+            const linha2 = [r.bairro, r.cidade, r.estado].filter(Boolean).join(' • ') || '—';
+            const linha3 = [r.cep, r.pais].filter(Boolean).join(' • ');
+
+            div.innerHTML = `
+                <div class="endereco-header">
+                    <span class="fonte-badge">${escapeHtml(r.fonte)}</span>
+                </div>
+                <p class="endereco-linha1">${escapeHtml(linha1)}</p>
+                <p class="endereco-linha2">${escapeHtml(linha2)}</p>
+                ${linha3 ? `<p class="endereco-linha3">${escapeHtml(linha3)}</p>` : ''}
+                <button class="btn-usar-fonte" type="button" data-idx="${idx}">Usar esta fonte</button>
+            `;
+        }
+        list.appendChild(div);
+    });
+
+    // Botões "Usar esta fonte"
+    list.querySelectorAll('.btn-usar-fonte').forEach(btn => {
+        btn.addEventListener('click', () => {
+            const r = unicos[parseInt(btn.dataset.idx, 10)];
+            if (!r || r.error) return;
+            preencherFormulario(r);
+            showToast('Fonte aplicada', `Dados de ${r.fonte} carregados no formulário.`, 'success', 2500);
+        });
+    });
 }
 
 // ============================================
-// IA DE SUGESTÃO
+// PREENCHER FORMULÁRIO COM A FONTE ESCOLHIDA
 // ============================================
-function distanciaMetros(lat1, lon1, lat2, lon2) {
-    const R = 6371000;
-    const dLat = (lat2 - lat1) * Math.PI / 180;
-    const dLon = (lon2 - lon1) * Math.PI / 180;
-    const a = Math.sin(dLat/2) ** 2 + Math.cos(lat1 * Math.PI/180) * Math.cos(lat2 * Math.PI/180) * Math.sin(dLon/2) ** 2;
-    return 2 * R * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+function preencherFormulario(r) {
+    const fonteSelect = document.getElementById('fonteSelect');
+    // Adiciona a fonte se ainda não existir
+    let option = Array.from(fonteSelect.options).find(o => o.value === r.fonte);
+    if (!option) {
+        option = document.createElement('option');
+        option.value = r.fonte;
+        option.textContent = r.fonte;
+        fonteSelect.appendChild(option);
+    }
+    fonteSelect.value = r.fonte;
+
+    // Guarda os dados "brutos" para uso no cadastro
+    fonteSelect.dataset.rua = r.rua || '';
+    fonteSelect.dataset.bairro = r.bairro || '';
+    fonteSelect.dataset.cidade = r.cidade || '';
+    fonteSelect.dataset.estado = r.estado || '';
+    fonteSelect.dataset.cep = r.cep || '';
+    fonteSelect.dataset.pais = r.pais || '';
+
+    // Número
+    if (r.numero) {
+        document.getElementById('numeroInput').value = r.numero;
+    }
+
+    // Abre o painel 4 automaticamente
+    const formBody = document.getElementById('formBody');
+    if (formBody && formBody.classList.contains('collapsed')) {
+        formBody.classList.remove('collapsed');
+        const toggle = document.querySelector('#formPanel .toggle-btn');
+        if (toggle) {
+            toggle.classList.remove('collapsed');
+            toggle.setAttribute('aria-expanded', 'true');
+        }
+    }
+    document.getElementById('formPanel').scrollIntoView({ behavior: 'smooth', block: 'start' });
 }
 
-async function sugerirIA(lat, lng) {
-    const aiBox = document.getElementById('aiSuggestion');
-    if (!usuarioAtual) { aiBox.style.display = 'none'; return; }
+// ============================================
+// ADICIONAR À LISTA (botão do formulário)
+// ============================================
+document.getElementById('addBtn').addEventListener('click', async () => {
+    const fonteSelect = document.getElementById('fonteSelect');
+    const fonte = fonteSelect.value;
+    if (!fonte) {
+        showToast('Fonte obrigatória', 'Selecione a fonte dos dados antes de adicionar.', 'warning');
+        return;
+    }
+
+    const numero = document.getElementById('numeroInput').value.trim();
+    const tipoComplemento = document.getElementById('tipoComplemento').value;
+    const complemento = document.getElementById('complementoInput').value.trim();
+
+    if (!numero) {
+        showToast('Número obrigatório', 'Informe o número do imóvel.', 'warning');
+        return;
+    }
+
+    // Coordenadas atuais
+    const coordsTexto = document.getElementById('coordsDisplay').textContent;
+    const [latStr, lngStr] = coordsTexto.split(',').map(s => s.trim());
+    if (!latStr || !lngStr || isNaN(parseFloat(latStr))) {
+        showToast('Sem coordenadas', 'Busque ou marque um ponto no mapa primeiro.', 'warning');
+        return;
+    }
+
+    const registro = {
+        area_id: areaAtualId,
+        rua: fonteSelect.dataset.rua || '',
+        numero: numero,
+        tipo_complemento: tipoComplemento || '',
+        complemento: complemento || '',
+        bairro: fonteSelect.dataset.bairro || '',
+        cidade: fonteSelect.dataset.cidade || '',
+        estado: fonteSelect.dataset.estado || '',
+        cep: fonteSelect.dataset.cep || '',
+        pais: fonteSelect.dataset.pais || 'Brasil',
+        latitude: parseFloat(latStr),
+        longitude: parseFloat(lngStr),
+        fonte: fonte,
+        usuario_id: usuarioAtual ? usuarioAtual.id : null
+    };
+
+    try {
+        const { error } = await supabase.from('enderecos').insert([registro]);
+        if (error) throw error;
+
+        showToast('Endereço adicionado', 'Registro salvo com sucesso.', 'success', 2500);
+
+        // Limpa campos
+        document.getElementById('numeroInput').value = '';
+        document.getElementById('tipoComplemento').value = '';
+        document.getElementById('complementoInput').value = '';
+
+        await carregarCadastrados();
+    } catch (err) {
+        console.error(err);
+        showToast('Erro ao salvar', err.message, 'error');
+    }
+});
+
+// ============================================
+// CARREGAR CADASTRADOS
+// ============================================
+async function carregarCadastrados() {
+    if (!areaAtualId) {
+        document.getElementById('cadastradosPanel').style.display = 'none';
+        return;
+    }
 
     try {
         const { data, error } = await supabase
             .from('enderecos')
             .select('*')
-            .eq('user_id', usuarioAtual.id)
-            .gte('lat', lat - 0.001)
-            .lte('lat', lat + 0.001)
-            .gte('lng', lng - 0.001)
-            .lte('lng', lng + 0.001);
+            .eq('area_id', areaAtualId)
+            .order('id', { ascending: true });
 
-        if (error || !data || data.length === 0) { aiBox.style.display = 'none'; return; }
+        if (error) throw error;
 
-        const proximos = data
-            .map(c => ({ ...c, distancia: distanciaMetros(lat, lng, c.lat, c.lng) }))
-            .filter(c => c.distancia <= 100)
-            .sort((a, b) => a.distancia - b.distancia);
+        cadastrados = data || [];
 
-        if (proximos.length === 0) { aiBox.style.display = 'none'; return; }
+        const panel = document.getElementById('cadastradosPanel');
+        const tbody = document.querySelector('#cadastradosTable tbody');
+        tbody.innerHTML = '';
 
-        const top = proximos[0];
-        aiBox.style.display = 'block';
-        aiBox.innerHTML = `<strong>Sugestão da IA:</strong> Já existe um endereço cadastrado a <strong>${top.distancia.toFixed(0)}m</strong> desta coordenada:<br><strong>${escapeHtml(top.rua)}, ${top.numero}</strong> — ${top.tipo_complemento || ''} ${top.complemento || ''} ${top.bairro ? '· ' + escapeHtml(top.bairro) : ''}<br><small>(fonte: ${escapeHtml(top.fonte || '-')})</small>`;
-    } catch (e) {
-        console.error(e);
-        aiBox.style.display = 'none';
-    }
-}
-
-// ============================================
-// RENDERIZAR RESULTADOS
-// ============================================
-function renderizarResultados(resultados) {
-    enderecosEncontrados = resultados;
-    const list = document.getElementById('enderecosList');
-    list.innerHTML = '';
-    const selectFonte = document.getElementById('fonteSelect');
-    selectFonte.innerHTML = '';
-    let temAlgumaValida = false;
-
-    resultados.forEach((r, idx) => {
-        const div = document.createElement('div');
-        div.className = 'endereco-item' + (r.error ? ' error' : '');
-        if (r.error) div.innerHTML = `<span class="fonte">${r.fonte}</span><br>${r.error}`;
-        else {
-            temAlgumaValida = true;
-            div.innerHTML = `<span class="fonte">${r.fonte}</span><pre>Rua:      ${r.rua || '-'}
-Número:   ${r.numero || '-'}
-Bairro:   ${r.bairro || '-'}
-Cidade:   ${r.cidade || '-'} / ${r.estado || '-'}
-CEP:      ${r.cep || '-'}
-País:     ${r.pais || '-'}
-Completo: ${r.bruto || '-'}</pre>`;
-            const opt = document.createElement('option');
-            opt.value = idx;
-            opt.textContent = r.fonte;
-            selectFonte.appendChild(opt);
+        if (cadastrados.length === 0) {
+            panel.style.display = 'none';
+            return;
         }
-        list.appendChild(div);
-    });
 
-    const optBase = document.createElement('option');
-    optBase.value = 'base';
-    optBase.textContent = 'CadastroBase (manual)';
-    selectFonte.appendChild(optBase);
+        panel.style.display = 'block';
 
-    if (!temAlgumaValida) {
-        const aviso = document.createElement('option');
-        aviso.value = '';
-        aviso.textContent = '-- Nenhuma fonte disponível --';
-        selectFonte.insertBefore(aviso, selectFonte.firstChild);
-        selectFonte.value = 'base';
+        cadastrados.forEach((r, idx) => {
+            const tr = document.createElement('tr');
+            tr.innerHTML = `
+                <td>${escapeHtml(r.rua || '')}</td>
+                <td>${escapeHtml(r.numero || '')}</td>
+                <td>${escapeHtml(r.tipo_complemento || '')}</td>
+                <td>${escapeHtml(r.complemento || '')}</td>
+                <td>${escapeHtml(r.bairro || '')}</td>
+                <td>${escapeHtml(r.cidade || '')}</td>
+                <td>${escapeHtml(r.cep || '')}</td>
+                <td class="coords-cell">${r.latitude != null ? r.latitude.toFixed(6) : ''}, ${r.longitude != null ? r.longitude.toFixed(6) : ''}</td>
+                <td>${escapeHtml(r.fonte || '')}</td>
+                <td class="acoes-cell">
+                    <button class="btn-ir" data-idx="${idx}" title="Centralizar no mapa" type="button">🗺️</button>
+                    <button class="btn-remover" data-id="${r.id}" title="Remover" type="button">🗑️</button>
+                </td>
+            `;
+            tbody.appendChild(tr);
+        });
+
+        // Botões "ir para"
+        tbody.querySelectorAll('.btn-ir').forEach(btn => {
+            btn.addEventListener('click', () => {
+                const r = cadastrados[parseInt(btn.dataset.idx, 10)];
+                if (!r || r.latitude == null) return;
+                map.setView([r.latitude, r.longitude], 18);
+                if (marcadorAtual) map.removeLayer(marcadorAtual);
+                marcadorAtual = L.marker([r.latitude, r.longitude], { icon: houseIcon }).addTo(map);
+                marcadorAtual.bindPopup(`<strong>${escapeHtml(r.rua)}, ${escapeHtml(r.numero)}</strong>`).openPopup();
+                document.getElementById('panel2').scrollIntoView({ behavior: 'smooth', block: 'start' });
+            });
+        });
+
+        // Botões "remover"
+        tbody.querySelectorAll('.btn-remover').forEach(btn => {
+            btn.addEventListener('click', async () => {
+                const id = btn.dataset.id;
+                if (!confirm('Remover este endereço?')) return;
+                try {
+                    const { error } = await supabase.from('enderecos').delete().eq('id', id);
+                    if (error) throw error;
+                    showToast('Removido', 'Endereço excluído.', 'success', 2000);
+                    await carregarCadastrados();
+                } catch (err) {
+                    console.error(err);
+                    showToast('Erro ao remover', err.message, 'error');
+                }
+            });
+        });
+
+        // Atualiza marcadores salvos no mapa
+        marcadoresSalvos.forEach(m => map.removeLayer(m));
+        marcadoresSalvos = [];
+        cadastrados.forEach(r => {
+            if (r.latitude == null || r.longitude == null) return;
+            const m = L.marker([r.latitude, r.longitude], { icon: houseIcon }).addTo(map);
+            m.bindPopup(`<strong>${escapeHtml(r.rua)}, ${escapeHtml(r.numero)}</strong><br>${escapeHtml(r.bairro || '')}`);
+            marcadoresSalvos.push(m);
+        });
+    } catch (err) {
+        console.error(err);
+        showToast('Erro ao carregar', err.message, 'error');
     }
 }
 
 // ============================================
-// ADICIONAR
+// ÁREA ATUAL
 // ============================================
-document.getElementById('addBtn').addEventListener('click', async () => {
-    const fonteValor = document.getElementById('fonteSelect').value;
-    if (fonteValor === '') { alert('Selecione uma fonte de dados.'); return; }
+async function carregarAreaAtual() {
+    areaAtualId = sessionStorage.getItem('areaAtualId');
+    const label = document.getElementById('areaLabel');
 
-    const numero = document.getElementById('numeroInput').value.trim();
-    const tipoComplemento = document.getElementById('tipoComplemento').value;
-    const complemento = document.getElementById('complementoInput').value.trim();
-    if (!numero) { alert('Informe o número da residência.'); return; }
-
-    const coordsTexto = document.getElementById('coordsDisplay').textContent;
-    const [latStr, lngStr] = coordsTexto.split(',').map(s => s.trim());
-    const lat = parseFloat(latStr), lng = parseFloat(lngStr);
-
-    if (isNaN(lat) || isNaN(lng)) { alert('Marque um ponto no mapa antes de adicionar.'); return; }
-
-    const registro = {
-        user_id: usuarioAtual.id,
-        area_id: areaAtualId,
-        numero,
-        tipo_complemento: tipoComplemento,
-        complemento,
-        lat, lng,
-        fonte: 'CadastroBase'
-    };
-
-    if (fonteValor !== 'base') {
-        const fonte = enderecosEncontrados[parseInt(fonteValor)];
-        if (!fonte) { alert('Fonte inválida.'); return; }
-        registro.rua = fonte.rua || '';
-        registro.bairro = fonte.bairro || '';
-        registro.cidade = fonte.cidade || '';
-        registro.estado = fonte.estado || '';
-        registro.cep = fonte.cep || '';
-        registro.pais = fonte.pais || 'Brasil';
-        registro.fonte = fonte.fonte;
-    } else {
-        alert('Fonte "CadastroBase" precisa de dados manuais. Preencha os campos no formulário de edição após adicionar.');
+    if (!areaAtualId) {
+        label.textContent = 'Nenhuma área selecionada';
         return;
     }
 
-    const { error } = await supabase.from('enderecos').insert(registro);
-    if (error) { alert('Erro ao salvar: ' + error.message); return; }
+    try {
+        const { data, error } = await supabase
+            .from('areas')
+            .select('*')
+            .eq('id', areaAtualId)
+            .single();
 
-    localStorage.setItem('ultimoNumero', numero);
-
-    document.getElementById('tipoComplemento').value = '';
-    document.getElementById('complementoInput').value = '';
-
-    await carregarCadastrados();
-    alert('Endereço adicionado!');
-});
-
-// ============================================
-// CARREGAR / RENDERIZAR CADASTRADOS
-// ============================================
-async function carregarCadastrados() {
-    if (!usuarioAtual) return;
-
-    let query = supabase.from('enderecos').select('*').eq('user_id', usuarioAtual.id);
-    if (areaAtualId) query = query.eq('area_id', areaAtualId);
-
-    const { data, error } = await query.order('created_at', { ascending: true });
-    if (error) { console.error('Erro ao carregar:', error); return; }
-
-    cadastrados = (data || []).map(d => ({
-        id: d.id,
-        rua: d.rua, numero: d.numero,
-        tipoComplemento: d.tipo_complemento, complemento: d.complemento,
-        bairro: d.bairro, cidade: d.cidade, estado: d.estado,
-        cep: d.cep, pais: d.pais, lat: d.lat, lng: d.lng,
-        coords: `${d.lat}, ${d.lng}`,
-        fonte: d.fonte
-    }));
-
-    renderizarCadastrados();
-    renderizarMarcadoresSalvos();
-
-    const ultimo = localStorage.getItem('ultimoNumero');
-    if (ultimo && !document.getElementById('numeroInput').value) {
-        document.getElementById('numeroInput').value = ultimo;
-    }
-}
-
-function renderizarCadastrados() {
-    const panel = document.getElementById('cadastradosPanel');
-    const tbody = document.querySelector('#cadastradosTable tbody');
-    tbody.innerHTML = '';
-    if (cadastrados.length === 0) { panel.style.display = 'none'; return; }
-    panel.style.display = 'block';
-    cadastrados.forEach((c, i) => {
-        const tr = document.createElement('tr');
-        tr.innerHTML = `
-            <td>${c.rua || '-'}</td>
-            <td>${c.numero || '-'}</td>
-            <td>${c.tipoComplemento || '-'}</td>
-            <td>${c.complemento || '-'}</td>
-            <td>${c.bairro || '-'}</td>
-            <td>${c.cidade || '-'}</td>
-            <td>${c.cep || '-'}</td>
-            <td><small>${c.coords}</small></td>
-            <td><small>${c.fonte}</small></td>
-            <td><button onclick="removerCadastro(${i})">X</button></td>
-        `;
-        tbody.appendChild(tr);
-    });
-}
-
-function renderizarMarcadoresSalvos() {
-    marcadoresSalvos.forEach(m => map.removeLayer(m));
-    marcadoresSalvos = [];
-    cadastrados.forEach(c => {
-        if (!isNaN(c.lat) && !isNaN(c.lng)) {
-            const m = L.marker([c.lat, c.lng], { icon: houseIcon }).addTo(map);
-            m.bindPopup(`<strong>${escapeHtml(c.rua)}, ${c.numero}</strong><br>${c.tipoComplemento || ''} ${c.complemento || ''}<br>${c.bairro ? c.bairro + '<br>' : ''}${c.cidade} - ${c.estado}<br>CEP: ${c.cep || '-'}<br><small>Fonte: ${c.fonte || '-'}</small>`);
-            marcadoresSalvos.push(m);
-        }
-    });
-}
-
-async function removerCadastro(i) {
-    if (!confirm('Remover este endereço?')) return;
-    const c = cadastrados[i];
-    if (!c || !c.id) return;
-    const { error } = await supabase.from('enderecos').delete().eq('id', c.id);
-    if (error) { alert('Erro ao remover: ' + error.message); return; }
-    await carregarCadastrados();
-}
-
-// ============================================
-// ÁREAS
-// ============================================
-async function carregarAreaAtual() {
-    const saved = sessionStorage.getItem('areaAtualId');
-    if (saved) {
-        areaAtualId = parseInt(saved);
-        const { data } = await supabase.from('areas').select('nome').eq('id', areaAtualId).single();
-        if (data) document.getElementById('areaLabel').textContent = 'Área: ' + data.nome;
+        if (error) throw error;
+        label.textContent = `Área: ${data.nome || data.descricao || areaAtualId}`;
+    } catch (err) {
+        console.error(err);
+        label.textContent = `Área: ${areaAtualId}`;
     }
 }
 
 document.getElementById('novaAreaBtn').addEventListener('click', async () => {
-    const nome = prompt('Nome da nova área (ex: "Vila 1 - Rua Martins Lage"):');
+    const nome = prompt('Nome da nova área:');
     if (!nome) return;
+    try {
+        const { data, error } = await supabase
+            .from('areas')
+            .insert([{ nome, usuario_id: usuarioAtual ? usuarioAtual.id : null }])
+            .select()
+            .single();
+        if (error) throw error;
 
-    const c = confirm('Isso vai criar uma nova área e limpar os endereços atuais da tela.\nOs já salvos continuam no banco.\n\nDeseja continuar?');
-    if (!c) return;
-
-    const { data: area, error } = await supabase
-        .from('areas')
-        .insert({ user_id: usuarioAtual.id, nome })
-        .select()
-        .single();
-
-    if (error) { alert('Erro ao criar área: ' + error.message); return; }
-
-    areaAtualId = area.id;
-    sessionStorage.setItem('areaAtualId', areaAtualId);
-    document.getElementById('areaLabel').textContent = 'Área: ' + nome;
-
-    cadastrados = [];
-    renderizarCadastrados();
-    renderizarMarcadoresSalvos();
-    document.getElementById('enderecosList').innerHTML = '<p style="color:#999; font-style:italic;">Nenhum endereço consultado ainda.</p>';
-    document.getElementById('coordsDisplay').textContent = '-';
-    document.getElementById('origemDisplay').textContent = '-';
-    document.getElementById('aiSuggestion').style.display = 'none';
-    if (marcadorAtual) { map.removeLayer(marcadorAtual); marcadorAtual = null; }
-
-    alert(`Área "${nome}" criada!`);
+        sessionStorage.setItem('areaAtualId', data.id);
+        areaAtualId = data.id;
+        document.getElementById('areaLabel').textContent = `Área: ${data.nome}`;
+        showToast('Área criada', data.nome, 'success', 2500);
+        await carregarCadastrados();
+    } catch (err) {
+        console.error(err);
+        showToast('Erro ao criar área', err.message, 'error');
+    }
 });
 
 // ============================================
-// EXPORTAR / LIMPAR
+// EXPORTAR CSV
 // ============================================
 document.getElementById('exportBtn').addEventListener('click', () => {
-    if (cadastrados.length === 0) { alert('Nenhum endereço cadastrado.'); return; }
-    const headers = ['Rua','Número','Tipo Complemento','Complemento','Bairro','Cidade','Estado','CEP','País','Coordenadas','Fonte'];
-    const rows = cadastrados.map(c => [c.rua, c.numero, c.tipoComplemento, c.complemento, c.bairro, c.cidade, c.estado, c.cep, c.pais, c.coords, c.fonte]);
-    const csv = [headers, ...rows].map(row => row.map(v => `"${String(v || '').replace(/"/g, '""')}"`).join(';')).join('\n');
-    const blob = new Blob(['\ufeff' + csv], { type: 'text/csv;charset=utf-8;' });
-    const link = document.createElement('a');
-    link.href = URL.createObjectURL(blob);
-    link.download = `enderecos_${new Date().toISOString().slice(0,10)}.csv`;
-    link.click();
-});
+    if (cadastrados.length === 0) {
+        showToast('Nada para exportar', 'Cadastre ao menos um endereço.', 'warning');
+        return;
+    }
 
-document.getElementById('clearBtn').addEventListener('click', async () => {
-    if (!confirm('Apagar TODOS os endereços cadastrados desta área?')) return;
-    if (!usuarioAtual) return;
-    let query = supabase.from('enderecos').delete().eq('user_id', usuarioAtual.id);
-    if (areaAtualId) query = query.eq('area_id', areaAtualId);
-    const { error } = await query;
-    if (error) { alert('Erro ao limpar: ' + error.message); return; }
-    await carregarCadastrados();
+    const headers = ['Rua', 'Número', 'Tipo Complemento', 'Complemento', 'Bairro', 'Cidade', 'Estado', 'CEP', 'País', 'Latitude', 'Longitude', 'Fonte'];
+    const linhas = cadastrados.map(r => [
+        r.rua, r.numero, r.tipo_complemento, r.complemento, r.bairro,
+        r.cidade, r.estado, r.cep, r.pais, r.latitude, r.longitude, r.fonte
+    ]);
+
+    const csvEscape = (v) => {
+        if (v == null) return '';
+        const s = String(v).replace(/"/g, '""');
+        return /[",;\n]/.test(s) ? `"${s}"` : s;
+    };
+
+    const csv = [headers, ...linhas].map(l => l.map(csvEscape).join(';')).join('\n');
+    const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `enderecos_${areaAtualId || 'area'}_${new Date().toISOString().slice(0, 10)}.csv`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+
+    showToast('Exportado', `${cadastrados.length} registro(s) em CSV.`, 'success', 2500);
 });
 
 // ============================================
-// UPLOAD DE ROTEIRO (XML dos Correios + CSV)
+// LIMPAR TUDO
+// ============================================
+document.getElementById('clearBtn').addEventListener('click', async () => {
+    if (!areaAtualId) return;
+    if (!confirm('Tem certeza que deseja apagar TODOS os endereços desta área?')) return;
+
+    try {
+        const { error } = await supabase.from('enderecos').delete().eq('area_id', areaAtualId);
+        if (error) throw error;
+
+        marcadoresSalvos.forEach(m => map.removeLayer(m));
+        marcadoresSalvos = [];
+        cadastrados = [];
+
+        showToast('Limpo', 'Todos os endereços da área foram removidos.', 'success', 2500);
+        await carregarCadastrados();
+    } catch (err) {
+        console.error(err);
+        showToast('Erro ao limpar', err.message, 'error');
+    }
+});
+
+// ============================================
+// UPLOAD DE ROTEIRO
 // ============================================
 document.getElementById('uploadBtn').addEventListener('click', async () => {
     const fileInput = document.getElementById('roteiroFile');
@@ -690,162 +884,177 @@ document.getElementById('uploadBtn').addEventListener('click', async () => {
     const file = fileInput.files[0];
 
     if (!file) {
-        status.textContent = 'Selecione um arquivo antes de importar.';
-        status.style.color = '#c62828';
+        showToast('Nenhum arquivo', 'Selecione um arquivo .xml ou .csv.', 'warning');
         return;
     }
 
-    status.textContent = 'Lendo arquivo...';
-    status.style.color = '#555';
+    status.textContent = 'Processando arquivo...';
 
-    const reader = new FileReader();
-    reader.onload = async (e) => {
-        const texto = e.target.result;
+    try {
+        const texto = await file.text();
         let registros = [];
 
-        if (file.name.toLowerCase().endsWith('.xml')) {
-            // Parser XML dos Correios
-            try {
-                const parser = new DOMParser();
-                const xml = parser.parseFromString(texto, 'text/xml');
-                const nodes = xml.getElementsByTagName('roteiro');
-
-                for (let i = 0; i < nodes.length; i++) {
-                    const n = nodes[i];
-                    const get = (tag) => {
-                        const el = n.getElementsByTagName(tag)[0];
-                        return el ? el.textContent.trim() : '';
-                    };
-                    const tipo = get('tipo_lograd');
-                    const nome = get('nome_lograd');
-                    const titulo = get('titulo');
-                    const tituloAbrev = get('titulo_abrev');
-
-                    // Monta rua no padrão: "RUA NOME" ou "RUA TITULO NOME"
-                    const partesRua = [tipo, titulo, nome].filter(Boolean);
-                    const rua = partesRua.join(' ').toUpperCase();
-
-                    registros.push({
-                        user_id: usuarioAtual.id,
-                        area_id: areaAtualId,
-                        rua: rua,
-                        numero: '',
-                        bairro: get('bairro'),
-                        cidade: get('municipio'),
-                        estado: get('uf_abrev') || get('uf'),
-                        cep: get('cep'),
-                        pais: 'Brasil',
-                        complemento: '',
-                        tipo_complemento: '',
-                        lat: null,
-                        lng: null,
-                        fonte: 'Roteiro Correios'
-                    });
-                }
-
-                if (registros.length === 0) {
-                    status.textContent = 'Nenhum <roteiro> encontrado no XML.';
-                    status.style.color = '#c62828';
-                    return;
-                }
-            } catch (err) {
-                console.error(err);
-                status.textContent = 'Erro ao processar XML: ' + err.message;
-                status.style.color = '#c62828';
-                return;
-            }
+        if (file.name.toLowerCase().endsWith('.csv')) {
+            registros = parseCSV(texto);
+        } else if (file.name.toLowerCase().endsWith('.xml')) {
+            registros = parseXMLRoteiro(texto);
         } else {
-            // CSV simples
-            const linhas = texto.split(/\r?\n/).filter(l => l.trim() !== '');
-            if (linhas.length < 2) {
-                status.textContent = 'CSV vazio ou inválido.';
-                status.style.color = '#c62828';
-                return;
-            }
-            const sep = linhas[0].includes(';') ? ';' : ',';
-            const headers = linhas[0].split(sep).map(h => h.trim().toLowerCase());
-            const idx = {
-                rua: headers.findIndex(h => h.includes('rua') || h.includes('logradouro')),
-                numero: headers.findIndex(h => h.includes('numero') || h.includes('nº') || h === 'num'),
-                bairro: headers.findIndex(h => h.includes('bairro')),
-                cidade: headers.findIndex(h => h.includes('cidade') || h.includes('municipio')),
-                estado: headers.findIndex(h => h.includes('estado') || h === 'uf'),
-                cep: headers.findIndex(h => h.includes('cep')),
-                complemento: headers.findIndex(h => h.includes('complemento')),
-                tipo: headers.findIndex(h => h.includes('tipo')),
-                lat: headers.findIndex(h => h.includes('lat')),
-                lng: headers.findIndex(h => h.includes('lng') || h.includes('lon'))
-            };
-
-            for (let i = 1; i < linhas.length; i++) {
-                const cols = linhas[i].split(sep).map(c => c.trim().replace(/^"|"$/g, ''));
-                const reg = {
-                    user_id: usuarioAtual.id,
-                    area_id: areaAtualId,
-                    rua: idx.rua >= 0 ? cols[idx.rua] : '',
-                    numero: idx.numero >= 0 ? cols[idx.numero] : '',
-                    bairro: idx.bairro >= 0 ? cols[idx.bairro] : '',
-                    cidade: idx.cidade >= 0 ? cols[idx.cidade] : '',
-                    estado: idx.estado >= 0 ? cols[idx.estado] : '',
-                    cep: idx.cep >= 0 ? cols[idx.cep] : '',
-                    complemento: idx.complemento >= 0 ? cols[idx.complemento] : '',
-                    tipo_complemento: idx.tipo >= 0 ? cols[idx.tipo] : '',
-                    lat: idx.lat >= 0 ? parseFloat(cols[idx.lat]) || null : null,
-                    lng: idx.lng >= 0 ? parseFloat(cols[idx.lng]) || null : null,
-                    fonte: 'Roteiro Importado'
-                };
-                if (reg.rua || reg.numero) registros.push(reg);
-            }
-
-            if (registros.length === 0) {
-                status.textContent = 'Nenhum registro válido encontrado no CSV.';
-                status.style.color = '#c62828';
-                return;
-            }
+            throw new Error('Formato não suportado. Use .csv ou .xml');
         }
 
-        status.textContent = `Importando ${registros.length} registros...`;
-        status.style.color = '#555';
-
-        // Insere em lotes de 500 para não estourar payload
-        const LOTE = 500;
-        let totalInserido = 0;
-        for (let i = 0; i < registros.length; i += LOTE) {
-            const lote = registros.slice(i, i + LOTE);
-            const { error } = await supabase.from('enderecos').insert(lote);
-            if (error) {
-                status.textContent = `Erro no lote ${i/LOTE + 1}: ${error.message}`;
-                status.style.color = '#c62828';
-                return;
-            }
-            totalInserido += lote.length;
+        if (registros.length === 0) {
+            status.textContent = 'Nenhum registro válido encontrado.';
+            showToast('Sem registros', 'O arquivo não continha dados válidos.', 'warning');
+            return;
         }
 
-        status.textContent = `${totalInserido} registros importados com sucesso.`;
-        status.style.color = '#2e7d32';
+        // Insere em lote
+        const payload = registros.map(r => ({
+            area_id: areaAtualId,
+            rua: r.rua || '',
+            numero: r.numero || '',
+            tipo_complemento: r.tipo_complemento || '',
+            complemento: r.complemento || '',
+            bairro: r.bairro || '',
+            cidade: r.cidade || '',
+            estado: r.estado || '',
+            cep: r.cep || '',
+            pais: r.pais || 'Brasil',
+            latitude: r.latitude != null ? r.latitude : null,
+            longitude: r.longitude != null ? r.longitude : null,
+            fonte: r.fonte || 'Roteiro',
+            usuario_id: usuarioAtual ? usuarioAtual.id : null
+        }));
+
+        const { error } = await supabase.from('enderecos').insert(payload);
+        if (error) throw error;
+
+        status.textContent = `${registros.length} registro(s) importado(s) com sucesso.`;
+        showToast('Roteiro importado', `${registros.length} registro(s).`, 'success', 3000);
+
         fileInput.value = '';
         await carregarCadastrados();
-    };
-    reader.readAsText(file, 'UTF-8');
+    } catch (err) {
+        console.error(err);
+        status.textContent = `Erro: ${err.message}`;
+        showToast('Erro na importação', err.message, 'error');
+    }
 });
 
-// Download de modelo CSV
+// ============================================
+// PARSERS
+// ============================================
+function parseCSV(texto) {
+    const linhas = texto.split(/\r?\n/).filter(l => l.trim());
+    if (linhas.length < 2) return [];
+
+    const sep = linhas[0].includes(';') ? ';' : ',';
+    const headers = linhas[0].split(sep).map(h => h.trim().toLowerCase().replace(/^"|"$/g, ''));
+
+    const idx = (nome) => headers.indexOf(nome);
+
+    return linhas.slice(1).map(linha => {
+        const cols = linha.split(sep).map(c => c.trim().replace(/^"|"$/g, ''));
+        const get = (campo) => {
+            const i = idx(campo);
+            return i >= 0 ? cols[i] : '';
+        };
+
+        const lat = parseFloat(get('latitude'));
+        const lng = parseFloat(get('longitude'));
+
+        return {
+            rua: get('rua') || get('logradouro'),
+            numero: get('numero') || get('número'),
+            tipo_complemento: get('tipo_complemento') || get('tipo'),
+            complemento: get('complemento'),
+            bairro: get('bairro'),
+            cidade: get('cidade') || get('localidade'),
+            estado: get('estado') || get('uf'),
+            cep: get('cep'),
+            pais: get('pais') || get('país') || 'Brasil',
+            latitude: isNaN(lat) ? null : lat,
+            longitude: isNaN(lng) ? null : lng,
+            fonte: get('fonte') || 'Roteiro'
+        };
+    }).filter(r => r.rua || r.cep);
+}
+
+function parseXMLRoteiro(texto) {
+    const parser = new DOMParser();
+    const xml = parser.parseFromString(texto, 'text/xml');
+    const registros = [];
+
+    // Tenta vários formatos comuns de roteiro
+    const nodes = xml.querySelectorAll('endereco, address, registro, item, linha');
+    nodes.forEach(node => {
+        const get = (tag) => {
+            const el = node.querySelector(tag);
+            return el ? el.textContent.trim() : '';
+        };
+        const lat = parseFloat(get('latitude') || get('lat'));
+        const lng = parseFloat(get('longitude') || get('lng') || get('lon'));
+
+        registros.push({
+            rua: get('logradouro') || get('rua') || get('street'),
+            numero: get('numero') || get('número') || get('number'),
+            tipo_complemento: get('tipo_complemento') || get('tipo'),
+            complemento: get('complemento'),
+            bairro: get('bairro') || get('neighborhood'),
+            cidade: get('cidade') || get('localidade') || get('city'),
+            estado: get('uf') || get('estado') || get('state'),
+            cep: get('cep') || get('postcode'),
+            pais: get('pais') || get('país') || 'Brasil',
+            latitude: isNaN(lat) ? null : lat,
+            longitude: isNaN(lng) ? null : lng,
+            fonte: 'Roteiro XML'
+        });
+    });
+
+    return registros.filter(r => r.rua || r.cep);
+}
+
+// ============================================
+// MODELO CSV
+// ============================================
 document.getElementById('downloadModeloBtn').addEventListener('click', () => {
-    const headers = ['Rua','Numero','Bairro','Cidade','Estado','CEP','Tipo','Complemento','Lat','Lng'];
-    const exemplo = ['Rua Martins Lage','98','Centro','Rio de Janeiro','RJ','20000-000','Casa','3','-22.90200282','-43.27065822'];
-    const csv = [headers.join(';'), exemplo.join(';')].join('\n');
-    const blob = new Blob(['\ufeff' + csv], { type: 'text/csv;charset=utf-8;' });
-    const link = document.createElement('a');
-    link.href = URL.createObjectURL(blob);
-    link.download = 'modelo_roteiro.csv';
-    link.click();
+    const modelo = [
+        'rua;numero;tipo_complemento;complemento;bairro;cidade;estado;cep;latitude;longitude;fonte',
+        'Rua Exemplo;123;Casa;A;Centro;Rio de Janeiro;RJ;20000-000;-22.90200282;-43.27065822;Modelo'
+    ].join('\n');
+
+    const blob = new Blob(['\uFEFF' + modelo], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'modelo_roteiro.csv';
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+
+    showToast('Modelo baixado', 'Preencha e importe novamente.', 'success', 2500);
 });
 
 // ============================================
 // UTILITÁRIOS
 // ============================================
 function escapeHtml(str) {
-    return String(str).replace(/[&<>"']/g, m => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[m]);
+    if (str == null) return '';
+    return String(str)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
 }
 
-iniciar();
+// ============================================
+// INICIALIZAÇÃO
+// ============================================
+document.addEventListener('DOMContentLoaded', () => {
+    iniciar().catch(err => {
+        console.error('Erro na inicialização:', err);
+        showToast('Erro ao iniciar', err.message, 'error');
+    });
+});

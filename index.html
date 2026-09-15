@@ -5,100 +5,122 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Cadastro de Endereços</title>
 
-    <!-- Redireciona para login se não estiver logado (executa ANTES do body) -->
+    <!-- Aplica o tema ANTES de renderizar (evita flash) -->
     <script>
         (function () {
-            if (!sessionStorage.getItem('usuarioLogado')) {
-                window.location.replace('login.html');
-            }
+            const saved = localStorage.getItem('theme');
+            const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+            const theme = saved || (prefersDark ? 'dark' : 'light');
+            document.documentElement.setAttribute('data-theme', theme);
         })();
     </script>
+
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
 
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
     <link rel="stylesheet" href="style.css">
 </head>
 <body>
-    <header class="sticky-header">
+    <a href="#main-content" class="skip-link">Pular para o conteúdo principal</a>
+
+    <header class="sticky-header" role="banner">
         <h1>Cadastro de Endereços</h1>
         <div class="header-user">
-            <span id="userLabel">-</span>
-            <button id="logoutBtn" class="btn-logout">Sair</button>
+            <span id="userLabel" aria-live="polite">-</span>
+            <button id="themeToggle" class="theme-toggle" type="button" title="Alternar tema" aria-label="Alternar entre modo claro e escuro">
+                <span aria-hidden="true">🌙</span>
+            </button>
+            <button id="logoutBtn" class="btn-logout" type="button">Sair</button>
         </div>
     </header>
 
-    <nav class="side-nav" id="sideNav">
-        <button data-goto="panel1" title="1. Buscar Localização">1</button>
-        <button data-goto="panel2" title="2. Mapa">2</button>
-        <button data-goto="resultsPanel" title="3. Endereços Encontrados">3</button>
-        <button data-goto="formPanel" title="4. Detalhes do Imóvel">4</button>
-        <button data-goto="cadastradosPanel" title="5. Endereços Cadastrados">5</button>
-        <button data-goto="uploadPanel" title="6. Carregar Roteiro">6</button>
+    <nav class="side-nav" id="sideNav" aria-label="Navegação rápida entre seções">
+        <button data-goto="panel1" title="1. Buscar Localização" type="button">1</button>
+        <button data-goto="panel2" title="2. Mapa" type="button">2</button>
+        <button data-goto="resultsPanel" title="3. Endereços Encontrados" type="button">3</button>
+        <button data-goto="formPanel" title="4. Detalhes do Imóvel" type="button">4</button>
+        <button data-goto="cadastradosPanel" title="5. Endereços Cadastrados" type="button">5</button>
+        <button data-goto="uploadPanel" title="6. Carregar Roteiro" type="button">6</button>
     </nav>
 
-    <div class="container">
+    <main class="container" id="main-content" role="main">
         <div class="top-action">
-            <button id="novaAreaBtn" class="btn-nova-area">Cadastrar nova área</button>
+            <button id="novaAreaBtn" class="btn-nova-area" type="button">Cadastrar nova área</button>
             <span id="areaLabel" class="area-label"></span>
         </div>
 
         <!-- 1. Busca -->
-        <div class="panel" id="panel1">
-            <h2><span>1. Buscar Localização</span><button class="toggle-btn collapsed" data-target="panel1-body">&#9660;</button></h2>
+        <section class="panel" id="panel1" aria-labelledby="panel1-title">
+            <h2 id="panel1-title">
+                <span>1. Buscar Localização</span>
+                <button class="toggle-btn collapsed" data-target="panel1-body" type="button" aria-expanded="false" aria-controls="panel1-body" aria-label="Expandir ou recolher seção">&#9660;</button>
+            </h2>
             <div class="panel-body collapsed" id="panel1-body">
                 <div class="search-box">
                     <div class="search-wrapper">
-                        <input type="text" id="searchInput" placeholder="Digite um endereço ou CEP..." autocomplete="off">
-                        <div id="suggestions" class="suggestions"></div>
+                        <input type="text" id="searchInput" placeholder="Digite um endereço ou CEP..." autocomplete="off" aria-label="Buscar endereço ou CEP">
+                        <div id="suggestions" class="suggestions" role="listbox" aria-label="Sugestões de endereço"></div>
                     </div>
-                    <button id="searchBtn">Buscar</button>
+                    <button id="searchBtn" type="button">Buscar</button>
                 </div>
                 <p class="hint">Clique com o <strong>botão direito</strong> no mapa para marcar um ponto</p>
                 <div class="engine-select">
                     <label>Motor de busca:
-                        <select id="engineSelect">
+                        <select id="engineSelect" aria-label="Selecione o motor de busca">
                             <option value="osm">OSM (OpenStreetMap)</option>
                             <option value="netwin">Netwin (catálogo)</option>
                         </select>
                     </label>
                 </div>
             </div>
-        </div>
+        </section>
 
         <!-- 2. Mapa -->
-        <div class="panel" id="panel2">
-            <h2><span>2. Mapa</span><button class="toggle-btn collapsed" data-target="panel2-body">&#9660;</button></h2>
+        <section class="panel" id="panel2" aria-labelledby="panel2-title">
+            <h2 id="panel2-title">
+                <span>2. Mapa</span>
+                <button class="toggle-btn collapsed" data-target="panel2-body" type="button" aria-expanded="false" aria-controls="panel2-body" aria-label="Expandir ou recolher seção">&#9660;</button>
+            </h2>
             <div class="panel-body collapsed" id="panel2-body">
                 <p class="hint"><strong>Ctrl + B</strong> trava/destrava o zoom. O mapa já inicia com o zoom <strong>travado</strong>.</p>
-                <div id="map"></div>
+                <div id="map" role="application" aria-label="Mapa interativo"></div>
             </div>
-        </div>
+        </section>
 
         <!-- 3. Endereços Encontrados -->
-        <div class="panel" id="resultsPanel">
-            <h2><span>3. Endereços Encontrados</span><button class="toggle-btn collapsed" data-target="resultsBody">&#9660;</button></h2>
+        <section class="panel" id="resultsPanel" aria-labelledby="resultsPanel-title">
+            <h2 id="resultsPanel-title">
+                <span>3. Endereços Encontrados</span>
+                <button class="toggle-btn collapsed" data-target="resultsBody" type="button" aria-expanded="false" aria-controls="resultsBody" aria-label="Expandir ou recolher seção">&#9660;</button>
+            </h2>
             <div class="panel-body collapsed" id="resultsBody">
                 <p class="coords">Coordenadas: <span id="coordsDisplay">-</span></p>
                 <p class="origem">Origem: <span id="origemDisplay">-</span></p>
-                <div id="aiSuggestion" class="ai-suggestion" style="display:none;"></div>
-                <div id="enderecosList">
-                    <p style="color:#999; font-style:italic;">Nenhum endereço consultado ainda.</p>
+                <div id="aiSuggestion" class="ai-suggestion" style="display:none;" role="status" aria-live="polite"></div>
+                <div id="enderecosList" role="list">
+                    <p class="empty-state">Nenhum endereço consultado ainda.</p>
                 </div>
             </div>
-        </div>
+        </section>
 
         <!-- 4. Detalhes do Imóvel -->
-        <div class="panel" id="formPanel">
-            <h2><span>4. Detalhes do Imóvel</span><button class="toggle-btn collapsed" data-target="formBody">&#9660;</button></h2>
+        <section class="panel" id="formPanel" aria-labelledby="formPanel-title">
+            <h2 id="formPanel-title">
+                <span>4. Detalhes do Imóvel</span>
+                <button class="toggle-btn collapsed" data-target="formBody" type="button" aria-expanded="false" aria-controls="formBody" aria-label="Expandir ou recolher seção">&#9660;</button>
+            </h2>
             <div class="panel-body collapsed" id="formBody">
                 <div class="form-grid">
                     <label>Fonte dos dados:
-                        <select id="fonteSelect"></select>
+                        <select id="fonteSelect" aria-label="Fonte dos dados do endereço"></select>
                     </label>
                     <label>Número:
-                        <input type="text" id="numeroInput" placeholder="Ex: 98">
+                        <input type="text" id="numeroInput" placeholder="Ex: 98" inputmode="numeric" aria-label="Número do imóvel">
                     </label>
                     <label>Tipo do Complemento:
-                        <select id="tipoComplemento">
+                        <select id="tipoComplemento" aria-label="Tipo do complemento">
                             <option value="">-- Selecione --</option>
                             <option>Casa</option>
                             <option>Apartamento</option>
@@ -110,55 +132,65 @@
                         </select>
                     </label>
                     <label>Complemento:
-                        <input type="text" id="complementoInput" placeholder="Ex: 3">
+                        <input type="text" id="complementoInput" placeholder="Ex: 3" aria-label="Complemento do imóvel">
                     </label>
                 </div>
-                <button id="addBtn" class="btn-primary">Adicionar à Lista</button>
+                <button id="addBtn" class="btn-primary" type="button">Adicionar à Lista</button>
             </div>
-        </div>
+        </section>
 
         <!-- 5. Cadastrados -->
-        <div class="panel" id="cadastradosPanel" style="display:none;">
-            <h2><span>5. Endereços Cadastrados</span><button class="toggle-btn collapsed" data-target="cadastradosBody">&#9660;</button></h2>
+        <section class="panel" id="cadastradosPanel" style="display:none;" aria-labelledby="cadastradosPanel-title">
+            <h2 id="cadastradosPanel-title">
+                <span>5. Endereços Cadastrados</span>
+                <button class="toggle-btn collapsed" data-target="cadastradosBody" type="button" aria-expanded="false" aria-controls="cadastradosBody" aria-label="Expandir ou recolher seção">&#9660;</button>
+            </h2>
             <div class="panel-body collapsed" id="cadastradosBody">
-                <table id="cadastradosTable">
-                    <thead>
-                        <tr>
-                            <th>Rua</th><th>Nº</th><th>Tipo</th><th>Compl.</th>
-                            <th>Bairro</th><th>Cidade</th><th>CEP</th><th>Coords</th><th>Fonte</th><th>Ações</th>
-                        </tr>
-                    </thead>
-                    <tbody></tbody>
-                </table>
+                <div class="table-wrapper">
+                    <table id="cadastradosTable">
+                        <thead>
+                            <tr>
+                                <th>Rua</th><th>Nº</th><th>Tipo</th><th>Compl.</th>
+                                <th>Bairro</th><th>Cidade</th><th>CEP</th><th>Coords</th><th>Fonte</th><th>Ações</th>
+                            </tr>
+                        </thead>
+                        <tbody></tbody>
+                    </table>
+                </div>
                 <div class="actions">
-                    <button id="exportBtn" class="btn-success">Exportar Planilha (CSV)</button>
-                    <button id="clearBtn" class="btn-danger">Limpar Tudo</button>
+                    <button id="exportBtn" class="btn-success" type="button">Exportar Planilha (CSV)</button>
+                    <button id="clearBtn" class="btn-danger" type="button">Limpar Tudo</button>
                 </div>
             </div>
-        </div>
+        </section>
 
         <!-- 6. Upload de Roteiro -->
-        <div class="panel" id="uploadPanel">
-            <h2><span>6. Carregar Roteiro</span><button class="toggle-btn collapsed" data-target="uploadBody">&#9660;</button></h2>
+        <section class="panel" id="uploadPanel" aria-labelledby="uploadPanel-title">
+            <h2 id="uploadPanel-title">
+                <span>6. Carregar Roteiro</span>
+                <button class="toggle-btn collapsed" data-target="uploadBody" type="button" aria-expanded="false" aria-controls="uploadBody" aria-label="Expandir ou recolher seção">&#9660;</button>
+            </h2>
             <div class="panel-body collapsed" id="uploadBody">
                 <p class="hint">Selecione o arquivo <strong>roteiro.xml</strong> (padrão dos Correios) ou um <strong>.csv</strong>. O sistema importa automaticamente para a base.</p>
                 <div class="form-grid">
                     <label>Arquivo do roteiro:
-                        <input type="file" id="roteiroFile" accept=".xml,.csv,.txt">
+                        <input type="file" id="roteiroFile" accept=".xml,.csv,.txt" aria-label="Selecionar arquivo de roteiro">
                     </label>
                 </div>
                 <div class="actions">
-                    <button id="uploadBtn" class="btn-primary">Importar Roteiro</button>
-                    <button id="downloadModeloBtn" class="btn-success">Baixar Modelo CSV</button>
+                    <button id="uploadBtn" class="btn-primary" type="button">Importar Roteiro</button>
+                    <button id="downloadModeloBtn" class="btn-success" type="button">Baixar Modelo CSV</button>
                 </div>
-                <div id="uploadStatus" style="margin-top:15px; font-size:0.9rem; color:#555;"></div>
+                <div id="uploadStatus" style="margin-top:15px; font-size:0.9rem; color:var(--text-secondary);" role="status" aria-live="polite"></div>
             </div>
-        </div>
-    </div>
+        </section>
+    </main>
 
-    <footer class="site-footer">
-        <p>&copy; 2026 Nelson Martins. Todos os direitos reservados. Desenvolvido por <strong>Nelson Martins</strong>.</p>
+    <footer class="site-footer" role="contentinfo">
+        <p>&copy; 2026 <strong>Nelson Martins</strong>. Todos os direitos reservados. Desenvolvido por <strong>Nelson Martins</strong>.</p>
     </footer>
+
+    <div class="toast-container" id="toastContainer" aria-live="polite" aria-atomic="true"></div>
 
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
