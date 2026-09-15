@@ -61,16 +61,57 @@ function showToast(titulo, mensagem = '', tipo = 'info', duracao = 4000) {
 }
 
 // ============================================
+// ÁREA PADRÃO — garante que existe uma área
+// ============================================
+async function garantirAreaPadrao() {
+    let id = sessionStorage.getItem('areaAtualId');
+    if (id) { areaAtualId = id; return id; }
+
+    try {
+        const { data: existentes, error: errBusca } = await supabaseClient
+            .from('areas')
+            .select('id, nome')
+            .eq('nome', 'Geral')
+            .limit(1);
+
+        if (errBusca) {
+            console.warn('[ÁREA PADRÃO] erro ao buscar:', errBusca);
+        }
+
+        if (existentes && existentes.length > 0) {
+            id = existentes[0].id;
+            sessionStorage.setItem('areaAtualId', id);
+            areaAtualId = id;
+            return id;
+        }
+
+        const { data, error } = await supabaseClient
+            .from('areas')
+            .insert([{ nome: 'Geral', usuario_id: usuarioAtual ? usuarioAtual.id : null }])
+            .select().single();
+
+        if (error) throw error;
+
+        id = data.id;
+        sessionStorage.setItem('areaAtualId', id);
+        areaAtualId = id;
+        return id;
+    } catch (err) {
+        console.error('[ÁREA PADRÃO] Erro:', err);
+        showToast('Aviso', 'Não foi possível criar a área padrão. Verifique as policies no Supabase.', 'warning', 6000);
+        return null;
+    }
+}
+
+// ============================================
 // ESTADO GLOBAL
 // ============================================
 async function iniciar() {
     const { data: { user }, error: authError } = await supabaseClient.auth.getUser();
 
-    if (authError) {
-        console.error('[AUTH] erro ao obter usuário:', authError);
-    }
+    if (authError) console.error('[AUTH] erro:', authError);
     if (!user) {
-        console.warn('[AUTH] sem usuário autenticado — redirecionando para login');
+        console.warn('[AUTH] sem usuário autenticado — redirecionando');
         window.location.href = 'login.html';
         return;
     }
@@ -80,6 +121,7 @@ async function iniciar() {
     const nome = sessionStorage.getItem('usuarioNome') || sessionStorage.getItem('usuarioLogado') || '-';
     document.getElementById('userLabel').textContent = nome;
 
+    await garantirAreaPadrao();
     await carregarAreaAtual();
     await carregarCadastrados();
     setTimeout(() => map.invalidateSize(), 200);
@@ -116,12 +158,6 @@ const houseIcon = L.divIcon({ className: 'house-marker', html: houseSVG, iconSiz
 // TOGGLE PAINÉIS
 // ============================================
 document.querySelectorAll('.toggle-btn').forEach(btn => {
-    const target = document.getElementById(btn.dataset.target);
-    if (target && target.classList.contains('collapsed')) {
-        btn.classList.add('collapsed');
-        btn.setAttribute('aria-expanded', 'false');
-    }
-    btn.innerHTML = '&#9660;';
     btn.addEventListener('click', (e) => {
         e.stopPropagation();
         const t = document.getElementById(btn.dataset.target);
@@ -341,6 +377,8 @@ async function buscarSugestoes(query) {
 }
 
 async function buscarSugestoesNetwin(query, signal) {
+    try {
+        const url = `async function buscarSugestoesNetwin(query, signal) {
     try {
         const url = `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(query)}&addressdetails=1&limit=6&accept-language=pt-BR`;
         const res = await fetch(url, { signal });
@@ -725,20 +763,27 @@ document.getElementById('addBtn').addEventListener('click', async () => {
     const numero = document.getElementById('numeroInput').value.trim();
     if (!numero) { showToast('Número obrigatório', 'Informe o número do imóvel.', 'warning'); return; }
 
+    // Garante área (cria "Geral" se não existir)
+    if (!areaAtualId) {
+        await garantirAreaPadrao();
+    }
+    if (!areaAtualId) {
+        showToast('Sem área', 'Não foi possível criar a área padrão. Verifique o Supabase.', 'error', 6000);
+        return;
+    }
+
     const coordsTexto = document.getElementById('coordsDisplay').textContent;
     const [latStr, lngStr] = coordsTexto.split(',').map(s => s.trim());
     const latitude = !isNaN(parseFloat(latStr)) ? parseFloat(latStr) : (enderecoBaseSelecionado.latitude ?? null);
     const longitude = !isNaN(parseFloat(lngStr)) ? parseFloat(lngStr) : (enderecoBaseSelecionado.longitude ?? null);
 
-    // Lê os 3 complementos
     const comp1Tipo = document.getElementById('comp1Tipo').value;
     const comp1Valor = document.getElementById('comp1Valor').value.trim();
     const comp2Tipo = document.getElementById('comp2Tipo').value;
     const comp2Valor = document.getElementById('comp2Valor').value.trim();
-        const comp3Tipo = document.getElementById('comp3Tipo').value;
+    const comp3Tipo = document.getElementById('comp3Tipo').value;
     const comp3Valor = document.getElementById('comp3Valor').value.trim();
 
-    // Monta array de complementos (só os que têm tipo OU valor)
     const complementos = [];
     if (comp1Tipo || comp1Valor) complementos.push({ tipo: comp1Tipo, valor: comp1Valor });
     if (comp2Tipo || comp2Valor) complementos.push({ tipo: comp2Tipo, valor: comp2Valor });
@@ -746,7 +791,6 @@ document.getElementById('addBtn').addEventListener('click', async () => {
 
     const registro = {
         area_id: areaAtualId,
-        // Endereço base
         rua: enderecoBaseSelecionado.rua || '',
         numero: numero,
         tipo_complemento: complementos.map(c => c.tipo).filter(Boolean).join(' / '),
@@ -761,7 +805,6 @@ document.getElementById('addBtn').addEventListener('click', async () => {
         latitude,
         longitude,
         fonte: enderecoBaseSelecionado.fonte || '',
-        // Campos extras do roteiro
         tipo_lograd: enderecoBaseSelecionado.tipo_lograd || '',
         cod_bairro: enderecoBaseSelecionado.cod_bairro || '',
         cod_lograd: enderecoBaseSelecionado.cod_lograd || '',
@@ -769,38 +812,29 @@ document.getElementById('addBtn').addEventListener('click', async () => {
         id_localidade: enderecoBaseSelecionado.id_localidade || '',
         localidade: enderecoBaseSelecionado.localidade || '',
         localidade_abrev: enderecoBaseSelecionado.localidade_abrev || '',
-        // Observações
-        observacoes: document.getElementById('observacoes').value.trim(),
         usuario_id: usuarioAtual ? usuarioAtual.id : null
     };
 
     try {
-        if (!areaAtualId) {
-            showToast('Sem área', 'Cadastre uma área antes de salvar.', 'warning');
-            return;
-        }
-
         const { error } = await supabaseClient.from('enderecos').insert([registro]);
         if (error) throw error;
 
         showToast('Endereço adicionado', 'Registro salvo com sucesso.', 'success', 2500);
 
-        // Limpa SOMENTE os campos que NÃO estão marcados como "manter"
         const limpar = (id, manterId) => {
-            const manter = document.getElementById(manterId);
-            if (manter && manter.checked) return; // mantém preenchido
+            const manter = manterId ? document.getElementById(manterId) : null;
+            if (manter && manter.checked) return;
             const el = document.getElementById(id);
             if (el) el.value = '';
         };
 
-        limpar('numeroInput',      'numeroRecorrente');
-        limpar('comp1Tipo',        'comp1Recorrente');
-        limpar('comp1Valor',       'comp1Recorrente');
-        limpar('comp2Tipo',        'comp2Recorrente');
-        limpar('comp2Valor',       'comp2Recorrente');
-        limpar('comp3Tipo',        'comp3Recorrente');
-        limpar('comp3Valor',       'comp3Recorrente');
-        limpar('observacoes',      null); // observações sempre limpam
+        limpar('numeroInput', 'numeroRecorrente');
+        limpar('comp1Tipo',   'comp1Recorrente');
+        limpar('comp1Valor',  'comp1Recorrente');
+        limpar('comp2Tipo',   'comp2Recorrente');
+        limpar('comp2Valor',  'comp2Recorrente');
+        limpar('comp3Tipo',   'comp3Recorrente');
+        limpar('comp3Valor',  'comp3Recorrente');
 
         await carregarCadastrados();
     } catch (err) {
@@ -826,7 +860,6 @@ async function carregarCadastrados() {
         panel.style.display = 'block';
         cadastrados.forEach((r, idx) => {
             const tr = document.createElement('tr');
-            // Junta tipo + valor dos complementos em uma string legível
             const tipos = (r.tipo_complemento || '').split(' / ').filter(Boolean);
             const valores = (r.complemento || '').split(' / ').filter(Boolean);
             const complTexto = tipos.map((t, i) => `${t}: ${valores[i] || ''}`.trim()).join(' | ') || '—';
@@ -892,55 +925,37 @@ async function carregarCadastrados() {
 async function carregarAreaAtual() {
     areaAtualId = sessionStorage.getItem('areaAtualId');
     const label = document.getElementById('areaLabel');
-    if (!areaAtualId) { label.textContent = 'Nenhuma área selecionada'; return; }
+    if (!areaAtualId) { label.textContent = ''; return; }
     try {
         const { data, error } = await supabaseClient.from('areas').select('*').eq('id', areaAtualId).single();
         if (error) throw error;
         label.textContent = `Área: ${data.nome || data.descricao || areaAtualId}`;
     } catch (err) {
         console.error(err);
-        label.textContent = `Área: ${areaAtualId}`;
+        label.textContent = '';
     }
 }
 
+// ============================================
+// BOTÃO "LIMPAR LISTA" (substitui "Cadastrar nova área")
+// ============================================
 document.getElementById('novaAreaBtn').addEventListener('click', async () => {
-    const nome = prompt('Nome da nova área:');
-    if (!nome) return;
-
-    // Diagnóstico antes de tentar
-    const { data: { user }, error: authErr } = await supabaseClient.auth.getUser();
-    if (authErr || !user) {
-        console.error('[NOVA ÁREA] Sem usuário autenticado:', authErr);
-        showToast('Não autenticado', 'Faça login novamente. Se persistir, verifique as policies no Supabase.', 'error', 6000);
+    if (!areaAtualId) {
+        showToast('Nada para limpar', 'Não há endereços cadastrados.', 'info', 2000);
         return;
     }
-
+    if (!confirm('Apagar TODOS os endereços cadastrados? Esta ação não pode ser desfeita.')) return;
     try {
-        const { data, error } = await supabaseClient
-            .from('areas').insert([{ nome, usuario_id: user.id }])
-            .select().single();
-        if (error) {
-            console.error('[NOVA ÁREA] Erro do Supabase:', error);
-            // Mensagem mais amigável para RLS
-            if ((error.message || '').toLowerCase().includes('permission denied')) {
-                showToast(
-                    'Permissão negada',
-                    'A tabela "areas" está com RLS sem policy para usuários autenticados. Rode o SQL de policies no Supabase.',
-                    'error',
-                    8000
-                );
-                return;
-            }
-            throw error;
-        }
-        sessionStorage.setItem('areaAtualId', data.id);
-        areaAtualId = data.id;
-        document.getElementById('areaLabel').textContent = `Área: ${data.nome}`;
-        showToast('Área criada', data.nome, 'success', 2500);
+        const { error } = await supabaseClient.from('enderecos').delete().eq('area_id', areaAtualId);
+        if (error) throw error;
+        marcadoresSalvos.forEach(m => map.removeLayer(m));
+        marcadoresSalvos = [];
+        cadastrados = [];
+        showToast('Lista limpa', 'Todos os endereços foram removidos.', 'success', 2500);
         await carregarCadastrados();
     } catch (err) {
-        console.error('[NOVA ÁREA] Erro:', err);
-        showToast('Erro ao criar área', err.message, 'error');
+        console.error(err);
+        showToast('Erro ao limpar', err.message, 'error');
     }
 });
 
@@ -1049,7 +1064,6 @@ function gerarXMLEdificio(r, numero) {
         'Misto': 'MISTO'
     };
     const destinacao = destinacaoMap[r.finalidade] || 'RESIDENCIA';
-
     const numPisos = r.andar && !isNaN(parseInt(r.andar, 10)) ? String(parseInt(r.andar, 10)) : '1';
 
     return `<?xml version="1.0" encoding="UTF-8"?><edificio tipo="M" versao="7.9.2">
@@ -1080,7 +1094,7 @@ function gerarXMLEdificio(r, numero) {
     <nome>${xmlEscape(empresaNome)}</nome>
   </empresa>
   <data>${dataFormatada}</data>
-  <observacoes>${xmlEscape(r.observacoes || '')}</observacoes>
+  <observacoes></observacoes>
   <totalUCs>1</totalUCs>
   <ocupacao>EDIFICACAOCOMPLETA</ocupacao>
   <numPisos>${xmlEscape(numPisos)}</numPisos>
@@ -1090,7 +1104,7 @@ function gerarXMLEdificio(r, numero) {
 }
 
 // ============================================
-// LIMPAR TUDO
+// LIMPAR TUDO (botão dentro da seção 5)
 // ============================================
 document.getElementById('clearBtn').addEventListener('click', async () => {
     if (!areaAtualId) return;
@@ -1143,9 +1157,13 @@ document.getElementById('uploadBtn').addEventListener('click', async () => {
             return;
         }
 
+        // Garante área padrão se não existir
         if (!areaAtualId) {
-            status.textContent = 'Crie uma área antes de importar.';
-            showToast('Sem área', 'Clique em "Cadastrar nova área" primeiro.', 'warning');
+            await garantirAreaPadrao();
+        }
+        if (!areaAtualId) {
+            status.textContent = 'Não foi possível criar a área padrão.';
+            showToast('Sem área', 'Verifique as policies no Supabase.', 'error', 6000);
             return;
         }
 
@@ -1178,14 +1196,7 @@ document.getElementById('uploadBtn').addEventListener('click', async () => {
         }));
 
         const { error } = await supabaseClient.from('enderecos').insert(payload);
-        if (error) {
-            if ((error.message || '').toLowerCase().includes('permission denied')) {
-                status.textContent = 'Permissão negada. Verifique as policies no Supabase.';
-                showToast('Permissão negada', 'A tabela "enderecos" está sem policy. Rode o SQL de policies.', 'error', 8000);
-                return;
-            }
-            throw error;
-        }
+        if (error) throw error;
 
         status.textContent = `${registros.length} registro(s) importado(s).`;
         showToast('Roteiro importado', `${registros.length} registro(s).`, 'success', 3000);

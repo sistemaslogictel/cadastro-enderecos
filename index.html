@@ -46,7 +46,7 @@
 
     <main class="container" id="main-content" role="main">
         <div class="top-action">
-            <button id="novaAreaBtn" class="btn-nova-area" type="button">Cadastrar nova área</button>
+            <button id="novaAreaBtn" class="btn-nova-area" type="button">Limpar lista</button>
             <span id="areaLabel" class="area-label"></span>
         </div>
 
@@ -54,9 +54,9 @@
         <section class="panel" id="panel1" aria-labelledby="panel1-title">
             <h2 id="panel1-title">
                 <span>1. Buscar Localização</span>
-                <button class="toggle-btn collapsed" data-target="panel1-body" type="button" aria-expanded="false" aria-controls="panel1-body" aria-label="Expandir ou recolher seção">&#9660;</button>
+                <button class="toggle-btn" data-target="panel1-body" type="button" aria-expanded="true" aria-controls="panel1-body" aria-label="Expandir ou recolher seção">&#9660;</button>
             </h2>
-            <div class="panel-body collapsed" id="panel1-body">
+            <div class="panel-body" id="panel1-body">
                 <div class="search-box">
                     <div class="search-wrapper">
                         <input type="text" id="searchInput" placeholder="Digite um endereço ou CEP..." autocomplete="off" aria-label="Buscar endereço ou CEP">
@@ -80,9 +80,9 @@
         <section class="panel" id="panel2" aria-labelledby="panel2-title">
             <h2 id="panel2-title">
                 <span>2. Mapa</span>
-                <button class="toggle-btn collapsed" data-target="panel2-body" type="button" aria-expanded="false" aria-controls="panel2-body" aria-label="Expandir ou recolher seção">&#9660;</button>
+                <button class="toggle-btn" data-target="panel2-body" type="button" aria-expanded="true" aria-controls="panel2-body" aria-label="Expandir ou recolher seção">&#9660;</button>
             </h2>
-            <div class="panel-body collapsed" id="panel2-body">
+            <div class="panel-body" id="panel2-body">
                 <p class="hint"><strong>Ctrl + B</strong> trava/destrava o zoom. O mapa já inicia com o zoom <strong>travado</strong>.</p>
                 <div id="map" role="application" aria-label="Mapa interativo"></div>
             </div>
@@ -92,9 +92,9 @@
         <section class="panel" id="resultsPanel" aria-labelledby="resultsPanel-title">
             <h2 id="resultsPanel-title">
                 <span>3. Endereços Encontrados</span>
-                <button class="toggle-btn collapsed" data-target="resultsBody" type="button" aria-expanded="false" aria-controls="resultsBody" aria-label="Expandir ou recolher seção">&#9660;</button>
+                <button class="toggle-btn" data-target="resultsBody" type="button" aria-expanded="true" aria-controls="resultsBody" aria-label="Expandir ou recolher seção">&#9660;</button>
             </h2>
-            <div class="panel-body collapsed" id="resultsBody">
+            <div class="panel-body" id="resultsBody">
                 <p class="coords">Coordenadas: <span id="coordsDisplay">-</span></p>
                 <p class="origem">Origem: <span id="origemDisplay">-</span></p>
                 <div id="aiSuggestion" class="ai-suggestion" style="display:none;" role="status" aria-live="polite"></div>
@@ -148,7 +148,7 @@
                 </div>
 
                 <div id="enderecosList" role="list">
-                    <p class="empty-state">Nenhum endereço consultado ainda.</p>
+                    <p class="empty-state">Nenhum endereço consultado ainda. Busque um endereço acima ou cadastre um novo.</p>
                 </div>
             </div>
         </section>
@@ -157,11 +157,11 @@
         <section class="panel" id="formPanel" aria-labelledby="formPanel-title">
             <h2 id="formPanel-title">
                 <span>4. Detalhes do Imóvel</span>
-                <button class="toggle-btn collapsed" data-target="formBody" type="button" aria-expanded="false" aria-controls="formBody" aria-label="Expandir ou recolher seção">&#9660;</button>
+                <button class="toggle-btn" data-target="formBody" type="button" aria-expanded="true" aria-controls="formBody" aria-label="Expandir ou recolher seção">&#9660;</button>
             </h2>
-            <div class="panel-body collapsed" id="formBody">
+            <div class="panel-body" id="formBody">
                 <div class="form-section">
-                    <h3 class="form-subtitle">Endereço base (do roteiro)</h3>
+                    <h3 class="form-subtitle">Endereço base (do roteiro ou manual)</h3>
                     <div id="enderecoBaseInfo" class="endereco-base-info">
                         <p class="empty-state">Selecione uma fonte em "3. Endereços Encontrados".</p>
                     </div>
@@ -275,11 +275,6 @@
                     </div>
                 </div>
 
-                <div class="form-section">
-                    <h3 class="form-subtitle">Observações</h3>
-                    <textarea id="observacoes" placeholder="Anotações adicionais..." rows="2"></textarea>
-                </div>
-
                 <button id="addBtn" class="btn-primary btn-block" type="button">➕ Adicionar à Lista</button>
             </div>
         </section>
@@ -288,9 +283,9 @@
         <section class="panel" id="cadastradosPanel" style="display:none;" aria-labelledby="cadastradosPanel-title">
             <h2 id="cadastradosPanel-title">
                 <span>5. Endereços Cadastrados</span>
-                <button class="toggle-btn collapsed" data-target="cadastradosBody" type="button" aria-expanded="false" aria-controls="cadastradosBody" aria-label="Expandir ou recolher seção">&#9660;</button>
+                <button class="toggle-btn" data-target="cadastradosBody" type="button" aria-expanded="true" aria-controls="cadastradosBody" aria-label="Expandir ou recolher seção">&#9660;</button>
             </h2>
-            <div class="panel-body collapsed" id="cadastradosBody">
+            <div class="panel-body" id="cadastradosBody">
                 <div class="table-wrapper">
                     <table id="cadastradosTable">
                         <thead>
@@ -314,9 +309,9 @@
         <section class="panel" id="uploadPanel" aria-labelledby="uploadPanel-title">
             <h2 id="uploadPanel-title">
                 <span>6. Carregar Roteiro</span>
-                <button class="toggle-btn collapsed" data-target="uploadBody" type="button" aria-expanded="false" aria-controls="uploadBody" aria-label="Expandir ou recolher seção">&#9660;</button>
+                <button class="toggle-btn" data-target="uploadBody" type="button" aria-expanded="true" aria-controls="uploadBody" aria-label="Expandir ou recolher seção">&#9660;</button>
             </h2>
-            <div class="panel-body collapsed" id="uploadBody">
+            <div class="panel-body" id="uploadBody">
                 <p class="hint">Selecione o arquivo <strong>roteiro.xml</strong> (padrão dos Correios) ou um <strong>.csv</strong>. O sistema importa automaticamente para a base.</p>
                 <div class="form-grid">
                     <label>Arquivo do roteiro:
