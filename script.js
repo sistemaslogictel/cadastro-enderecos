@@ -103,7 +103,7 @@ let marcadoresSalvos = [];
 let enderecosEncontrados = [];
 let cadastrados = [];
 let areaAtualId = null;
-let enderecoBaseSelecionado = null; // NOVO: endereço escolhido na seção 3
+let enderecoBaseSelecionado = null;
 
 // ============================================
 // CASINHA SVG
@@ -379,6 +379,7 @@ function irParaLocal(lat, lng, nome, origem = 'busca') {
         origem === 'busca' ? 'Busca por texto/endereço' :
         origem === 'coordenadas' ? 'Coordenadas informadas' :
         origem === 'netwin' ? 'Netwin' :
+        origem === 'manual' ? 'Endereço manual' :
         'Clique no mapa (botão direito)';
     consultarFontes(lat, lng);
 }
@@ -573,7 +574,6 @@ function renderizarTabelaFontes(unicos, container) {
 // PREENCHER FORMULÁRIO
 // ============================================
 function preencherFormulario(r) {
-    // Salva o endereço base escolhido
     enderecoBaseSelecionado = {
         fonte: r.fonte,
         rua: r.rua || '',
@@ -583,7 +583,15 @@ function preencherFormulario(r) {
         estado: r.estado || '',
         cep: r.cep || '',
         pais: r.pais || 'Brasil',
-        bruto: r.bruto || ''
+        bruto: r.bruto || '',
+        // Campos extras do roteiro (se vierem)
+        cod_bairro: r.cod_bairro || '',
+        cod_lograd: r.cod_lograd || '',
+        id_roteiro: r.id_roteiro || '',
+        id_localidade: r.id_localidade || '',
+        localidade: r.localidade || '',
+        localidade_abrev: r.localidade_abrev || '',
+        tipo_lograd: r.tipo_lograd || ''
     };
 
     const fonteSelect = document.getElementById('fonteSelect');
@@ -595,18 +603,11 @@ function preencherFormulario(r) {
         fonteSelect.appendChild(option);
     }
     fonteSelect.value = r.fonte;
-    fonteSelect.dataset.rua = r.rua || '';
-    fonteSelect.dataset.bairro = r.bairro || '';
-    fonteSelect.dataset.cidade = r.cidade || '';
-    fonteSelect.dataset.estado = r.estado || '';
-    fonteSelect.dataset.cep = r.cep || '';
-    fonteSelect.dataset.pais = r.pais || '';
 
     if (r.numero && !document.getElementById('numeroInput').value) {
         document.getElementById('numeroInput').value = r.numero;
     }
 
-    // Mostra o endereço base no topo da seção 4
     const infoBox = document.getElementById('enderecoBaseInfo');
     if (infoBox) {
         const linha1 = [r.rua, r.numero].filter(Boolean).join(', ') || '—';
@@ -632,7 +633,7 @@ function preencherFormulario(r) {
 }
 
 // ============================================
-// ADICIONAR NOVO ENDEREÇO MANUAL
+// NOVO ENDEREÇO MANUAL
 // ============================================
 document.getElementById('btnNovoEnderecoManual').addEventListener('click', () => {
     const form = document.getElementById('novoEnderecoForm');
@@ -642,7 +643,6 @@ document.getElementById('btnCancelarNovoEndereco').addEventListener('click', () 
     document.getElementById('novoEnderecoForm').style.display = 'none';
 });
 
-// Auto-preenche via ViaCEP ao sair do campo CEP
 document.getElementById('novoCep').addEventListener('blur', async (e) => {
     const cep = e.target.value.replace(/\D/g, '');
     if (cep.length !== 8) return;
@@ -670,7 +670,6 @@ document.getElementById('btnSalvarNovoEndereco').addEventListener('click', async
     const cidade = document.getElementById('novoCidade').value.trim();
     const uf = document.getElementById('novoUf').value.trim().toUpperCase();
 
-    // Tenta geocodificar via Nominatim para ter coords
     let latitude = null, longitude = null;
     try {
         const q = encodeURIComponent(`${logradouro}, ${numero}, ${bairro}, ${cidade} - ${uf}, ${cep}`);
@@ -695,19 +694,17 @@ document.getElementById('btnSalvarNovoEndereco').addEventListener('click', async
         pais: 'Brasil',
         latitude,
         longitude,
-        bruto: `${tipo} ${logradouro}, ${numero}, ${bairro}, ${cidade} - ${uf}, ${formatarCEP(cep)}`
+        bruto: `${tipo} ${logradouro}, ${numero}, ${bairro}, ${cidade} - ${uf}, ${formatarCEP(cep)}`,
+        tipo_lograd: tipo
     };
 
-    // Adiciona à lista de fontes encontradas e re-renderiza
     enderecosEncontrados.push(novoRegistro);
     renderizarTabelaFontes(enderecosEncontrados, document.getElementById('enderecosList'));
 
-    // Se conseguiu coordenadas, marca no mapa e mostra
     if (latitude != null && longitude != null) {
         irParaLocal(latitude, longitude, novoRegistro.bruto, 'manual');
     }
 
-    // Limpa o form
     ['novoCep','novoLogradouro','novoNumero','novoComplemento','novoBairro','novoCidade','novoUf'].forEach(id => {
         document.getElementById(id).value = '';
     });
@@ -738,7 +735,6 @@ document.getElementById('addBtn').addEventListener('click', async () => {
 
     const registro = {
         area_id: areaAtualId,
-        // Endereço base
         rua: enderecoBaseSelecionado.rua || '',
         numero: numero,
         tipo_complemento: document.getElementById('tipoComplemento').value,
@@ -753,7 +749,13 @@ document.getElementById('addBtn').addEventListener('click', async () => {
         latitude,
         longitude,
         fonte: enderecoBaseSelecionado.fonte || '',
-        // Detalhes do imóvel
+        tipo_lograd: enderecoBaseSelecionado.tipo_lograd || '',
+        cod_bairro: enderecoBaseSelecionado.cod_bairro || '',
+        cod_lograd: enderecoBaseSelecionado.cod_lograd || '',
+        id_roteiro: enderecoBaseSelecionado.id_roteiro || '',
+        id_localidade: enderecoBaseSelecionado.id_localidade || '',
+        localidade: enderecoBaseSelecionado.localidade || '',
+        localidade_abrev: enderecoBaseSelecionado.localidade_abrev || '',
         tipo_imovel: tipoImovel,
         finalidade: document.getElementById('finalidade').value,
         area_terreno: parseFloat(document.getElementById('areaTerreno').value) || null,
@@ -762,24 +764,20 @@ document.getElementById('addBtn').addEventListener('click', async () => {
         suites: parseInt(document.getElementById('suites').value, 10) || null,
         banheiros: parseInt(document.getElementById('banheiros').value, 10) || null,
         vagas: parseInt(document.getElementById('vagas').value, 10) || null,
-        // Registral
         matricula: document.getElementById('matricula').value.trim(),
         inscricao_imobiliaria: document.getElementById('inscricaoImobiliaria').value.trim(),
         iptu: parseFloat(document.getElementById('iptu').value) || null,
         valor_avaliacao: parseFloat(document.getElementById('valorAvaliacao').value) || null,
         valor_mercado: parseFloat(document.getElementById('valorMercado').value) || null,
-        // Proprietário
         proprietario: document.getElementById('proprietario').value.trim(),
         cpf_cnpj_proprietario: document.getElementById('cpfCnpjProprietario').value.trim(),
         telefone_proprietario: document.getElementById('telefoneProprietario').value.trim(),
         email_proprietario: document.getElementById('emailProprietario').value.trim(),
-        // Observações
         observacoes: document.getElementById('observacoes').value.trim(),
         usuario_id: usuarioAtual ? usuarioAtual.id : null
     };
 
     try {
-        // Garante que a área existe
         if (!areaAtualId) {
             showToast('Sem área', 'Cadastre uma área antes de salvar.', 'warning');
             return;
@@ -790,7 +788,6 @@ document.getElementById('addBtn').addEventListener('click', async () => {
 
         showToast('Endereço adicionado', 'Registro salvo com sucesso.', 'success', 2500);
 
-        // Limpa campos de detalhes (mantém endereço base para adicionar outro imóvel no mesmo local)
         ['numeroInput','complementoInput','andarInput','tipoImovel','finalidade','areaTerreno',
          'areaConstruida','quartos','suites','banheiros','vagas','matricula','inscricaoImobiliaria',
          'iptu','valorAvaliacao','valorMercado','proprietario','cpfCnpjProprietario',
@@ -917,41 +914,166 @@ document.getElementById('novaAreaBtn').addEventListener('click', async () => {
 });
 
 // ============================================
-// EXPORTAR CSV
+// EXPORTAR — ZIP COM XMLs (formato edificio)
 // ============================================
-document.getElementById('exportBtn').addEventListener('click', () => {
-    if (cadastrados.length === 0) { showToast('Nada para exportar', 'Cadastre ao menos um endereço.', 'warning'); return; }
-    const headers = [
-        'Rua','Número','Tipo Complemento','Complemento','Andar','Bairro','Cidade','Estado','CEP','País',
-        'Latitude','Longitude','Fonte',
-        'Tipo Imóvel','Finalidade','Área Terreno','Área Construída','Quartos','Suítes','Banheiros','Vagas',
-        'Matrícula','Inscrição Imobiliária','IPTU','Valor Avaliação','Valor Mercado',
-        'Proprietário','CPF/CNPJ Proprietário','Telefone Proprietário','E-mail Proprietário',
-        'Observações'
-    ];
-    const linhas = cadastrados.map(r => [
-        r.rua, r.numero, r.tipo_complemento, r.complemento, r.andar, r.bairro, r.cidade, r.estado,
-        formatarCEP(r.cep || ''), r.pais, r.latitude, r.longitude, r.fonte,
-        r.tipo_imovel, r.finalidade, r.area_terreno, r.area_construida, r.quartos, r.suites, r.banheiros, r.vagas,
-        r.matricula, r.inscricao_imobiliaria, r.iptu, r.valor_avaliacao, r.valor_mercado,
-        r.proprietario, r.cpf_cnpj_proprietario, r.telefone_proprietario, r.email_proprietario,
-        r.observacoes
-    ]);
-    const csvEscape = (v) => {
-        if (v == null) return '';
-        const s = String(v).replace(/"/g, '""');
-        return /[",;\n]/.test(s) ? `"${s}"` : s;
-    };
-    const csv = [headers, ...linhas].map(l => l.map(csvEscape).join(';')).join('\n');
-    const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8;' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `enderecos_${areaAtualId || 'area'}_${new Date().toISOString().slice(0, 10)}.csv`;
-    document.body.appendChild(a); a.click(); document.body.removeChild(a);
-    URL.revokeObjectURL(url);
-    showToast('Exportado', `${cadastrados.length} registro(s) em CSV.`, 'success', 2500);
+document.getElementById('exportBtn').addEventListener('click', async () => {
+    if (cadastrados.length === 0) {
+        showToast('Nada para exportar', 'Cadastre ao menos um endereço.', 'warning');
+        return;
+    }
+
+    try {
+        if (typeof JSZip === 'undefined') {
+            throw new Error('JSZip não carregado. Adicione o script no index.html.');
+        }
+
+        const zip = new JSZip();
+
+        // Nome do ZIP: LOCALIDADE_AAAAMMDDHHMM.zip
+        const localidade = (cadastrados[0].localidade || cadastrados[0].cidade || 'localidade')
+            .normalize('NFD').replace(/[\u0300-\u036f]/g, '') // remove acentos
+            .replace(/\s+/g, '_')
+            .toUpperCase();
+        const agora = new Date();
+        const carimbo = `${agora.getFullYear()}${String(agora.getMonth()+1).padStart(2,'0')}${String(agora.getDate()).padStart(2,'0')}${String(agora.getHours()).padStart(2,'0')}${String(agora.getMinutes()).padStart(2,'0')}`;
+        const nomeZipBase = `${localidade}_${carimbo}`;
+
+        // Um XML por registro, dentro de moradiaN/moradiaN.xml
+        cadastrados.forEach((r, idx) => {
+            const numero = idx + 1;
+            const nomePasta = `moradia${numero}`;
+            const nomeArquivo = `moradia${numero}.xml`;
+            const xmlConteudo = gerarXMLEdificio(r, numero);
+            zip.folder(nomePasta).file(nomeArquivo, xmlConteudo);
+        });
+
+        const blob = await zip.generateAsync({ type: 'blob', compression: 'DEFLATE' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `${nomeZipBase}.zip`;
+        document.body.appendChild(a); a.click(); document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+
+        showToast('ZIP gerado', `${cadastrados.length} moradia(s) empacotada(s).`, 'success', 3000);
+    } catch (err) {
+        console.error(err);
+        showToast('Erro ao gerar ZIP', err.message, 'error');
+    }
 });
+
+// ============================================
+// GERAR XML NO FORMATO "edificio"
+// ============================================
+function gerarXMLEdificio(r, numero) {
+    const xmlEscape = (v) => {
+        if (v == null) return '';
+        return String(v)
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;')
+            .replace(/'/g, '&apos;');
+    };
+
+    // Data: YYYYMMDDHHMMSS
+    const agora = new Date();
+    const pad = (n) => String(n).padStart(2, '0');
+    const dataFormatada =
+        `${agora.getFullYear()}${pad(agora.getMonth()+1)}${pad(agora.getDate())}` +
+        `${pad(agora.getHours())}${pad(agora.getMinutes())}${pad(agora.getSeconds())}`;
+
+    // Tipo do logradouro: vem de r.tipo_lograd se existir, senão assume "RUA"
+    const tipo = (r.tipo_lograd || 'RUA').toString().toUpperCase();
+    const nomeLograd = (r.rua || '').toString().toUpperCase();
+    const bairro = (r.bairro || '').toString().toUpperCase();
+    const municipio = (r.cidade || r.localidade || '').toString().toUpperCase();
+    const uf = (r.estado || '').toString().toUpperCase();
+
+    // Código do logradouro: prioriza cod_lograd, depois id_roteiro, depois 0
+    const codLograd = r.cod_lograd || r.id_roteiro || '0';
+
+    // Logradouro completo no formato:
+    // "RUA NURETAMA, REALENGO, RIO DE JANEIRO, RIO DE JANEIRO - RJ (9718)"
+    const logradouroCompleto =
+        `${tipo} ${nomeLograd}, ${bairro}, ${municipio}, ${municipio} - ${uf} (${codLograd})`;
+
+    // XML usa coordX = longitude, coordY = latitude
+    const coordX = r.longitude != null ? Number(r.longitude).toFixed(6) : '';
+    const coordY = r.latitude != null ? Number(r.latitude).toFixed(6) : '';
+
+    // Zona: usa campos específicos se existirem, senão gera um placeholder
+    const codigoZona = r.codigo_zona || '';
+    const nomeZona = r.nome_zona || codigoZona;
+
+    // Localidade
+    const localidade = r.localidade || r.cidade || '';
+
+    // ID do edifício: usa id_roteiro se existir; senão id do banco; senão o número da moradia
+    const idEdificio = r.id_roteiro || r.id || numero;
+    const numeroFachada = r.numero || '';
+    const cep = (r.cep || '').toString().replace(/\D/g, '');
+    const codBairro = r.cod_bairro || '';
+    const idRoteiro = r.id_roteiro || r.id || '';
+    const idLocalidade = r.id_localidade || '';
+
+    // Técnico: pega do metadata do usuário logado, senão deixa vazio
+    const tecnicoNome = (usuarioAtual && usuarioAtual.user_metadata && usuarioAtual.user_metadata.nome) || '';
+    const tecnicoId = (usuarioAtual && usuarioAtual.id) || '';
+
+    // Empresa (pode virar configurável depois)
+    const empresaId = '6';
+    const empresaNome = 'LOGICTEL';
+
+    // Destinação
+    const destinacaoMap = {
+        'Residencial': 'RESIDENCIA',
+        'Comercial': 'COMERCIO',
+        'Industrial': 'INDUSTRIA',
+        'Rural': 'RURAL',
+        'Misto': 'MISTO'
+    };
+    const destinacao = destinacaoMap[r.finalidade] || 'RESIDENCIA';
+
+    // Pisos (numPisos)
+    const numPisos = r.andar && !isNaN(parseInt(r.andar, 10)) ? String(parseInt(r.andar, 10)) : '1';
+
+    return `<?xml version="1.0" encoding="UTF-8"?><edificio tipo="M" versao="7.9.2">
+  <gravado>false</gravado>
+  <nEdificio></nEdificio>
+  <coordX>${xmlEscape(coordX)}</coordX>
+  <coordY>${xmlEscape(coordY)}</coordY>
+  <codigoZona>${xmlEscape(codigoZona)}</codigoZona>
+  <nomeZona>${xmlEscape(nomeZona)}</nomeZona>
+  <localidade>${xmlEscape(localidade)}</localidade>
+  <enderecoEdificio>
+    <id>${xmlEscape(idEdificio)}</id>
+    <logradouro>${xmlEscape(logradouroCompleto)}</logradouro>
+    <numero_fachada>${xmlEscape(numeroFachada)}</numero_fachada>
+    <cep>${xmlEscape(cep)}</cep>
+    <cod_bairro>${xmlEscape(codBairro)}</cod_bairro>
+    <bairro>${xmlEscape(bairro)}</bairro>
+    <id_roteiro>${xmlEscape(idRoteiro)}</id_roteiro>
+    <id_localidade>${xmlEscape(idLocalidade)}</id_localidade>
+    <cod_lograd>${xmlEscape(codLograd)}</cod_lograd>
+  </enderecoEdificio>
+  <tecnico>
+    <id>${xmlEscape(tecnicoId)}</id>
+    <nome>${xmlEscape(tecnicoNome)}</nome>
+  </tecnico>
+  <empresa>
+    <id>${xmlEscape(empresaId)}</id>
+    <nome>${xmlEscape(empresaNome)}</nome>
+  </empresa>
+  <data>${dataFormatada}</data>
+  <observacoes>${xmlEscape(r.observacoes || '')}</observacoes>
+  <totalUCs>1</totalUCs>
+  <ocupacao>EDIFICACAOCOMPLETA</ocupacao>
+  <numPisos>${xmlEscape(numPisos)}</numPisos>
+  <destinacao>${xmlEscape(destinacao)}</destinacao>
+</edificio>
+`;
+}
 
 // ============================================
 // LIMPAR TUDO
@@ -986,7 +1108,7 @@ document.getElementById('uploadBtn').addEventListener('click', async () => {
 
     try {
         const texto = await file.text();
-        console.log('[UPLOAD] Arquivo lido. Tamanho:', texto.length, 'bytes. Primeiros 200 chars:', texto.substring(0, 200));
+        console.log('[UPLOAD] Arquivo lido. Tamanho:', texto.length, 'bytes.');
 
         let registros = [];
         const nomeLower = file.name.toLowerCase();
@@ -1029,6 +1151,15 @@ document.getElementById('uploadBtn').addEventListener('click', async () => {
             latitude: r.latitude != null ? r.latitude : null,
             longitude: r.longitude != null ? r.longitude : null,
             fonte: r.fonte || 'Roteiro',
+            tipo_lograd: r.tipo_lograd || '',
+            cod_bairro: r.cod_bairro || '',
+            cod_lograd: r.cod_lograd || '',
+            id_roteiro: r.id_roteiro || '',
+            id_localidade: r.id_localidade || '',
+            localidade: r.localidade || '',
+            localidade_abrev: r.localidade_abrev || '',
+            codigo_zona: r.codigo_zona || '',
+            nome_zona: r.nome_zona || '',
             usuario_id: usuarioAtual ? usuarioAtual.id : null
         }));
 
@@ -1074,37 +1205,43 @@ function parseCSV(texto) {
             pais: get('pais') || get('país') || 'Brasil',
             latitude: isNaN(lat) ? null : lat,
             longitude: isNaN(lng) ? null : lng,
-            fonte: get('fonte') || 'Roteiro CSV'
+            fonte: get('fonte') || 'Roteiro CSV',
+            tipo_lograd: get('tipo_lograd') || '',
+            cod_bairro: get('cod_bairro') || '',
+            cod_lograd: get('cod_lograd') || '',
+            id_roteiro: get('id_roteiro') || '',
+            id_localidade: get('id_localidade') || '',
+            localidade: get('localidade') || '',
+            localidade_abrev: get('localidade_abrev') || '',
+            codigo_zona: get('codigo_zona') || '',
+            nome_zona: get('nome_zona') || ''
         };
     }).filter(r => r.rua || r.cep);
 }
 
 // ============================================
-// PARSER XML DO ROTEIRO DOS CORREIOS (CORRIGIDO)
+// PARSER XML (roteiro.xml dos Correios)
 // ============================================
 function parseXMLRoteiro(texto) {
     const parser = new DOMParser();
     const xml = parser.parseFromString(texto, 'text/xml');
 
-    // Verifica erro de parse
     const parserError = xml.querySelector('parsererror');
     if (parserError) {
         console.error('[XML] Erro de parse:', parserError.textContent);
         throw new Error('XML inválido: ' + parserError.textContent.substring(0, 200));
     }
 
-    // Pega TODOS os elementos <roteiro> (padrão dos Correios)
+    // Procura tanto <roteiro> (Correios) quanto formatos alternativos
     let nodes = Array.from(xml.getElementsByTagName('roteiro'));
-
-    // Fallback para outros formatos
     if (nodes.length === 0) {
-        nodes = Array.from(xml.querySelectorAll('endereco, address, registro, item, linha'));
+        nodes = Array.from(xml.querySelectorAll('endereco, address, registro, item, linha, edificio'));
     }
 
-    console.log('[XML] Encontrados', nodes.length, 'nós <roteiro> ou equivalentes');
+    console.log('[XML] Encontrados', nodes.length, 'nós');
 
     if (nodes.length === 0) {
-        throw new Error('Nenhum elemento <roteiro> encontrado no arquivo. Formato não reconhecido.');
+        throw new Error('Nenhum elemento reconhecido no arquivo.');
     }
 
     const getText = (node, tag) => {
@@ -1114,19 +1251,17 @@ function parseXMLRoteiro(texto) {
 
     const registros = nodes.map(node => {
         const tipo = getText(node, 'tipo_lograd');
-        const tipoAbrev = getText(node, 'tipo_lograd_abrev');
         const titulo = getText(node, 'titulo');
-        const nomeBase = getText(node, 'nome_lograd');
+        const nomeBase = getText(node, 'nome_lograd') || getText(node, 'logradouro');
 
-        // Monta nome do logradouro com título se houver (ex: "SANTO ANTONIO")
         let nomeLograd = nomeBase;
-        if (titulo && !nomeBase.toUpperCase().startsWith(titulo.toUpperCase())) {
+        if (titulo && nomeBase && !nomeBase.toUpperCase().startsWith(titulo.toUpperCase())) {
             nomeLograd = `${titulo} ${nomeBase}`.trim();
         }
 
         return {
             rua: nomeLograd,
-            numero: '',
+            numero: getText(node, 'numero_fachada') || getText(node, 'numero'),
             tipo_complemento: '',
             complemento: '',
             complemento_extra: '',
@@ -1136,12 +1271,19 @@ function parseXMLRoteiro(texto) {
             estado: getText(node, 'uf_abrev') || getText(node, 'uf'),
             cep: getText(node, 'cep'),
             pais: 'Brasil',
-            latitude: null,
-            longitude: null,
+            latitude: parseFloat(getText(node, 'coordY')) || null,
+            longitude: parseFloat(getText(node, 'coordX')) || null,
             fonte: 'Roteiro XML',
-            // Guarda tipo original
-            _tipo: tipo,
-            _tipoAbrev: tipoAbrev
+            // Campos extras do padrão Correios (essenciais para o XML edificio)
+            tipo_lograd: tipo,
+            cod_bairro: getText(node, 'cod_bairro'),
+            cod_lograd: getText(node, 'cod_lograd'),
+            id_roteiro: getText(node, 'id_roteiro') || getText(node, 'id'),
+            id_localidade: getText(node, 'id_localidade'),
+            localidade: getText(node, 'localidade'),
+            localidade_abrev: getText(node, 'localidade_abrev'),
+            codigo_zona: getText(node, 'codigo_zona'),
+            nome_zona: getText(node, 'nome_zona')
         };
     });
 
@@ -1151,20 +1293,23 @@ function parseXMLRoteiro(texto) {
 // ============================================
 // MODELO CSV
 // ============================================
-document.getElementById('downloadModeloBtn').addEventListener('click', () => {
-    const modelo = [
-        'rua;numero;tipo_complemento;complemento;andar;bairro;cidade;estado;cep;latitude;longitude;fonte',
-        'Rua Exemplo;123;Quadra;B;5;Centro;Rio de Janeiro;RJ;20000-000;-22.90200282;-43.27065822;Modelo'
-    ].join('\n');
-    const blob = new Blob(['\uFEFF' + modelo], { type: 'text/csv;charset=utf-8;' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = 'modelo_roteiro.csv';
-    document.body.appendChild(a); a.click(); document.body.removeChild(a);
-    URL.revokeObjectURL(url);
-    showToast('Modelo baixado', 'Preencha e importe novamente.', 'success', 2500);
-});
+const downloadModeloBtn = document.getElementById('downloadModeloBtn');
+if (downloadModeloBtn) {
+    downloadModeloBtn.addEventListener('click', () => {
+        const modelo = [
+            'rua;numero;tipo_complemento;complemento;andar;bairro;cidade;estado;cep;latitude;longitude;fonte',
+            'Rua Exemplo;123;Quadra;B;5;Centro;Rio de Janeiro;RJ;20000-000;-22.90200282;-43.27065822;Modelo'
+        ].join('\n');
+        const blob = new Blob(['\uFEFF' + modelo], { type: 'text/csv;charset=utf-8;' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = 'modelo_roteiro.csv';
+        document.body.appendChild(a); a.click(); document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+        showToast('Modelo baixado', 'Preencha e importe novamente.', 'success', 2500);
+    });
+}
 
 // ============================================
 // UTILITÁRIOS
