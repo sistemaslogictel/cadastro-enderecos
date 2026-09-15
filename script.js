@@ -23,6 +23,7 @@ let usuarioAtual = null;
         const update = () => {
             const isDark = html.getAttribute('data-theme') === 'dark';
             btn.innerHTML = `<span aria-hidden="true">${isDark ? '☀️' : '🌙'}</span>`;
+            btn.setAttribute('aria-label', isDark ? 'Mudar para modo claro' : 'Mudar para modo escuro');
         };
         update();
         btn.addEventListener('click', () => {
@@ -257,23 +258,49 @@ document.addEventListener('click', (e) => {
 async function buscarSugestoes(query) {
     if (query === ultimoQuery) return;
     ultimoQuery = query;
-    if (abortControllerAtual) abortControllerAtual.abort();
-    abortControllerAtual = new AbortController();
 
     suggestionsBox.innerHTML = '<div class="suggestion-item empty"><span class="loading"></span>Buscando no roteiro...</div>';
     suggestionsBox.style.display = 'block';
 
     try {
-        const { data, error } = await supabaseClient
-            .from('logradouros')
-            .select('*')
-            .eq('origem', 'Roteiro XML')
-            .or(`logradouro.ilike.%${query}%,cep.ilike.%${query.replace(/\D/g,'')}%`)
-            .limit(20);
+        const normalizar = (s) => (s || '')
+            .toLowerCase()
+            .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+            .replace(/\s+/g, ' ')
+            .trim();
+
+        const queryNorm = normalizar(query);
+        const semTipo = queryNorm
+            .replace(/^(rua|r\.?|avenida|av\.?|travessa|tv\.?|estrada|est\.?|alameda|al\.?|praca|praça|pc\.?|largo|beco|caminho)\s+/i, '')
+            .trim();
+
+        const palavras = semTipo.split(/\s+/).filter(p => p.length >= 2);
+        const cepDigitos = query.replace(/\D/g, '');
+
+        let q = supabaseClient.from('logradouros').select('*').eq('origem', 'Roteiro XML');
+
+        if (cepDigitos.length === 8) {
+            q = q.ilike('cep', `%${cepDigitos}%`);
+        } else if (palavras.length > 0) {
+            const orParts = palavras.map(p =>
+                `logradouro.ilike.%${p}%,bairro.ilike.%${p}%,municipio.ilike.%${p}%`
+            );
+            q = q.or(orParts.join(','));
+        } else {
+            q = q.ilike('logradouro', `%${queryNorm}%`);
+        }
+
+        const { data, error } = await q.limit(50);
         if (error) throw error;
 
+        const filtrados = (data || []).filter(r => {
+            if (palavras.length === 0) return true;
+            const blob = normalizar([r.tipo, r.logradouro, r.bairro, r.municipio, r.uf].filter(Boolean).join(' '));
+            return palavras.every(p => blob.includes(p));
+        });
+
         suggestionsBox.innerHTML = '';
-        if (!data || data.length === 0) {
+        if (filtrados.length === 0) {
             suggestionsBox.innerHTML = `
                 <div class="suggestion-item empty">
                     Nenhum logradouro encontrado no roteiro.<br>
@@ -284,7 +311,7 @@ async function buscarSugestoes(query) {
             return;
         }
 
-        data.forEach(r => {
+        filtrados.forEach(r => {
             const div = document.createElement('div');
             div.className = 'suggestion-item';
             const texto = formatarTextoLogradouro(r);
@@ -293,9 +320,6 @@ async function buscarSugestoes(query) {
             div.addEventListener('click', () => {
                 searchInput.value = texto;
                 suggestionsBox.style.display = 'none';
-                if (r.latitude != null && r.longitude != null) {
-                    irParaLocal(Number(r.latitude), Number(r.longitude), texto, 'Roteiro');
-                }
                 selecionarParaSurvey(r);
             });
             suggestionsBox.appendChild(div);
@@ -319,6 +343,12 @@ function formatarTextoLogradouro(r) {
     return r.cep ? `${texto}, ${formatarCEP(r.cep)}` : texto;
 }
 
+document.getElementById('searchBtn').addEventListener('click', () => {
+    const query = searchInput.value.trim();
+    if (query) buscarSugestoes(query);
+    suggestionsBox.style.display = 'none';
+});
+
 // ============================================
 // IR PARA LOCAL NO MAPA
 // ============================================
@@ -331,23 +361,18 @@ function irParaLocal(lat, lng, nome, origem) {
     document.getElementById('origemDisplay').textContent = `Roteiro (${origem || 'logradouro'})`;
 }
 
-document.getElementById('searchBtn').addEventListener('click', () => {
-    const query = searchInput.value.trim();
-    if (query) buscarSugestoes(query);
-});
-
 // ============================================
-// CLIQUE DIREITO — só para pegar coords
+// CLIQUE DIREITO NO MAPA
 // ============================================
 map.on('contextmenu', (e) => {
     e.originalEvent.preventDefault();
     const { lat, lng } = e.latlng;
     if (marcadorAtual) map.removeLayer(marcadorAtual);
     marcadorAtual = L.marker([lat, lng], { icon: houseIcon }).addTo(map);
-        marcadorAtual.bindPopup(`Ponto marcado<br>${lat.toFixed(8)}, ${lng.toFixed(8)}`).openPopup();
+    marcadorAtual.bindPopup(`Ponto marcado<br>${lat.toFixed(8)}, ${lng.toFixed(8)}`).openPopup();
     document.getElementById('coordsDisplay').textContent = `${lat.toFixed(8)}, ${lng.toFixed(8)}`;
     document.getElementById('origemDisplay').textContent = 'Clique no mapa (botão direito)';
-    // Preenche as coords no Survey também
+
     if (document.getElementById('surveyLatitude')) {
         document.getElementById('surveyLatitude').value = lat.toFixed(8);
     }
@@ -357,17 +382,33 @@ map.on('contextmenu', (e) => {
 });
 
 // ============================================
-// SELECIONAR LOGRADOURO → PREENCHER SURVEY
+// NORMALIZAR TIPO
 // ============================================
+function normalizarTipo(t) {
+    if (!t) return '';
+    const up = String(t).toUpperCase().replace(/\./g, '').trim();
+    const mapa = {
+        'R': 'Rua', 'RUA': 'Rua',
+        'AV': 'Avenida', 'AVE': 'Avenida', 'AVENIDA': 'Avenida',
+        'TV': 'Travessa', 'TRAV': 'Travessa', 'TRAVESSA': 'Travessa',
+        'EST': 'Estrada', 'ESTRADA': 'Estrada',
+        'AL': 'Alameda', 'ALAMEDA': 'Alameda',
+        'PC': 'Praça', 'PRACA': 'Praça', 'PRAÇA': 'Praça',
+        'LARGO': 'Largo',
+        'BECO': 'Beco',
+        'CAM': 'Caminho', 'CAMINHO': 'Caminho'
+    };
+    return mapa[up] || (up.charAt(0) + up.slice(1).toLowerCase());
+}
+
 // ============================================
-// SELECIONAR LOGRADOURO → PREENCHER SURVEY
-// (agora cruza com OSM se faltar coordenada)
+// SELECIONAR LOGRADOURO → SURVEY + OSM
 // ============================================
 async function selecionarParaSurvey(r) {
     enderecoBaseSelecionado = {
         _registro_id: r.id,
         origem: 'Roteiro XML',
-        tipo: r.tipo || 'Rua',
+        tipo: normalizarTipo(r.tipo) || 'Rua',
         rua: r.logradouro || '',
         bairro: r.bairro || '',
         cidade: r.municipio || '',
@@ -383,7 +424,6 @@ async function selecionarParaSurvey(r) {
         localidade_abrev: r.localidade_abrev || ''
     };
 
-    // Preenche os campos do Survey
     document.getElementById('surveyTipo').value = enderecoBaseSelecionado.tipo || 'Rua';
     document.getElementById('surveyLogradouro').value = enderecoBaseSelecionado.rua || '';
     document.getElementById('surveyBairro').value = enderecoBaseSelecionado.bairro || '';
@@ -391,7 +431,6 @@ async function selecionarParaSurvey(r) {
     document.getElementById('surveyUf').value = enderecoBaseSelecionado.estado || '';
     document.getElementById('surveyCep').value = formatarCEP(enderecoBaseSelecionado.cep || '');
 
-    // Se o roteiro trouxe coordenadas válidas, usa
     const temCoordsRoteiro =
         enderecoBaseSelecionado.lat != null &&
         enderecoBaseSelecionado.lng != null &&
@@ -408,37 +447,25 @@ async function selecionarParaSurvey(r) {
             'Roteiro'
         );
     } else {
-        // Sem coords do roteiro — limpa os campos e busca no OSM
         document.getElementById('surveyLatitude').value = '';
         document.getElementById('surveyLongitude').value = '';
+        showToast('Buscando no OpenStreetMap', 'Consultando o logradouro...', 'info', 3000);
 
-        // Avisa o usuário
-        showToast('Buscando coordenadas', 'Consultando o OpenStreetMap pelo logradouro...', 'info', 3000);
+        const opcoes = await buscarOpcoesOSM(enderecoBaseSelecionado);
 
-        const coords = await buscarCoordsOSM(enderecoBaseSelecionado);
-        if (coords) {
-            enderecoBaseSelecionado.lat = coords.lat;
-            enderecoBaseSelecionado.lng = coords.lng;
-            document.getElementById('surveyLatitude').value = coords.lat.toFixed(8);
-            document.getElementById('surveyLongitude').value = coords.lng.toFixed(8);
-            irParaLocal(
-                coords.lat,
-                coords.lng,
-                montarTextoLogradouro(enderecoBaseSelecionado),
-                'Roteiro + OSM'
-            );
-            showToast('Coordenadas encontradas', 'Localização marcada no mapa.', 'success', 2500);
+        if (opcoes && opcoes.length > 0) {
+            renderizarOpcoesOSM(opcoes, enderecoBaseSelecionado);
+            showToast('Encontramos opções no OSM', 'Clique em uma opção para marcar no mapa.', 'success', 3500);
         } else {
             showToast(
                 'Sem coordenadas',
-                'Não encontramos o logradouro no OpenStreetMap. Marque manualmente com o botão direito no mapa.',
+                'Não encontramos esse logradouro no OpenStreetMap. Marque manualmente com o botão direito no mapa.',
                 'warning',
                 6000
             );
         }
     }
 
-    // Card informativo do topo
     const infoBox = document.getElementById('enderecoBaseInfo');
     if (infoBox) {
         const linha1 = [enderecoBaseSelecionado.tipo, enderecoBaseSelecionado.rua].filter(Boolean).join(' ') || '—';
@@ -460,100 +487,6 @@ async function selecionarParaSurvey(r) {
     document.getElementById('formPanel').scrollIntoView({ behavior: 'smooth', block: 'start' });
 }
 
-// ============================================
-// CRUZAR LOGRADOURO COM OSM
-// ============================================
-async function buscarCoordsOSM(end) {
-    // Monta uma query bem específica
-    const partes = [
-        [end.tipo, end.rua].filter(Boolean).join(' '),
-        end.bairro,
-        end.cidade,
-        end.estado,
-        end.cep
-    ].filter(Boolean);
-
-    const query = partes.join(', ');
-    if (!query) return null;
-
-    try {
-        const url = `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(query)}&addressdetails=1&limit=5&accept-language=pt-BR&countrycodes=br`;
-        const res = await fetch(url, {
-            headers: { 'Accept': 'application/json' }
-        });
-        if (!res.ok) return null;
-        const data = await res.json();
-        if (!data || data.length === 0) {
-            // Fallback: tenta sem CEP e sem tipo
-            const query2 = [end.rua, end.bairro, end.cidade, end.estado].filter(Boolean).join(', ');
-            if (!query2) return null;
-            const url2 = `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(query2)}&addressdetails=1&limit=5&accept-language=pt-BR&countrycodes=br`;
-            const res2 = await fetch(url2, { headers: { 'Accept': 'application/json' } });
-            if (!res2.ok) return null;
-            const data2 = await res2.json();
-            if (!data2 || data2.length === 0) return null;
-            const item2 = escolherMelhorResultado(data2, end);
-            if (!item2) return null;
-            return {
-                lat: parseFloat(item2.lat),
-                lng: parseFloat(item2.lon),
-                bruto: item2.display_name
-            };
-        }
-        const item = escolherMelhorResultado(data, end);
-        if (!item) return null;
-        return {
-            lat: parseFloat(item.lat),
-            lng: parseFloat(item.lon),
-            bruto: item.display_name
-        };
-    } catch (err) {
-        console.warn('[OSM] erro:', err);
-        return null;
-    }
-}
-
-// Escolhe o resultado que mais bate com o endereço (nome da rua + bairro)
-function escolherMelhorResultado(lista, end) {
-    if (!lista || lista.length === 0) return null;
-
-    const normalizar = (s) => (s || '')
-        .toLowerCase()
-        .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
-        .replace(/\b(rua|r\.|avenida|av\.|travessa|tv\.|estrada|est\.|alameda|al\.|praca|praça|pc\.|largo|beco|caminho)\b\.?/g, '')
-        .replace(/[^a-z0-9 ]/g, ' ')
-        .replace(/\s+/g, ' ')
-        .trim();
-
-    const alvoRua = normalizar(end.rua);
-    const alvoBairro = normalizar(end.bairro);
-    const alvoCidade = normalizar(end.cidade);
-
-    let melhor = null;
-    let melhorScore = -1;
-
-    lista.forEach(item => {
-        const a = item.address || {};
-        const rua = normalizar(a.road || a.pedestrian || '');
-        const bairro = normalizar(a.suburb || a.neighbourhood || '');
-        const cidade = normalizar(a.city || a.town || a.village || '');
-
-        let score = 0;
-        if (alvoRua && rua && (rua.includes(alvoRua) || alvoRua.includes(rua))) score += 3;
-        if (alvoBairro && bairro && (bairro.includes(alvoBairro) || alvoBairro.includes(bairro))) score += 2;
-        if (alvoCidade && cidade && (cidade.includes(alvoCidade) || alvoCidade.includes(cidade))) score += 1;
-
-        if (score > melhorScore) {
-            melhorScore = score;
-            melhor = item;
-        }
-    });
-
-    // Se ninguém pontuou, pega o primeiro (Nominatim já ordena por relevância)
-    return melhorScore > 0 ? melhor : lista[0];
-}
-
-// Texto formatado pra popup do mapa / exibição
 function montarTextoLogradouro(end) {
     const partes = [
         [end.tipo, end.rua].filter(Boolean).join(' '),
@@ -562,6 +495,92 @@ function montarTextoLogradouro(end) {
         end.cep ? formatarCEP(end.cep) : ''
     ].filter(Boolean);
     return partes.join(', ');
+}
+
+// ============================================
+// BUSCA NO OSM — só o básico
+// ============================================
+async function buscarOpcoesOSM(end) {
+    const partes = [end.rua, end.bairro, end.cidade, end.estado].filter(Boolean);
+    const query = partes.join(', ');
+    if (!query) return [];
+
+    try {
+        const url = `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(query)}&addressdetails=1&limit=8&accept-language=pt-BR&countrycodes=br`;
+        const res = await fetch(url, { headers: { 'Accept': 'application/json' } });
+        if (!res.ok) return [];
+        const data = await res.json();
+        if (!Array.isArray(data)) return [];
+        return data.map(item => {
+            const a = item.address || {};
+            return {
+                lat: parseFloat(item.lat),
+                lng: parseFloat(item.lon),
+                display_name: item.display_name,
+                rua: a.road || a.pedestrian || '',
+                bairro: a.suburb || a.neighbourhood || '',
+                cidade: a.city || a.town || a.village || '',
+                estado: a.state || ''
+            };
+        });
+    } catch (err) {
+        console.warn('[OSM] erro:', err);
+        return [];
+    }
+}
+
+// ============================================
+// RENDERIZA OPÇÕES DO OSM NA SEÇÃO 3
+// ============================================
+function renderizarOpcoesOSM(opcoes, end) {
+    const list = document.getElementById('enderecosList');
+    const wrapper = document.createElement('div');
+    wrapper.className = 'table-wrapper';
+
+    const table = document.createElement('table');
+    table.className = 'fontes-table';
+    table.innerHTML = `
+        <thead>
+            <tr>
+                <th>Base</th>
+                <th>Logradouro</th>
+                <th>Bairro</th>
+                <th>Cidade/UF</th>
+                <th>Ação</th>
+            </tr>
+        </thead>
+        <tbody></tbody>
+    `;
+    const tbody = table.querySelector('tbody');
+
+    opcoes.forEach((o, idx) => {
+        const tr = document.createElement('tr');
+        tr.innerHTML = `
+            <td><span class="fonte-badge">OSM</span></td>
+            <td>${escapeHtml(o.rua || '—')}</td>
+            <td>${escapeHtml(o.bairro || '—')}</td>
+            <td>${escapeHtml([o.cidade, o.estado].filter(Boolean).join('/') || '—')}</td>
+            <td><button class="btn-usar-fonte" data-idx="${idx}" type="button">Usar esta</button></td>
+        `;
+        tbody.appendChild(tr);
+    });
+
+    wrapper.appendChild(table);
+    list.innerHTML = '';
+    list.appendChild(wrapper);
+
+    tbody.querySelectorAll('.btn-usar-fonte').forEach(btn => {
+        btn.addEventListener('click', () => {
+            const o = opcoes[parseInt(btn.dataset.idx, 10)];
+            if (!o) return;
+            enderecoBaseSelecionado.lat = o.lat;
+            enderecoBaseSelecionado.lng = o.lng;
+            document.getElementById('surveyLatitude').value = o.lat.toFixed(8);
+            document.getElementById('surveyLongitude').value = o.lng.toFixed(8);
+            irParaLocal(o.lat, o.lng, o.display_name || montarTextoLogradouro(end), 'Roteiro + OSM');
+            showToast('Coordenadas aplicadas', 'Localização marcada no mapa.', 'success', 2500);
+        });
+    });
 }
 
 // ============================================
@@ -608,7 +627,6 @@ document.getElementById('addBtn').addEventListener('click', async () => {
 
         showToast('Survey salvo', 'Nº e complementos adicionados.', 'success', 2500);
 
-        // Limpa respeitando os checkboxes "manter"
         const limpar = (id, manterId) => {
             const manter = manterId ? document.getElementById(manterId) : null;
             if (manter && manter.checked) return;
@@ -636,7 +654,6 @@ document.getElementById('addBtn').addEventListener('click', async () => {
 // ============================================
 async function carregarSurveys() {
     try {
-        // Pega os survey_detalhes + o logradouro associado
         const { data: detalhes, error: errDet } = await supabaseClient
             .from('survey_detalhes')
             .select('*')
@@ -648,7 +665,6 @@ async function carregarSurveys() {
             return;
         }
 
-        // Busca os logradouros referenciados
         const ids = [...new Set(detalhes.map(d => d.logradouro_id).filter(Boolean))];
         let logsMap = {};
         if (ids.length > 0) {
@@ -685,7 +701,6 @@ async function carregarSurveys() {
             tbody.appendChild(tr);
         });
 
-        // Guarda pra usar nos botões
         window._surveysCache = detalhes.map(d => ({
             ...d,
             _logradouro: logsMap[d.logradouro_id] || null
@@ -725,7 +740,6 @@ async function carregarSurveys() {
             });
         });
 
-        // Marcadores no mapa
         marcadoresSurveys.forEach(m => map.removeLayer(m));
         marcadoresSurveys = [];
         window._surveysCache.forEach(s => {
@@ -751,7 +765,10 @@ async function carregarSurveys() {
 document.getElementById('novaAreaBtn').addEventListener('click', async () => {
     if (!confirm('Apagar TODOS os surveys salvos? (o roteiro será mantido)')) return;
     try {
-        const { error } = await supabaseClient.from('survey_detalhes').delete().neq('id', '00000000-0000-0000-0000-000000000000');
+        const { error } = await supabaseClient
+            .from('survey_detalhes')
+            .delete()
+            .neq('id', '00000000-0000-0000-0000-000000000000');
         if (error) throw error;
         marcadoresSurveys.forEach(m => map.removeLayer(m));
         marcadoresSurveys = [];
@@ -769,7 +786,10 @@ document.getElementById('novaAreaBtn').addEventListener('click', async () => {
 document.getElementById('clearBtn').addEventListener('click', async () => {
     if (!confirm('Apagar TODOS os surveys salvos? (o roteiro será mantido)')) return;
     try {
-        const { error } = await supabaseClient.from('survey_detalhes').delete().neq('id', '00000000-0000-0000-0000-000000000000');
+        const { error } = await supabaseClient
+            .from('survey_detalhes')
+            .delete()
+            .neq('id', '00000000-0000-0000-0000-000000000000');
         if (error) throw error;
         marcadoresSurveys.forEach(m => map.removeLayer(m));
         marcadoresSurveys = [];
@@ -822,14 +842,20 @@ document.getElementById('exportBtn').addEventListener('click', async () => {
         document.body.appendChild(a); a.click(); document.body.removeChild(a);
         URL.revokeObjectURL(url);
 
+        const total = window._surveysCache.length;
+
         // Apaga os surveys exportados
-        const { error } = await supabaseClient.from('survey_detalhes').delete().neq('id', '00000000-0000-0000-0000-000000000000');
+        const { error } = await supabaseClient
+            .from('survey_detalhes')
+            .delete()
+            .neq('id', '00000000-0000-0000-0000-000000000000');
         if (error) throw error;
 
         marcadoresSurveys.forEach(m => map.removeLayer(m));
         marcadoresSurveys = [];
-        showToast('ZIP gerado e lista limpa', `${window._surveysCache.length} moradia(s) exportada(s) e removida(s).`, 'success', 4000);
         window._surveysCache = [];
+
+        showToast('ZIP gerado e lista limpa', `${total} moradia(s) exportada(s) e removida(s).`, 'success', 4000);
         await carregarSurveys();
     } catch (err) {
         console.error(err);
@@ -931,7 +957,7 @@ function gerarXMLEdificio(survey, logradouro, numero) {
 }
 
 // ============================================
-// UPLOAD DE ROTEIRO → tabela logradouros (origem='Roteiro XML')
+// UPLOAD DE ROTEIRO → tabela logradouros (sem duplicar)
 // ============================================
 document.getElementById('uploadBtn').addEventListener('click', async () => {
     const fileInput = document.getElementById('roteiroFile');
@@ -960,12 +986,12 @@ document.getElementById('uploadBtn').addEventListener('click', async () => {
             return;
         }
 
-        const payload = registros.map(r => ({
-            tipo: r.tipo || null,
-            logradouro: r.rua || r.logradouro || '',
-            bairro: r.bairro || null,
-            municipio: r.cidade || r.municipio || null,
-            uf: r.estado || r.uf || null,
+        const normalizados = registros.map(r => ({
+            tipo: normalizarTipo(r.tipo) || null,
+            logradouro: (r.rua || r.logradouro || '').trim(),
+            bairro: (r.bairro || '').trim() || null,
+            municipio: (r.cidade || r.municipio || '').trim() || null,
+            uf: (r.estado || r.uf || '').trim().toUpperCase() || null,
             cep: (r.cep || '').replace(/\D/g, '') || null,
             latitude: r.latitude != null ? r.latitude : null,
             longitude: r.longitude != null ? r.longitude : null,
@@ -981,18 +1007,56 @@ document.getElementById('uploadBtn').addEventListener('click', async () => {
             usuario_id: usuarioAtual ? usuarioAtual.id : null
         })).filter(r => r.logradouro);
 
+        status.textContent = `Verificando duplicados... (${normalizados.length} registros)`;
+
+        const chaveDe = (r) =>
+            [r.logradouro, r.bairro, r.municipio, r.uf, r.cep]
+                .map(v => (v || '').toString().toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim())
+                .join('|');
+
+        const { data: existentes, error: errBusca } = await supabaseClient
+            .from('logradouros')
+            .select('logradouro, bairro, municipio, uf, cep')
+            .eq('origem', 'Roteiro XML');
+        if (errBusca) throw errBusca;
+
+        const chavesExistentes = new Set((existentes || []).map(chaveDe));
+
+        const chavesNovas = new Set();
+        const novos = normalizados.filter(r => {
+            const k = chaveDe(r);
+            if (chavesExistentes.has(k)) return false;
+            if (chavesNovas.has(k)) return false;
+            chavesNovas.add(k);
+            return true;
+        });
+
+        const ignorados = normalizados.length - novos.length;
+
+        if (novos.length === 0) {
+            status.textContent = `Nada novo para importar (${ignorados} duplicado(s) ignorado(s)).`;
+            showToast('Sem novidades', `${ignorados} registro(s) já existiam.`, 'info', 3500);
+            fileInput.value = '';
+            return;
+        }
+
         const TAM = 500;
         let inseridos = 0;
-        for (let i = 0; i < payload.length; i += TAM) {
-            const lote = payload.slice(i, i + TAM);
+        for (let i = 0; i < novos.length; i += TAM) {
+            const lote = novos.slice(i, i + TAM);
             const { error } = await supabaseClient.from('logradouros').insert(lote);
             if (error) throw error;
             inseridos += lote.length;
-            status.textContent = `Importando... ${inseridos}/${payload.length}`;
+            status.textContent = `Importando... ${inseridos}/${novos.length}`;
         }
 
-        status.textContent = `${inseridos} logradouro(s) importado(s).`;
-        showToast('Roteiro importado', `${inseridos} logradouro(s) disponíveis para busca.`, 'success', 3500);
+        status.textContent = `${inseridos} novo(s) importado(s). ${ignorados} duplicado(s) ignorado(s).`;
+        showToast(
+            'Roteiro importado',
+            `${inseridos} novo(s) | ${ignorados} duplicado(s) ignorado(s).`,
+            'success',
+            4000
+        );
         fileInput.value = '';
     } catch (err) {
         console.error('[UPLOAD] Erro:', err);
@@ -1120,4 +1184,4 @@ document.addEventListener('DOMContentLoaded', () => {
         console.error('Erro na inicialização:', err);
         showToast('Erro ao iniciar', err.message, 'error');
     });
-});
+});       
