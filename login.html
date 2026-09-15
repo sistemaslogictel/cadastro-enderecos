@@ -206,8 +206,10 @@
             e.preventDefault();
             limparErro();
 
+            console.log('[LOGIN] supabaseClient:', typeof supabaseClient, supabaseClient);
+
             if (typeof supabaseClient === 'undefined' || !supabaseClient) {
-                mostrarErro('Supabase não carregado. Recarregue a página (Ctrl+F5).');
+                mostrarErro('Supabase não carregado. Abra o console (F12) e verifique os erros. Recarregue a página com Ctrl+F5.');
                 return;
             }
 
@@ -224,16 +226,19 @@
 
             try {
                 // 1. Resolve username -> email interno via RPC
+                console.log('[LOGIN] chamando RPC resolve_username_email com:', username);
                 const { data: emailInterno, error: rpcError } = await supabaseClient
                     .rpc('resolve_username_email', { p_username: username });
 
                 if (rpcError) {
-                    console.error('Erro RPC:', rpcError);
+                    console.error('[LOGIN] Erro RPC:', rpcError);
                     mostrarErro('Erro ao consultar usuário: ' + rpcError.message);
                     loginBtn.disabled = false;
                     loginBtn.textContent = 'Entrar';
                     return;
                 }
+
+                console.log('[LOGIN] email retornado pela RPC:', emailInterno);
 
                 if (!emailInterno) {
                     mostrarErro('Usuário não encontrado.');
@@ -243,13 +248,16 @@
                 }
 
                 // 2. Login com o email interno
+                console.log('[LOGIN] tentando signInWithPassword com:', emailInterno);
                 const { data, error } = await supabaseClient.auth.signInWithPassword({
                     email: emailInterno,
                     password: senha
                 });
 
+                console.log('[LOGIN] resposta:', { data, error });
+
                 if (error) {
-                    console.error('Erro Supabase:', error);
+                    console.error('[LOGIN] erro signIn:', error);
                     const msg = (error.message || '').toLowerCase();
                     if (msg.includes('invalid login credentials')) {
                         mostrarErro('Usuário ou senha inválidos.');
@@ -274,13 +282,18 @@
                     return;
                 }
 
+                console.log('[LOGIN] sucesso, usuário:', data.user.id, data.user.email);
+
                 sessionStorage.setItem('usuarioLogado', username);
                 sessionStorage.setItem('usuarioNome', data.user.user_metadata?.nome || username);
 
-                window.location.href = 'index.html';
+                // Pequeno delay para garantir que a sessão foi persistida
+                setTimeout(() => {
+                    window.location.href = 'index.html';
+                }, 300);
 
             } catch (err) {
-                console.error('Erro no login:', err);
+                console.error('[LOGIN] erro inesperado:', err);
                 mostrarErro('Erro: ' + (err.message || err));
                 loginBtn.disabled = false;
                 loginBtn.textContent = 'Entrar';

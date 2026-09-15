@@ -1,7 +1,11 @@
 // ============================================
-// PROTEÇÃO DE ROTA
+// PROTEÇÃO DE ROTA + DIAGNÓSTICO
 // ============================================
+console.log('[INDEX] supabaseClient:', typeof supabaseClient, supabaseClient);
+console.log('[INDEX] usuarioLogado (sessionStorage):', sessionStorage.getItem('usuarioLogado'));
+
 if (!sessionStorage.getItem('usuarioLogado')) {
+    console.warn('[INDEX] sem usuarioLogado — redirecionando para login');
     window.location.href = 'login.html';
 }
 
@@ -107,14 +111,27 @@ async function garantirAreaPadrao() {
 // ESTADO GLOBAL
 // ============================================
 async function iniciar() {
+    if (typeof supabaseClient === 'undefined' || !supabaseClient) {
+        console.error('[INDEX] supabaseClient não definido!');
+        showToast('Erro', 'Supabase não carregado. Abra o console (F12).', 'error', 8000);
+        return;
+    }
+
+    console.log('[INDEX] verificando sessão...');
     const { data: { user }, error: authError } = await supabaseClient.auth.getUser();
 
+    console.log('[INDEX] getUser resultado:', { user, authError });
+
     if (authError) console.error('[AUTH] erro:', authError);
+
     if (!user) {
-        console.warn('[AUTH] sem usuário autenticado — redirecionando');
+        console.warn('[INDEX] sem usuário autenticado — redirecionando para login');
+        sessionStorage.removeItem('usuarioLogado');
+        sessionStorage.removeItem('usuarioNome');
         window.location.href = 'login.html';
         return;
     }
+
     usuarioAtual = user;
     console.log('[AUTH] usuário logado:', user.id, user.email);
 
@@ -377,8 +394,6 @@ async function buscarSugestoes(query) {
 }
 
 async function buscarSugestoesNetwin(query, signal) {
-    try {
-        const url = `async function buscarSugestoesNetwin(query, signal) {
     try {
         const url = `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(query)}&addressdetails=1&limit=6&accept-language=pt-BR`;
         const res = await fetch(url, { signal });
@@ -743,7 +758,7 @@ document.getElementById('btnSalvarNovoEndereco').addEventListener('click', async
         irParaLocal(latitude, longitude, novoRegistro.bruto, 'manual');
     }
 
-    ['novoCep','novoLogradouro','novoNumero','novoComplemento','novoBairro','novoCidade','novoUf'].forEach(id => {
+        ['novoCep','novoLogradouro','novoNumero','novoComplemento','novoBairro','novoCidade','novoUf'].forEach(id => {
         document.getElementById(id).value = '';
     });
     document.getElementById('novoEnderecoForm').style.display = 'none';
