@@ -65,58 +65,6 @@ function showToast(titulo, mensagem = '', tipo = 'info', duracao = 4000) {
 }
 
 // ============================================
-// ÁREA PADRÃO — garante que existe uma área
-// ============================================
-async function garantirAreaPadrao(forcar = false) {
-    let id = sessionStorage.getItem('areaAtualId');
-    if (id && !forcar) { areaAtualId = id; return id; }
-
-    try {
-        const { data: existentes, error: errBusca } = await supabaseClient
-            .from('areas')
-            .select('id, nome')
-            .eq('nome', 'Geral')
-            .limit(1);
-
-        if (errBusca) {
-            console.warn('[ÁREA PADRÃO] erro ao buscar:', errBusca);
-        }
-
-        if (existentes && existentes.length > 0) {
-            id = existentes[0].id;
-            sessionStorage.setItem('areaAtualId', id);
-            areaAtualId = id;
-            return id;
-        }
-
-        const { data, error } = await supabaseClient
-            .from('areas')
-            .insert([{ nome: 'Geral', usuario_id: usuarioAtual ? usuarioAtual.id : null }])
-            .select().single();
-
-        if (error) {
-            console.error('[ÁREA PADRÃO] erro no INSERT:', error);
-            showToast(
-                'Erro no banco',
-                'INSERT em areas falhou: ' + (error.message || JSON.stringify(error)),
-                'error',
-                10000
-            );
-            throw error;
-        }
-
-        id = data.id;
-        sessionStorage.setItem('areaAtualId', id);
-        areaAtualId = id;
-        console.log('[ÁREA PADRÃO] criada com id:', id);
-        return id;
-    } catch (err) {
-        console.error('[ÁREA PADRÃO] Erro:', err);
-        return null;
-    }
-}
-
-// ============================================
 // ESTADO GLOBAL
 // ============================================
 async function iniciar() {
@@ -147,9 +95,6 @@ async function iniciar() {
     const nome = sessionStorage.getItem('usuarioNome') || sessionStorage.getItem('usuarioLogado') || '-';
     document.getElementById('userLabel').textContent = nome;
 
-    await garantirAreaPadrao();
-    await carregarAreaAtual();
-    await carregarCadastrados();
     setTimeout(() => map.invalidateSize(), 200);
 }
 
@@ -157,7 +102,6 @@ document.getElementById('logoutBtn').addEventListener('click', async () => {
     await supabaseClient.auth.signOut();
     sessionStorage.removeItem('usuarioLogado');
     sessionStorage.removeItem('usuarioNome');
-    sessionStorage.removeItem('areaAtualId');
     window.location.href = 'login.html';
 });
 
@@ -168,10 +112,7 @@ const map = L.map('map', { maxZoom: 22, minZoom: 3, zoomControl: false }).setVie
 L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/{z}/{y}/{x}', { attribution: 'Tiles © Esri', maxZoom: 22, maxNativeZoom: 19 }).addTo(map);
 
 let marcadorAtual = null;
-let marcadoresSalvos = [];
 let enderecosEncontrados = [];
-let cadastrados = [];
-let areaAtualId = null;
 let enderecoBaseSelecionado = null;
 
 // ============================================
@@ -299,7 +240,7 @@ function tentarParseCoordenadas(query) {
 }
 
 // ============================================
-// AUTOCOMPLETE
+// AUTOCOMPLETE — motor de busca
 // ============================================
 const searchInput = document.getElementById('searchInput');
 const suggestionsBox = document.getElementById('suggestions');
@@ -337,116 +278,177 @@ async function buscarSugestoes(query) {
     abortControllerAtual = new AbortController();
     if (tentarParseCoordenadas(query)) return;
 
+    const engine = document.getElementById('engineSelect').value;
+    const sugestoes = [];
+
+    // 1) OSM
+    if (engine === 'osm' || engine === 'todos') {
+        try {
+            const url = `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(query)}&addressdetails=1&limit=6&accept-language=pt-BR`;
+            const res = await fetch(url, { signal: abortControllerAtual.signal });
+            const data = await res.json();
+            (data || []).forEach(item => {
+                const a = item.address || {};
+                const partes = [a.road || a.pedestrian || item.display_name.split(',')[0], a.house_number, a.suburb || a.neighbourhood, a.city || a.town || a.village, a.state, a.postcode].filter(Boolean);
+                sugestoes.push({
+                    origem: 'OSM',
+                    texto: [...new Set(partes)].join(', '),
+                    lat: parseFloat(item.lat),
+                    lng: parseFloat(item.lon),
+                    rua: a.road || a.pedestrian || '',
+                    numero: a.house_number || '',
+                    bairro: a.suburb || a.neighbourhood || '',
+                    cidade: a.city || a.town || a.village || '',
+                    estado: a.state || '',
+                    cep: a.postcode || ''
+                });
+            });
+        } catch (err) { if (err.name !== 'AbortError') console.warn('OSM falhou:', err); }
+    }
+
+    // 2) LogJáCadastrados (origem = 'Survey')
+    if (engine === 'logcadastrados' || engine === 'todos') {
+        try {
+            const { data, error } = await supabaseClient
+                .from('logradouros')
+                .select('*')
+                .eq('origem', 'Survey')
+                .ilike('logradouro', `%${query}%`)
+                .limit(10);
+            if (!error && data) {
+                data.forEach(r => {
+                    sugestoes.push({
+                        origem: 'LogJáCadastrados',
+                        texto: formatarTextoLogradouro(r),
+                        lat: r.latitude != null ? Number(r.latitude) : null,
+                        lng: r.longitude != null ? Number(r.longitude) : null,
+                        rua: r.logradouro || '',
+                        numero: '',
+                        bairro: r.bairro || '',
+                        cidade: r.municipio || '',
+                        estado: r.uf || '',
+                        cep: r.cep || '',
+                        tipo: r.tipo || '',
+                        cod_bairro: r.cod_bairro || '',
+                        cod_lograd: r.cod_lograd || '',
+                        id_roteiro: r.id_roteiro || '',
+                        id_localidade: r.id_localidade || '',
+                        localidade: r.localidade || '',
+                        localidade_abrev: r.localidade_abrev || '',
+                        _registro_id: r.id
+                    });
+                });
+            }
+        } catch (err) { console.warn('logcadastrados falhou:', err); }
+    }
+
+    // 3) LogRoteiros (origem = 'Roteiro XML')
+    if (engine === 'logroteiros' || engine === 'todos') {
+        try {
+            const { data, error } = await supabaseClient
+                .from('logradouros')
+                .select('*')
+                .eq('origem', 'Roteiro XML')
+                .ilike('logradouro', `%${query}%`)
+                .limit(10);
+            if (!error && data) {
+                data.forEach(r => {
+                    sugestoes.push({
+                        origem: 'LogRoteiros',
+                        texto: formatarTextoLogradouro(r),
+                        lat: r.latitude != null ? Number(r.latitude) : null,
+                        lng: r.longitude != null ? Number(r.longitude) : null,
+                        rua: r.logradouro || '',
+                        numero: '',
+                        bairro: r.bairro || '',
+                        cidade: r.municipio || '',
+                        estado: r.uf || '',
+                        cep: r.cep || '',
+                        tipo: r.tipo || '',
+                        cod_bairro: r.cod_bairro || '',
+                        cod_lograd: r.cod_lograd || '',
+                        id_roteiro: r.id_roteiro || '',
+                        id_localidade: r.id_localidade || '',
+                        localidade: r.localidade || '',
+                        localidade_abrev: r.localidade_abrev || '',
+                        _registro_id: r.id
+                    });
+                });
+            }
+        } catch (err) { console.warn('logroteiros falhou:', err); }
+    }
+
+    // 4) CEP via ViaCEP se for só número
     const cepLimpo = query.replace(/\D/g, '');
-    if (cepLimpo.length === 8) {
+    if (cepLimpo.length === 8 && (engine === 'osm' || engine === 'todos')) {
         try {
             const res = await fetch(`https://viacep.com.br/ws/${cepLimpo}/json/`, { signal: abortControllerAtual.signal });
             const data = await res.json();
-            if (data.erro) {
-                suggestionsBox.innerHTML = '<div class="suggestion-item empty">CEP não encontrado</div>';
-                suggestionsBox.style.display = 'block';
-                return;
+            if (!data.erro) {
+                const texto = `${data.logradouro || ''}, ${data.bairro || ''}, ${data.localidade || ''} - ${data.uf || ''}, ${data.cep || ''}`.replace(/^,\s*/, '');
+                if (!sugestoes.find(s => s.texto === texto)) {
+                    sugestoes.unshift({
+                        origem: 'ViaCEP',
+                        texto,
+                        lat: null,
+                        lng: null,
+                        rua: data.logradouro || '',
+                        numero: '',
+                        bairro: data.bairro || '',
+                        cidade: data.localidade || '',
+                        estado: data.uf || '',
+                        cep: data.cep || ''
+                    });
+                }
             }
-            suggestionsBox.innerHTML = '';
-            const div = document.createElement('div');
-            div.className = 'suggestion-item';
-            const texto = `${data.logradouro || ''}, ${data.bairro || ''}, ${data.localidade || ''} - ${data.uf || ''}, ${data.cep || ''}`.replace(/^,\s*/, '');
-            div.innerHTML = `<span class="suggestion-icon">&#128236;</span><span class="suggestion-text">${escapeHtml(texto)}</span>`;
-            div.addEventListener('click', () => {
-                searchInput.value = texto;
-                suggestionsBox.style.display = 'none';
-                buscarEndereco(texto);
-            });
-            suggestionsBox.appendChild(div);
-            suggestionsBox.style.display = 'block';
-            return;
-        } catch (err) { if (err.name !== 'AbortError') console.error(err); }
+        } catch (err) { if (err.name !== 'AbortError') console.warn(err); }
     }
 
-    const engine = document.getElementById('engineSelect').value;
-    if (engine === 'netwin') return buscarSugestoesNetwin(query, abortControllerAtual.signal);
-
-    try {
-        const url = `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(query)}&addressdetails=1&limit=6&accept-language=pt-BR`;
-        const res = await fetch(url, { signal: abortControllerAtual.signal });
-        const data = await res.json();
-        if (!data || data.length === 0) {
-            suggestionsBox.innerHTML = '<div class="suggestion-item empty">Nenhum resultado</div>';
-            suggestionsBox.style.display = 'block';
-            return;
-        }
-        suggestionsBox.innerHTML = '';
-        data.forEach(item => {
-            const a = item.address || {};
-            const partes = [a.road || a.pedestrian || item.display_name.split(',')[0], a.house_number, a.suburb || a.neighbourhood, a.city || a.town || a.village, a.state, a.postcode].filter(Boolean);
-            const texto = [...new Set(partes)].join(', ');
-            const lat = parseFloat(item.lat);
-            const lng = parseFloat(item.lon);
-            const div = document.createElement('div');
-            div.className = 'suggestion-item';
-            div.innerHTML = `<span class="suggestion-icon">&#128205;</span><span class="suggestion-text">${escapeHtml(texto)}</span>`;
-            div.addEventListener('click', () => {
-                searchInput.value = texto;
-                suggestionsBox.style.display = 'none';
-                irParaLocal(lat, lng, texto, 'busca');
-            });
-            suggestionsBox.appendChild(div);
-        });
+    // Renderiza
+    suggestionsBox.innerHTML = '';
+    if (sugestoes.length === 0) {
+        suggestionsBox.innerHTML = '<div class="suggestion-item empty">Nenhum resultado</div>';
         suggestionsBox.style.display = 'block';
-    } catch (err) {
-        if (err.name !== 'AbortError') {
-            console.error('Erro no autocomplete:', err);
-            suggestionsBox.innerHTML = '<div class="suggestion-item empty">Erro ao buscar sugestões</div>';
-            suggestionsBox.style.display = 'block';
-        }
+        return;
     }
-}
-
-async function buscarSugestoesNetwin(query, signal) {
-    try {
-        const url = `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(query)}&addressdetails=1&limit=6&accept-language=pt-BR`;
-        const res = await fetch(url, { signal });
-        const data = await res.json();
-        if (!data || data.length === 0) {
-            suggestionsBox.innerHTML = '<div class="suggestion-item empty">Nenhum resultado no Netwin (modo offline)</div>';
-            suggestionsBox.style.display = 'block';
-            return;
-        }
-        suggestionsBox.innerHTML = '';
-        data.forEach(item => {
-            const a = item.address || {};
-            const texto = [a.road, a.house_number, a.suburb, a.city, a.state].filter(Boolean).join(', ');
-            const lat = parseFloat(item.lat);
-            const lng = parseFloat(item.lon);
-            const div = document.createElement('div');
-            div.className = 'suggestion-item';
-            div.innerHTML = `<span class="suggestion-icon">&#127760;</span><span class="suggestion-text"><strong>Netwin:</strong> ${escapeHtml(texto)}</span>`;
-            div.addEventListener('click', () => {
-                searchInput.value = texto;
-                suggestionsBox.style.display = 'none';
-                irParaLocal(lat, lng, texto, 'netwin');
-            });
-            suggestionsBox.appendChild(div);
+    sugestoes.forEach(s => {
+        const div = document.createElement('div');
+        div.className = 'suggestion-item';
+        const icone = s.origem === 'OSM' ? '&#128205;' :
+                     s.origem === 'LogJáCadastrados' ? '&#11088;' :
+                     s.origem === 'LogRoteiros' ? '&#128220;' : '&#128236;';
+        div.innerHTML = `<span class="suggestion-icon">${icone}</span>
+            <span class="suggestion-text"><strong>${escapeHtml(s.origem)}:</strong> ${escapeHtml(s.texto)}</span>`;
+        div.addEventListener('click', () => {
+            searchInput.value = s.texto;
+            suggestionsBox.style.display = 'none';
+            if (s.lat != null && s.lng != null) {
+                irParaLocal(s.lat, s.lng, s.texto, s.origem);
+                selecionarParaSurvey(s);
+            } else {
+                selecionarParaSurvey(s);
+                showToast('Sem coordenadas', 'Endereço carregado no Survey. Marque o ponto no mapa se quiser.', 'warning', 3500);
+            }
         });
-        suggestionsBox.style.display = 'block';
-    } catch (err) { if (err.name !== 'AbortError') console.error(err); }
+        suggestionsBox.appendChild(div);
+    });
+    suggestionsBox.style.display = 'block';
 }
 
-function irParaLocal(lat, lng, nome, origem = 'busca') {
-    map.setView([lat, lng], 17);
-    if (marcadorAtual) map.removeLayer(marcadorAtual);
-    marcadorAtual = L.marker([lat, lng], { icon: houseIcon }).addTo(map);
-    marcadorAtual.bindPopup(`<strong>${escapeHtml(nome)}</strong>`).openPopup();
-    document.getElementById('coordsDisplay').textContent = `${lat.toFixed(8)}, ${lng.toFixed(8)}`;
-    document.getElementById('origemDisplay').textContent =
-        origem === 'busca' ? 'Busca por texto/endereço' :
-        origem === 'coordenadas' ? 'Coordenadas informadas' :
-        origem === 'netwin' ? 'Netwin' :
-        origem === 'manual' ? 'Endereço manual' :
-        'Clique no mapa (botão direito)';
-    consultarFontes(lat, lng);
+function formatarTextoLogradouro(r) {
+    const partes = [
+        [r.tipo, r.logradouro].filter(Boolean).join(' '),
+        r.bairro,
+        r.municipio,
+        r.uf
+    ].filter(Boolean);
+    const texto = partes.join(', ');
+    return r.cep ? `${texto}, ${formatarCEP(r.cep)}` : texto;
 }
 
+// ============================================
+// BUSCA DIRETA (Enter)
+// ============================================
 async function buscarEndereco(query) {
     const coords = tentarParseCoordenadas(query);
     if (coords) {
@@ -454,15 +456,6 @@ async function buscarEndereco(query) {
         return;
     }
     try {
-        const cepLimpo = query.replace(/\D/g, '');
-        if (cepLimpo.length === 8 && !isNaN(cepLimpo)) {
-            const resCep = await fetch(`https://viacep.com.br/ws/${cepLimpo}/json/`);
-            const dataCep = await resCep.json();
-            if (!dataCep.erro) {
-                const textoCep = `${dataCep.logradouro || ''}, ${dataCep.localidade || ''} - ${dataCep.uf || ''}`;
-                return buscarEndereco(textoCep);
-            }
-        }
         const url = `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(query)}&addressdetails=1&limit=1&accept-language=pt-BR`;
         const res = await fetch(url);
         const data = await res.json();
@@ -485,6 +478,23 @@ document.getElementById('searchBtn').addEventListener('click', () => {
 });
 
 // ============================================
+// IR PARA LOCAL NO MAPA
+// ============================================
+function irParaLocal(lat, lng, nome, origem = 'busca') {
+    map.setView([lat, lng], 17);
+    if (marcadorAtual) map.removeLayer(marcadorAtual);
+    marcadorAtual = L.marker([lat, lng], { icon: houseIcon }).addTo(map);
+    marcadorAtual.bindPopup(`<strong>${escapeHtml(nome)}</strong>`).openPopup();
+    document.getElementById('coordsDisplay').textContent = `${lat.toFixed(8)}, ${lng.toFixed(8)}`;
+    document.getElementById('origemDisplay').textContent =
+        origem === 'busca' ? 'Busca por texto/endereço' :
+        origem === 'coordenadas' ? 'Coordenadas informadas' :
+        origem === 'manual' ? 'Endereço manual' :
+        `Busca: ${origem}`;
+    consultarFontes(lat, lng);
+}
+
+// ============================================
 // CLIQUE DIREITO
 // ============================================
 map.on('contextmenu', async (e) => {
@@ -499,13 +509,13 @@ map.on('contextmenu', async (e) => {
 });
 
 // ============================================
-// CONSULTAR FONTES — prioridade ViaCEP > OpenCEP > OSM
+// CONSULTAR FONTES — busca reversa com prioridade ViaCEP
 // ============================================
 async function consultarFontes(lat, lng) {
     const list = document.getElementById('enderecosList');
+    if (!list) return;
     list.innerHTML = '<p class="empty-state"><span class="loading"></span>Consultando fontes...</p>';
 
-    // 1) Primeiro consulta OSM para saber o CEP (aproximado)
     let osm = null;
     let cepOSM = '';
     try {
@@ -514,7 +524,7 @@ async function consultarFontes(lat, lng) {
         const data = await res.json();
         const a = data.address || {};
         osm = {
-            fonte: 'OpenStreetMap',
+            origem: 'OpenStreetMap',
             rua: a.road || a.pedestrian || '',
             numero: a.house_number || '',
             bairro: a.suburb || a.neighbourhood || '',
@@ -522,14 +532,15 @@ async function consultarFontes(lat, lng) {
             estado: a.state || '',
             cep: a.postcode || '',
             pais: a.country || '',
+            lat: lat,
+            lng: lng,
             bruto: data.display_name || ''
         };
         cepOSM = (a.postcode || '').replace(/\D/g, '');
     } catch (e) {
-        console.warn('OSM falhou:', e);
+        console.warn('OSM reverse falhou:', e);
     }
 
-    // 2) Com o CEP do OSM, consulta ViaCEP e OpenCEP (fontes oficiais)
     const resultados = [];
     const tarefas = [];
 
@@ -538,7 +549,7 @@ async function consultarFontes(lat, lng) {
             fetch(`https://viacep.com.br/ws/${cepOSM}/json/`).then(r => r.json()).then(d => {
                 if (d && !d.erro) {
                     resultados.push({
-                        fonte: 'ViaCEP (oficial)',
+                        origem: 'ViaCEP (oficial)',
                         rua: d.logradouro || '',
                         numero: '',
                         bairro: d.bairro || '',
@@ -546,6 +557,8 @@ async function consultarFontes(lat, lng) {
                         estado: d.uf || '',
                         cep: d.cep || '',
                         pais: 'Brasil',
+                        lat: lat,
+                        lng: lng,
                         bruto: `${d.logradouro || ''}, ${d.bairro || ''}, ${d.localidade || ''} - ${d.uf || ''}`
                     });
                 }
@@ -555,7 +568,7 @@ async function consultarFontes(lat, lng) {
             fetch(`https://opencep.com/v1/${cepOSM}`).then(r => r.ok ? r.json() : null).then(d => {
                 if (d && !d.erro) {
                     resultados.push({
-                        fonte: 'OpenCEP',
+                        origem: 'OpenCEP',
                         rua: d.logradouro || '',
                         numero: '',
                         bairro: d.bairro || '',
@@ -563,6 +576,8 @@ async function consultarFontes(lat, lng) {
                         estado: d.uf || '',
                         cep: d.cep || '',
                         pais: 'Brasil',
+                        lat: lat,
+                        lng: lng,
                         bruto: `${d.logradouro || ''}, ${d.bairro || ''}, ${d.localidade || ''} - ${d.uf || ''}`
                     });
                 }
@@ -572,10 +587,8 @@ async function consultarFontes(lat, lng) {
 
     await Promise.allSettled(tarefas);
 
-    // 3) Adiciona OSM por último
     if (osm) resultados.push(osm);
 
-    // 4) Deduplica
     const vistos = new Set();
     const unicos = resultados.filter(r => {
         if (!r) return false;
@@ -622,24 +635,18 @@ function renderizarTabelaFontes(unicos, container) {
 
     unicos.forEach((r, idx) => {
         const tr = document.createElement('tr');
-        if (r.error) {
-            tr.innerHTML = `
-                <td><span class="fonte-badge error">${escapeHtml(r.fonte)}</span></td>
-                <td colspan="5" class="erro-cell">${escapeHtml(r.error)}</td>
-                <td>—</td>
-            `;
-        } else {
-            const badgeClass = (r.fonte || '').toLowerCase().includes('viacep') ? 'fonte-badge oficial' : 'fonte-badge';
-            tr.innerHTML = `
-                <td><span class="${badgeClass}">${escapeHtml(r.fonte)}</span></td>
-                <td>${escapeHtml(r.rua || '—')}</td>
-                <td>${escapeHtml(r.numero || '—')}</td>
-                <td>${escapeHtml(r.bairro || '—')}</td>
-                <td>${escapeHtml([r.cidade, r.estado].filter(Boolean).join('/') || '—')}</td>
-                <td class="mono">${escapeHtml(formatarCEP(r.cep))}</td>
-                <td><button class="btn-usar-fonte" data-idx="${idx}" type="button">Usar esta fonte</button></td>
-            `;
-        }
+        const badgeClass = (r.origem || '').toLowerCase().includes('viacep')
+            ? 'fonte-badge oficial'
+            : 'fonte-badge';
+        tr.innerHTML = `
+            <td><span class="${badgeClass}">${escapeHtml(r.origem || r.fonte || '')}</span></td>
+            <td>${escapeHtml(r.rua || '—')}</td>
+            <td>${escapeHtml(r.numero || '—')}</td>
+            <td>${escapeHtml(r.bairro || '—')}</td>
+            <td>${escapeHtml([r.cidade, r.estado].filter(Boolean).join('/') || '—')}</td>
+            <td class="mono">${escapeHtml(formatarCEP(r.cep))}</td>
+            <td><button class="btn-usar-fonte" data-idx="${idx}" type="button">Usar esta fonte</button></td>
+        `;
         tbody.appendChild(tr);
     });
 
@@ -650,19 +657,19 @@ function renderizarTabelaFontes(unicos, container) {
     tbody.querySelectorAll('.btn-usar-fonte').forEach(btn => {
         btn.addEventListener('click', () => {
             const r = unicos[parseInt(btn.dataset.idx, 10)];
-            if (!r || r.error) return;
+            if (!r) return;
             preencherFormulario(r);
-            showToast('Fonte aplicada', `Dados de ${r.fonte} carregados.`, 'success', 2500);
+            showToast('Fonte aplicada', `Dados de ${r.origem || r.fonte} carregados no Survey.`, 'success', 2500);
         });
     });
 }
 
 // ============================================
-// PREENCHER FORMULÁRIO
+// PREENCHER SURVEY (seção 4)
 // ============================================
 function preencherFormulario(r) {
     enderecoBaseSelecionado = {
-        fonte: r.fonte,
+        origem: r.origem || r.fonte || '',
         rua: r.rua || '',
         numero: r.numero || '',
         bairro: r.bairro || '',
@@ -670,38 +677,35 @@ function preencherFormulario(r) {
         estado: r.estado || '',
         cep: r.cep || '',
         pais: r.pais || 'Brasil',
-        bruto: r.bruto || '',
+        lat: r.lat != null ? r.lat : null,
+        lng: r.lng != null ? r.lng : null,
+        tipo: r.tipo || 'Rua',
         cod_bairro: r.cod_bairro || '',
         cod_lograd: r.cod_lograd || '',
         id_roteiro: r.id_roteiro || '',
         id_localidade: r.id_localidade || '',
         localidade: r.localidade || '',
         localidade_abrev: r.localidade_abrev || '',
-        tipo_lograd: r.tipo_lograd || ''
+        _registro_id: r._registro_id || null
     };
 
-    const fonteSelect = document.getElementById('fonteSelect');
-    let option = Array.from(fonteSelect.options).find(o => o.value === r.fonte);
-    if (!option) {
-        option = document.createElement('option');
-        option.value = r.fonte;
-        option.textContent = r.fonte;
-        fonteSelect.appendChild(option);
-    }
-    fonteSelect.value = r.fonte;
-
-    if (r.numero && !document.getElementById('numeroInput').value) {
-        document.getElementById('numeroInput').value = r.numero;
-    }
+    document.getElementById('surveyTipo').value = r.tipo || 'Rua';
+    document.getElementById('surveyLogradouro').value = r.rua || '';
+    document.getElementById('surveyBairro').value = r.bairro || '';
+    document.getElementById('surveyMunicipio').value = r.cidade || '';
+    document.getElementById('surveyUf').value = r.estado || '';
+    document.getElementById('surveyCep').value = formatarCEP(r.cep || '');
+    document.getElementById('surveyLatitude').value = r.lat != null ? Number(r.lat).toFixed(8) : '';
+    document.getElementById('surveyLongitude').value = r.lng != null ? Number(r.lng).toFixed(8) : '';
 
     const infoBox = document.getElementById('enderecoBaseInfo');
     if (infoBox) {
-        const linha1 = [r.rua, r.numero].filter(Boolean).join(', ') || '—';
+        const linha1 = [r.tipo, r.rua].filter(Boolean).join(' ') || '—';
         const linha2 = [r.bairro, [r.cidade, r.estado].filter(Boolean).join('/')].filter(Boolean).join(' • ');
         const linha3 = [formatarCEP(r.cep), r.pais].filter(Boolean).join(' • ');
         infoBox.innerHTML = `
             <div class="endereco-base-card">
-                <span class="fonte-badge">${escapeHtml(r.fonte)}</span>
+                <span class="fonte-badge">${escapeHtml(r.origem || r.fonte || '')}</span>
                 <p class="endereco-base-linha1">${escapeHtml(linha1)}</p>
                 <p class="endereco-base-linha2">${escapeHtml(linha2)}</p>
                 ${linha3 ? `<p class="endereco-base-linha3">${escapeHtml(linha3)}</p>` : ''}
@@ -709,17 +713,64 @@ function preencherFormulario(r) {
         `;
     }
 
-    const formBody = document.getElementById('formBody');
-    if (formBody && formBody.classList.contains('collapsed')) {
-        formBody.classList.remove('collapsed');
-        const toggle = document.querySelector('#formPanel .toggle-btn');
-        if (toggle) { toggle.classList.remove('collapsed'); toggle.setAttribute('aria-expanded', 'true'); }
-    }
     document.getElementById('formPanel').scrollIntoView({ behavior: 'smooth', block: 'start' });
 }
 
 // ============================================
-// NOVO ENDEREÇO MANUAL
+// SELECIONAR DIRETO DO MOTOR DE BUSCA
+// ============================================
+function selecionarParaSurvey(s) {
+    const r = {
+        origem: s.origem,
+        tipo: s.tipo || 'Rua',
+        rua: s.rua || '',
+        numero: s.numero || '',
+        bairro: s.bairro || '',
+        cidade: s.cidade || '',
+        estado: s.estado || '',
+        cep: s.cep || '',
+        pais: 'Brasil',
+        lat: s.lat != null ? s.lat : null,
+        lng: s.lng != null ? s.lng : null,
+        cod_bairro: s.cod_bairro || '',
+        cod_lograd: s.cod_lograd || '',
+        id_roteiro: s.id_roteiro || '',
+        id_localidade: s.id_localidade || '',
+        localidade: s.localidade || '',
+        localidade_abrev: s.localidade_abrev || '',
+        _registro_id: s._registro_id || null
+    };
+    enderecoBaseSelecionado = r;
+
+    document.getElementById('surveyTipo').value = r.tipo || 'Rua';
+    document.getElementById('surveyLogradouro').value = r.rua || '';
+    document.getElementById('surveyBairro').value = r.bairro || '';
+    document.getElementById('surveyMunicipio').value = r.cidade || '';
+    document.getElementById('surveyUf').value = r.estado || '';
+    document.getElementById('surveyCep').value = formatarCEP(r.cep || '');
+    document.getElementById('surveyLatitude').value = r.lat != null ? Number(r.lat).toFixed(8) : '';
+    document.getElementById('surveyLongitude').value = r.lng != null ? Number(r.lng).toFixed(8) : '';
+
+    const infoBox = document.getElementById('enderecoBaseInfo');
+    if (infoBox) {
+        const linha1 = [r.tipo, r.rua].filter(Boolean).join(' ') || '—';
+        const linha2 = [r.bairro, [r.cidade, r.estado].filter(Boolean).join('/')].filter(Boolean).join(' • ');
+        const linha3 = [formatarCEP(r.cep), r.pais].filter(Boolean).join(' • ');
+        infoBox.innerHTML = `
+            <div class="endereco-base-card">
+                <span class="fonte-badge">${escapeHtml(r.origem)}</span>
+                <p class="endereco-base-linha1">${escapeHtml(linha1)}</p>
+                <p class="endereco-base-linha2">${escapeHtml(linha2)}</p>
+                ${linha3 ? `<p class="endereco-base-linha3">${escapeHtml(linha3)}</p>` : ''}
+            </div>
+        `;
+    }
+
+    document.getElementById('formPanel').scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+
+// ============================================
+// NOVO LOGRADOURO MANUAL
 // ============================================
 document.getElementById('btnNovoEnderecoManual').addEventListener('click', () => {
     const form = document.getElementById('novoEnderecoForm');
@@ -743,7 +794,7 @@ document.getElementById('novoCep').addEventListener('blur', async (e) => {
     } catch (err) { console.warn('ViaCEP indisponível', err); }
 });
 
-document.getElementById('btnSalvarNovoEndereco').addEventListener('click', async () => {
+document.getElementById('btnSalvarNovoEndereco').addEventListener('click', () => {
     const cep = document.getElementById('novoCep').value.replace(/\D/g, '');
     const logradouro = document.getElementById('novoLogradouro').value.trim();
     if (cep.length !== 8) { showToast('CEP inválido', 'Informe um CEP com 8 dígitos.', 'warning'); return; }
@@ -751,260 +802,120 @@ document.getElementById('btnSalvarNovoEndereco').addEventListener('click', async
 
     const tipo = document.getElementById('novoTipo').value;
     const numero = document.getElementById('novoNumero').value.trim();
-    const complemento = document.getElementById('novoComplemento').value.trim();
     const bairro = document.getElementById('novoBairro').value.trim();
     const cidade = document.getElementById('novoCidade').value.trim();
     const uf = document.getElementById('novoUf').value.trim().toUpperCase();
 
-    let latitude = null, longitude = null;
-    try {
-        const q = encodeURIComponent(`${logradouro}, ${numero}, ${bairro}, ${cidade} - ${uf}, ${cep}`);
-        const res = await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${q}&addressdetails=1&limit=1&accept-language=pt-BR`);
-        const data = await res.json();
-        if (data && data.length > 0) {
-            latitude = parseFloat(data[0].lat);
-            longitude = parseFloat(data[0].lon);
-        }
-    } catch (err) { console.warn('Geocoding falhou', err); }
-
     const novoRegistro = {
-        fonte: 'Manual',
+        origem: 'Manual',
+        tipo: tipo,
         rua: logradouro,
         numero: numero,
-        tipo_complemento: '',
-        complemento: complemento,
         bairro: bairro,
         cidade: cidade,
         estado: uf,
         cep: cep,
         pais: 'Brasil',
-        latitude,
-        longitude,
-        bruto: `${tipo} ${logradouro}, ${numero}, ${bairro}, ${cidade} - ${uf}, ${formatarCEP(cep)}`,
-        tipo_lograd: tipo
+        lat: null,
+        lng: null
     };
 
-    enderecosEncontrados.push(novoRegistro);
-    renderizarTabelaFontes(enderecosEncontrados, document.getElementById('enderecosList'));
+    selecionarParaSurvey(novoRegistro);
 
-    if (latitude != null && longitude != null) {
-        irParaLocal(latitude, longitude, novoRegistro.bruto, 'manual');
-    }
-
-    ['novoCep','novoLogradouro','novoNumero','novoComplemento','novoBairro','novoCidade','novoUf'].forEach(id => {
+    ['novoCep','novoLogradouro','novoNumero','novoBairro','novoCidade','novoUf'].forEach(id => {
         document.getElementById(id).value = '';
     });
     document.getElementById('novoEnderecoForm').style.display = 'none';
 
-    showToast('Endereço adicionado', 'Clique em "Usar esta fonte" para preencher os detalhes.', 'success', 3000);
+    showToast('Endereço carregado no Survey', 'Confira e clique em "Salvar logradouro".', 'success', 3000);
 });
 
 // ============================================
-// ADICIONAR À LISTA
+// SALVAR LOGRADOURO (botão do Survey)
 // ============================================
 document.getElementById('addBtn').addEventListener('click', async () => {
-    if (!enderecoBaseSelecionado) {
-        showToast('Sem endereço base', 'Escolha uma fonte na seção 3 primeiro.', 'warning');
-        return;
-    }
+    const tipo = document.getElementById('surveyTipo').value.trim();
+    const logradouro = document.getElementById('surveyLogradouro').value.trim();
+    const bairro = document.getElementById('surveyBairro').value.trim();
+    const municipio = document.getElementById('surveyMunicipio').value.trim();
+    const uf = document.getElementById('surveyUf').value.trim().toUpperCase();
+    const cepRaw = document.getElementById('surveyCep').value.trim();
+    const cep = cepRaw.replace(/\D/g, '');
+    const latStr = document.getElementById('surveyLatitude').value.trim();
+    const lngStr = document.getElementById('surveyLongitude').value.trim();
 
-    const numero = document.getElementById('numeroInput').value.trim();
-    if (!numero) { showToast('Número obrigatório', 'Informe o número do imóvel.', 'warning'); return; }
+    if (!logradouro) { showToast('Logradouro obrigatório', 'Informe o nome do logradouro.', 'warning'); return; }
+    if (uf && uf.length !== 2) { showToast('UF inválida', 'UF deve ter 2 letras.', 'warning'); return; }
 
-    // Força nova tentativa de criar área, se não tiver
-    if (!areaAtualId) {
-        await garantirAreaPadrao(true);
-    }
-    if (!areaAtualId) {
-        showToast('Sem área', 'Não foi possível criar a área padrão. Verifique as policies no Supabase.', 'error', 8000);
-        return;
-    }
-
-    const coordsTexto = document.getElementById('coordsDisplay').textContent;
-    const [latStr, lngStr] = coordsTexto.split(',').map(s => s.trim());
-    const latitude = !isNaN(parseFloat(latStr)) ? parseFloat(latStr) : (enderecoBaseSelecionado.latitude ?? null);
-    const longitude = !isNaN(parseFloat(lngStr)) ? parseFloat(lngStr) : (enderecoBaseSelecionado.longitude ?? null);
-
-    const comp1Tipo = document.getElementById('comp1Tipo').value;
-    const comp1Valor = document.getElementById('comp1Valor').value.trim();
-    const comp2Tipo = document.getElementById('comp2Tipo').value;
-    const comp2Valor = document.getElementById('comp2Valor').value.trim();
-    const comp3Tipo = document.getElementById('comp3Tipo').value;
-    const comp3Valor = document.getElementById('comp3Valor').value.trim();
-
-    const complementos = [];
-    if (comp1Tipo || comp1Valor) complementos.push({ tipo: comp1Tipo, valor: comp1Valor });
-    if (comp2Tipo || comp2Valor) complementos.push({ tipo: comp2Tipo, valor: comp2Valor });
-    if (comp3Tipo || comp3Valor) complementos.push({ tipo: comp3Tipo, valor: comp3Valor });
+    const lat = latStr && !isNaN(parseFloat(latStr)) ? parseFloat(latStr) : null;
+    const lng = lngStr && !isNaN(parseFloat(lngStr)) ? parseFloat(lngStr) : null;
 
     const registro = {
-        area_id: areaAtualId,
-        rua: enderecoBaseSelecionado.rua || '',
-        numero: numero,
-        tipo_complemento: complementos.map(c => c.tipo).filter(Boolean).join(' / '),
-        complemento: complementos.map(c => c.valor).filter(Boolean).join(' / '),
-        complemento_extra: '',
-        andar: '',
-        bairro: enderecoBaseSelecionado.bairro || '',
-        cidade: enderecoBaseSelecionado.cidade || '',
-        estado: enderecoBaseSelecionado.estado || '',
-        cep: enderecoBaseSelecionado.cep || '',
-        pais: enderecoBaseSelecionado.pais || 'Brasil',
-        latitude,
-        longitude,
-        fonte: enderecoBaseSelecionado.fonte || '',
-        tipo_lograd: enderecoBaseSelecionado.tipo_lograd || '',
-        cod_bairro: enderecoBaseSelecionado.cod_bairro || '',
-        cod_lograd: enderecoBaseSelecionado.cod_lograd || '',
-        id_roteiro: enderecoBaseSelecionado.id_roteiro || '',
-        id_localidade: enderecoBaseSelecionado.id_localidade || '',
-        localidade: enderecoBaseSelecionado.localidade || '',
-        localidade_abrev: enderecoBaseSelecionado.localidade_abrev || '',
+        tipo: tipo || null,
+        logradouro: logradouro,
+        bairro: bairro || null,
+        municipio: municipio || null,
+        uf: uf || null,
+        cep: cep || null,
+        latitude: lat,
+        longitude: lng,
+        cod_bairro: (enderecoBaseSelecionado && enderecoBaseSelecionado.cod_bairro) || null,
+        cod_lograd: (enderecoBaseSelecionado && enderecoBaseSelecionado.cod_lograd) || null,
+        id_roteiro: (enderecoBaseSelecionado && enderecoBaseSelecionado.id_roteiro) || null,
+        id_localidade: (enderecoBaseSelecionado && enderecoBaseSelecionado.id_localidade) || null,
+        localidade: (enderecoBaseSelecionado && enderecoBaseSelecionado.localidade) || null,
+        localidade_abrev: (enderecoBaseSelecionado && enderecoBaseSelecionado.localidade_abrev) || null,
+        codigo_zona: null,
+        nome_zona: null,
+        origem: 'Survey',
         usuario_id: usuarioAtual ? usuarioAtual.id : null
     };
 
     try {
-        console.log('[ADD] inserindo:', registro);
-        const { error } = await supabaseClient.from('enderecos').insert([registro]);
-        if (error) {
-            console.error('[ADD] erro:', error);
-            throw error;
+        if (enderecoBaseSelecionado && enderecoBaseSelecionado._registro_id) {
+            const { error } = await supabaseClient
+                .from('logradouros')
+                .update({ ...registro, updated_at: new Date().toISOString() })
+                .eq('id', enderecoBaseSelecionado._registro_id);
+            if (error) throw error;
+            showToast('Logradouro atualizado', 'Registro atualizado em LogJáCadastrados.', 'success', 3000);
+        } else {
+            const { data, error } = await supabaseClient
+                .from('logradouros')
+                .insert([registro])
+                .select().single();
+            if (error) throw error;
+            enderecoBaseSelecionado = { ...enderecoBaseSelecionado, _registro_id: data.id };
+            showToast('Logradouro salvo', 'Registro salvo em LogJáCadastrados.', 'success', 3000);
         }
 
-        showToast('Endereço adicionado', 'Registro salvo com sucesso.', 'success', 2500);
+        if (lat != null && lng != null) {
+            if (marcadorAtual) map.removeLayer(marcadorAtual);
+            marcadorAtual = L.marker([lat, lng], { icon: houseIcon }).addTo(map);
+            marcadorAtual.bindPopup(`<strong>${escapeHtml(logradouro)}</strong>`).openPopup();
+        }
 
-        const limpar = (id, manterId) => {
-            const manter = manterId ? document.getElementById(manterId) : null;
-            if (manter && manter.checked) return;
-            const el = document.getElementById(id);
-            if (el) el.value = '';
-        };
-
-        limpar('numeroInput', 'numeroRecorrente');
-        limpar('comp1Tipo',   'comp1Recorrente');
-        limpar('comp1Valor',  'comp1Recorrente');
-        limpar('comp2Tipo',   'comp2Recorrente');
-        limpar('comp2Valor',  'comp2Recorrente');
-        limpar('comp3Tipo',   'comp3Recorrente');
-        limpar('comp3Valor',  'comp3Recorrente');
-
-        await carregarCadastrados();
     } catch (err) {
-        console.error(err);
+        console.error('[SALVAR LOGRADOURO] erro:', err);
         showToast('Erro ao salvar', err.message, 'error', 8000);
     }
 });
 
 // ============================================
-// CARREGAR CADASTRADOS
-// ============================================
-async function carregarCadastrados() {
-    if (!areaAtualId) { document.getElementById('cadastradosPanel').style.display = 'none'; return; }
-    try {
-        const { data, error } = await supabaseClient
-            .from('enderecos').select('*').eq('area_id', areaAtualId).order('id', { ascending: true });
-        if (error) throw error;
-        cadastrados = data || [];
-        const panel = document.getElementById('cadastradosPanel');
-        const tbody = document.querySelector('#cadastradosTable tbody');
-        tbody.innerHTML = '';
-        if (cadastrados.length === 0) { panel.style.display = 'none'; return; }
-        panel.style.display = 'block';
-        cadastrados.forEach((r, idx) => {
-            const tr = document.createElement('tr');
-            const tipos = (r.tipo_complemento || '').split(' / ').filter(Boolean);
-            const valores = (r.complemento || '').split(' / ').filter(Boolean);
-            const complTexto = tipos.map((t, i) => `${t}: ${valores[i] || ''}`.trim()).join(' | ') || '—';
-            tr.innerHTML = `
-                <td>${escapeHtml(r.rua || '')}</td>
-                <td>${escapeHtml(r.numero || '')}</td>
-                <td>${escapeHtml(complTexto)}</td>
-                <td>${escapeHtml(r.bairro || '')}</td>
-                <td>${escapeHtml(r.cidade || '')}</td>
-                <td class="mono">${escapeHtml(formatarCEP(r.cep || ''))}</td>
-                <td class="coords-cell">${r.latitude != null ? r.latitude.toFixed(6) : ''}, ${r.longitude != null ? r.longitude.toFixed(6) : ''}</td>
-                <td>${escapeHtml(r.fonte || '')}</td>
-                <td class="acoes-cell">
-                    <button class="btn-ir" data-idx="${idx}" title="Centralizar no mapa" type="button">🗺️</button>
-                    <button class="btn-remover" data-id="${r.id}" title="Remover" type="button">🗑️</button>
-                </td>
-            `;
-            tbody.appendChild(tr);
-        });
-        tbody.querySelectorAll('.btn-ir').forEach(btn => {
-            btn.addEventListener('click', () => {
-                const r = cadastrados[parseInt(btn.dataset.idx, 10)];
-                if (!r || r.latitude == null) return;
-                map.setView([r.latitude, r.longitude], 18);
-                if (marcadorAtual) map.removeLayer(marcadorAtual);
-                marcadorAtual = L.marker([r.latitude, r.longitude], { icon: houseIcon }).addTo(map);
-                marcadorAtual.bindPopup(`<strong>${escapeHtml(r.rua)}, ${escapeHtml(r.numero)}</strong>`).openPopup();
-                document.getElementById('panel2').scrollIntoView({ behavior: 'smooth', block: 'start' });
-            });
-        });
-        tbody.querySelectorAll('.btn-remover').forEach(btn => {
-            btn.addEventListener('click', async () => {
-                const id = btn.dataset.id;
-                if (!confirm('Remover este endereço?')) return;
-                try {
-                    const { error } = await supabaseClient.from('enderecos').delete().eq('id', id);
-                    if (error) throw error;
-                    showToast('Removido', 'Endereço excluído.', 'success', 2000);
-                    await carregarCadastrados();
-                } catch (err) {
-                    console.error(err);
-                    showToast('Erro ao remover', err.message, 'error');
-                }
-            });
-        });
-        marcadoresSalvos.forEach(m => map.removeLayer(m));
-        marcadoresSalvos = [];
-        cadastrados.forEach(r => {
-            if (r.latitude == null || r.longitude == null) return;
-            const m = L.marker([r.latitude, r.longitude], { icon: houseIcon }).addTo(map);
-            m.bindPopup(`<strong>${escapeHtml(r.rua)}, ${escapeHtml(r.numero)}</strong>`);
-            marcadoresSalvos.push(m);
-        });
-    } catch (err) {
-        console.error(err);
-        showToast('Erro ao carregar', err.message, 'error');
-    }
-}
-
-// ============================================
-// ÁREA ATUAL
-// ============================================
-async function carregarAreaAtual() {
-    areaAtualId = sessionStorage.getItem('areaAtualId');
-    const label = document.getElementById('areaLabel');
-    if (!areaAtualId) { label.textContent = ''; return; }
-    try {
-        const { data, error } = await supabaseClient.from('areas').select('*').eq('id', areaAtualId).single();
-        if (error) throw error;
-        label.textContent = `Área: ${data.nome || data.descricao || areaAtualId}`;
-    } catch (err) {
-        console.error(err);
-        label.textContent = '';
-    }
-}
-
-// ============================================
-// BOTÃO "LIMPAR LISTA"
+// LIMPAR LISTA (botão do topo)
 // ============================================
 document.getElementById('novaAreaBtn').addEventListener('click', async () => {
-    if (!areaAtualId) {
-        showToast('Nada para limpar', 'Não há endereços cadastrados.', 'info', 2000);
-        return;
-    }
-    if (!confirm('Apagar TODOS os endereços cadastrados? Esta ação não pode ser desfeita.')) return;
+    if (!confirm('Apagar TODOS os logradouros salvos como Survey? (os do roteiro serão mantidos)')) return;
     try {
-        const { error } = await supabaseClient.from('enderecos').delete().eq('area_id', areaAtualId);
+        const { error } = await supabaseClient
+            .from('logradouros')
+            .delete()
+            .eq('origem', 'Survey');
         if (error) throw error;
-        marcadoresSalvos.forEach(m => map.removeLayer(m));
-        marcadoresSalvos = [];
-        cadastrados = [];
-        showToast('Lista limpa', 'Todos os endereços foram removidos.', 'success', 2500);
-        await carregarCadastrados();
+        enderecosEncontrados = [];
+        document.getElementById('enderecosList').innerHTML =
+            '<p class="empty-state">Nenhum endereço consultado ainda.</p>';
+        showToast('Lista limpa', 'Logradouros do tipo Survey foram removidos.', 'success', 2500);
     } catch (err) {
         console.error(err);
         showToast('Erro ao limpar', err.message, 'error');
@@ -1012,171 +923,7 @@ document.getElementById('novaAreaBtn').addEventListener('click', async () => {
 });
 
 // ============================================
-// EXPORTAR — ZIP COM XMLs (formato edificio)
-// ============================================
-document.getElementById('exportBtn').addEventListener('click', async () => {
-    if (cadastrados.length === 0) {
-        showToast('Nada para exportar', 'Cadastre ao menos um endereço.', 'warning');
-        return;
-    }
-
-    try {
-        if (typeof JSZip === 'undefined') {
-            throw new Error('JSZip não carregado. Adicione o script no index.html.');
-        }
-
-        const zip = new JSZip();
-
-        const localidade = (cadastrados[0].localidade || cadastrados[0].cidade || 'localidade')
-            .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
-            .replace(/\s+/g, '_')
-            .toUpperCase();
-        const agora = new Date();
-        const carimbo = `${agora.getFullYear()}${String(agora.getMonth()+1).padStart(2,'0')}${String(agora.getDate()).padStart(2,'0')}${String(agora.getHours()).padStart(2,'0')}${String(agora.getMinutes()).padStart(2,'0')}`;
-        const nomeZipBase = `${localidade}_${carimbo}`;
-
-        cadastrados.forEach((r, idx) => {
-            const numero = idx + 1;
-            const nomePasta = `moradia${numero}`;
-            const nomeArquivo = `moradia${numero}.xml`;
-            const xmlConteudo = gerarXMLEdificio(r, numero);
-            zip.folder(nomePasta).file(nomeArquivo, xmlConteudo);
-        });
-
-        const blob = await zip.generateAsync({ type: 'blob', compression: 'DEFLATE' });
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = `${nomeZipBase}.zip`;
-        document.body.appendChild(a); a.click(); document.body.removeChild(a);
-        URL.revokeObjectURL(url);
-
-        showToast('ZIP gerado', `${cadastrados.length} moradia(s) empacotada(s).`, 'success', 3000);
-    } catch (err) {
-        console.error(err);
-        showToast('Erro ao gerar ZIP', err.message, 'error');
-    }
-});
-
-// ============================================
-// GERAR XML NO FORMATO "edificio"
-// ============================================
-function gerarXMLEdificio(r, numero) {
-    const xmlEscape = (v) => {
-        if (v == null) return '';
-        return String(v)
-            .replace(/&/g, '&amp;')
-            .replace(/</g, '&lt;')
-            .replace(/>/g, '&gt;')
-            .replace(/"/g, '&quot;')
-            .replace(/'/g, '&apos;');
-    };
-
-    const agora = new Date();
-    const pad = (n) => String(n).padStart(2, '0');
-    const dataFormatada =
-        `${agora.getFullYear()}${pad(agora.getMonth()+1)}${pad(agora.getDate())}` +
-        `${pad(agora.getHours())}${pad(agora.getMinutes())}${pad(agora.getSeconds())}`;
-
-    const tipo = (r.tipo_lograd || 'RUA').toString().toUpperCase();
-    const nomeLograd = (r.rua || '').toString().toUpperCase();
-    const bairro = (r.bairro || '').toString().toUpperCase();
-    const municipio = (r.cidade || r.localidade || '').toString().toUpperCase();
-    const uf = (r.estado || '').toString().toUpperCase();
-    const codLograd = r.cod_lograd || r.id_roteiro || '0';
-
-    const logradouroCompleto =
-        `${tipo} ${nomeLograd}, ${bairro}, ${municipio}, ${municipio} - ${uf} (${codLograd})`;
-
-    const coordX = r.longitude != null ? Number(r.longitude).toFixed(6) : '';
-    const coordY = r.latitude != null ? Number(r.latitude).toFixed(6) : '';
-
-    const codigoZona = r.codigo_zona || '';
-    const nomeZona = r.nome_zona || codigoZona;
-    const localidade = r.localidade || r.cidade || '';
-
-    const idEdificio = r.id_roteiro || r.id || numero;
-    const numeroFachada = r.numero || '';
-    const cep = (r.cep || '').toString().replace(/\D/g, '');
-    const codBairro = r.cod_bairro || '';
-    const idRoteiro = r.id_roteiro || r.id || '';
-    const idLocalidade = r.id_localidade || '';
-
-    const tecnicoNome = (usuarioAtual && usuarioAtual.user_metadata && usuarioAtual.user_metadata.nome) || '';
-    const tecnicoId = (usuarioAtual && usuarioAtual.id) || '';
-
-    const empresaId = '6';
-    const empresaNome = 'LOGICTEL';
-
-    const destinacaoMap = {
-        'Residencial': 'RESIDENCIA',
-        'Comercial': 'COMERCIO',
-        'Industrial': 'INDUSTRIA',
-        'Rural': 'RURAL',
-        'Misto': 'MISTO'
-    };
-    const destinacao = destinacaoMap[r.finalidade] || 'RESIDENCIA';
-    const numPisos = r.andar && !isNaN(parseInt(r.andar, 10)) ? String(parseInt(r.andar, 10)) : '1';
-
-    return `<?xml version="1.0" encoding="UTF-8"?><edificio tipo="M" versao="7.9.2">
-  <gravado>false</gravado>
-  <nEdificio></nEdificio>
-  <coordX>${xmlEscape(coordX)}</coordX>
-  <coordY>${xmlEscape(coordY)}</coordY>
-  <codigoZona>${xmlEscape(codigoZona)}</codigoZona>
-  <nomeZona>${xmlEscape(nomeZona)}</nomeZona>
-  <localidade>${xmlEscape(localidade)}</localidade>
-  <enderecoEdificio>
-    <id>${xmlEscape(idEdificio)}</id>
-    <logradouro>${xmlEscape(logradouroCompleto)}</logradouro>
-    <numero_fachada>${xmlEscape(numeroFachada)}</numero_fachada>
-    <cep>${xmlEscape(cep)}</cep>
-    <cod_bairro>${xmlEscape(codBairro)}</cod_bairro>
-    <bairro>${xmlEscape(bairro)}</bairro>
-    <id_roteiro>${xmlEscape(idRoteiro)}</id_roteiro>
-    <id_localidade>${xmlEscape(idLocalidade)}</id_localidade>
-    <cod_lograd>${xmlEscape(codLograd)}</cod_lograd>
-  </enderecoEdificio>
-  <tecnico>
-    <id>${xmlEscape(tecnicoId)}</id>
-    <nome>${xmlEscape(tecnicoNome)}</nome>
-  </tecnico>
-  <empresa>
-    <id>${xmlEscape(empresaId)}</id>
-    <nome>${xmlEscape(empresaNome)}</nome>
-  </empresa>
-  <data>${dataFormatada}</data>
-  <observacoes></observacoes>
-  <totalUCs>1</totalUCs>
-  <ocupacao>EDIFICACAOCOMPLETA</ocupacao>
-  <numPisos>${xmlEscape(numPisos)}</numPisos>
-  <destinacao>${xmlEscape(destinacao)}</destinacao>
-</edificio>
-`;
-}
-
-// ============================================
-// LIMPAR TUDO (botão dentro da seção 5)
-// ============================================
-document.getElementById('clearBtn').addEventListener('click', async () => {
-    if (!areaAtualId) return;
-    if (!confirm('Apagar TODOS os endereços desta área?')) return;
-    try {
-        const { error } = await supabaseClient.from('enderecos').delete().eq('area_id', areaAtualId);
-        if (error) throw error;
-        marcadoresSalvos.forEach(m => map.removeLayer(m));
-        marcadoresSalvos = [];
-        cadastrados = [];
-        showToast('Limpo', 'Todos os endereços foram removidos.', 'success', 2500);
-        await carregarCadastrados();
-    } catch (err) {
-        console.error(err);
-        showToast('Erro ao limpar', err.message, 'error');
-    }
-});
-
-// ============================================
-// UPLOAD DE ROTEIRO
+// UPLOAD DE ROTEIRO → tabela logradouros (origem='Roteiro XML')
 // ============================================
 document.getElementById('uploadBtn').addEventListener('click', async () => {
     const fileInput = document.getElementById('roteiroFile');
@@ -1205,59 +952,48 @@ document.getElementById('uploadBtn').addEventListener('click', async () => {
 
         if (registros.length === 0) {
             status.textContent = 'Nenhum registro válido.';
-            showToast('Sem registros', 'O arquivo não continha dados válidos. Verifique o console (F12).', 'warning');
-            return;
-        }
-
-        // Garante área padrão se não existir
-        if (!areaAtualId) {
-            await garantirAreaPadrao(true);
-        }
-        if (!areaAtualId) {
-            status.textContent = 'Não foi possível criar a área padrão.';
-            showToast('Sem área', 'Verifique as policies no Supabase.', 'error', 8000);
+            showToast('Sem registros', 'O arquivo não continha dados válidos.', 'warning');
             return;
         }
 
         const payload = registros.map(r => ({
-            area_id: areaAtualId,
-            rua: r.rua || '',
-            numero: r.numero || '',
-            tipo_complemento: r.tipo_complemento || '',
-            complemento: r.complemento || '',
-            complemento_extra: r.complemento_extra || '',
-            andar: r.andar || '',
-            bairro: r.bairro || '',
-            cidade: r.cidade || '',
-            estado: r.estado || '',
-            cep: r.cep || '',
-            pais: r.pais || 'Brasil',
+            tipo: r.tipo || null,
+            logradouro: r.rua || r.logradouro || '',
+            bairro: r.bairro || null,
+            municipio: r.cidade || r.municipio || null,
+            uf: r.estado || r.uf || null,
+            cep: (r.cep || '').replace(/\D/g, '') || null,
             latitude: r.latitude != null ? r.latitude : null,
             longitude: r.longitude != null ? r.longitude : null,
-            fonte: r.fonte || 'Roteiro',
-            tipo_lograd: r.tipo_lograd || '',
-            cod_bairro: r.cod_bairro || '',
-            cod_lograd: r.cod_lograd || '',
-            id_roteiro: r.id_roteiro || '',
-            id_localidade: r.id_localidade || '',
-            localidade: r.localidade || '',
-            localidade_abrev: r.localidade_abrev || '',
-            codigo_zona: r.codigo_zona || '',
-            nome_zona: r.nome_zona || '',
+            cod_bairro: r.cod_bairro || null,
+            cod_lograd: r.cod_lograd || null,
+            id_roteiro: r.id_roteiro || null,
+            id_localidade: r.id_localidade || null,
+            localidade: r.localidade || null,
+            localidade_abrev: r.localidade_abrev || null,
+            codigo_zona: r.codigo_zona || null,
+            nome_zona: r.nome_zona || null,
+            origem: 'Roteiro XML',
             usuario_id: usuarioAtual ? usuarioAtual.id : null
-        }));
+        })).filter(r => r.logradouro);
 
-        const { error } = await supabaseClient.from('enderecos').insert(payload);
-        if (error) throw error;
+        const TAM = 500;
+        let inseridos = 0;
+        for (let i = 0; i < payload.length; i += TAM) {
+            const lote = payload.slice(i, i + TAM);
+            const { error } = await supabaseClient.from('logradouros').insert(lote);
+            if (error) throw error;
+            inseridos += lote.length;
+            status.textContent = `Importando... ${inseridos}/${payload.length}`;
+        }
 
-        status.textContent = `${registros.length} registro(s) importado(s).`;
-        showToast('Roteiro importado', `${registros.length} registro(s).`, 'success', 3000);
+        status.textContent = `${inseridos} logradouro(s) importado(s).`;
+        showToast('Roteiro importado', `${inseridos} logradouro(s) em LogRoteiros.`, 'success', 3500);
         fileInput.value = '';
-        await carregarCadastrados();
     } catch (err) {
         console.error('[UPLOAD] Erro:', err);
         status.textContent = `Erro: ${err.message}`;
-        showToast('Erro na importação', err.message, 'error');
+        showToast('Erro na importação', err.message, 'error', 8000);
     }
 });
 
@@ -1276,20 +1012,15 @@ function parseCSV(texto) {
         const lat = parseFloat(get('latitude'));
         const lng = parseFloat(get('longitude'));
         return {
+            tipo: get('tipo') || get('tipo_lograd') || '',
             rua: get('rua') || get('logradouro'),
             numero: get('numero') || get('número'),
-            tipo_complemento: get('tipo_complemento') || get('tipo'),
-            complemento: get('complemento'),
-            complemento_extra: get('complemento_extra'),
-            andar: get('andar'),
             bairro: get('bairro'),
-            cidade: get('cidade') || get('localidade'),
+            cidade: get('cidade') || get('municipio') || get('localidade'),
             estado: get('estado') || get('uf'),
             cep: get('cep'),
-            pais: get('pais') || get('país') || 'Brasil',
             latitude: isNaN(lat) ? null : lat,
             longitude: isNaN(lng) ? null : lng,
-            fonte: get('fonte') || 'Roteiro CSV',
             tipo_lograd: get('tipo_lograd') || '',
             cod_bairro: get('cod_bairro') || '',
             cod_lograd: get('cod_lograd') || '',
@@ -1343,21 +1074,16 @@ function parseXMLRoteiro(texto) {
         }
 
         return {
+            tipo: tipo || 'Rua',
+            tipo_lograd: tipo,
             rua: nomeLograd,
             numero: getText(node, 'numero_fachada') || getText(node, 'numero'),
-            tipo_complemento: '',
-            complemento: '',
-            complemento_extra: '',
-            andar: '',
             bairro: getText(node, 'bairro'),
             cidade: getText(node, 'municipio') || getText(node, 'localidade'),
             estado: getText(node, 'uf_abrev') || getText(node, 'uf'),
             cep: getText(node, 'cep'),
-            pais: 'Brasil',
             latitude: parseFloat(getText(node, 'coordY')) || null,
             longitude: parseFloat(getText(node, 'coordX')) || null,
-            fonte: 'Roteiro XML',
-            tipo_lograd: tipo,
             cod_bairro: getText(node, 'cod_bairro'),
             cod_lograd: getText(node, 'cod_lograd'),
             id_roteiro: getText(node, 'id_roteiro') || getText(node, 'id'),

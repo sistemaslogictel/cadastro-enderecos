@@ -39,9 +39,8 @@
         <button data-goto="panel1" title="1. Buscar Localização" type="button">1</button>
         <button data-goto="panel2" title="2. Mapa" type="button">2</button>
         <button data-goto="resultsPanel" title="3. Endereços Encontrados" type="button">3</button>
-        <button data-goto="formPanel" title="4. Detalhes do Imóvel" type="button">4</button>
-        <button data-goto="cadastradosPanel" title="5. Endereços Cadastrados" type="button">5</button>
-        <button data-goto="uploadPanel" title="6. Carregar Roteiro" type="button">6</button>
+        <button data-goto="formPanel" title="4. Survey" type="button">4</button>
+        <button data-goto="uploadPanel" title="5. Carregar Roteiro" type="button">5</button>
     </nav>
 
     <main class="container" id="main-content" role="main">
@@ -59,7 +58,7 @@
             <div class="panel-body" id="panel1-body">
                 <div class="search-box">
                     <div class="search-wrapper">
-                        <input type="text" id="searchInput" placeholder="Digite um endereço ou CEP..." autocomplete="off" aria-label="Buscar endereço ou CEP">
+                        <input type="text" id="searchInput" placeholder="Digite um endereço, CEP ou nome de rua..." autocomplete="off" aria-label="Buscar endereço ou CEP">
                         <div id="suggestions" class="suggestions" role="listbox" aria-label="Sugestões de endereço"></div>
                     </div>
                     <button id="searchBtn" type="button">Buscar</button>
@@ -68,8 +67,10 @@
                 <div class="engine-select">
                     <label>Motor de busca:
                         <select id="engineSelect" aria-label="Selecione o motor de busca">
-                            <option value="osm">OSM (OpenStreetMap)</option>
-                            <option value="netwin">Netwin (catálogo)</option>
+                            <option value="osm">OpenStreetMap</option>
+                            <option value="logcadastrados">LogJáCadastrados</option>
+                            <option value="logroteiros">LogRoteiros</option>
+                            <option value="todos">Todos</option>
                         </select>
                     </label>
                 </div>
@@ -97,44 +98,40 @@
             <div class="panel-body" id="resultsBody">
                 <p class="coords">Coordenadas: <span id="coordsDisplay">-</span></p>
                 <p class="origem">Origem: <span id="origemDisplay">-</span></p>
-                <div id="aiSuggestion" class="ai-suggestion" style="display:none;" role="status" aria-live="polite"></div>
 
                 <div class="results-header">
                     <h3 class="results-subtitle">Fontes consultadas</h3>
-                    <button id="btnNovoEnderecoManual" class="btn-outline" type="button">➕ Cadastrar endereço novo</button>
+                    <button id="btnNovoEnderecoManual" class="btn-outline" type="button">➕ Cadastrar logradouro novo</button>
                 </div>
 
                 <div id="novoEnderecoForm" class="novo-endereco-form" style="display:none;">
-                    <div class="form-grid">
+                    <div class="form-grid compact">
                         <label>CEP:
                             <input type="text" id="novoCep" placeholder="00000-000" inputmode="numeric" maxlength="9">
                         </label>
                         <label>Tipo:
                             <select id="novoTipo">
-                                <option>RUA</option>
-                                <option>AVENIDA</option>
-                                <option>TRAVESSA</option>
-                                <option>ESTRADA</option>
-                                <option>ALAMEDA</option>
-                                <option>PRACA</option>
-                                <option>CAMINHO</option>
-                                <option>BECO</option>
-                                <option>LARGO</option>
+                                <option>Rua</option>
+                                <option>Avenida</option>
+                                <option>Travessa</option>
+                                <option>Estrada</option>
+                                <option>Alameda</option>
+                                <option>Praça</option>
+                                <option>Caminho</option>
+                                <option>Beco</option>
+                                <option>Largo</option>
                             </select>
                         </label>
                         <label>Logradouro:
                             <input type="text" id="novoLogradouro" placeholder="Ex: Dom Marcos Barbosa">
                         </label>
-                        <label>Número:
+                        <label>Nº:
                             <input type="text" id="novoNumero" placeholder="Ex: 178" inputmode="numeric">
-                        </label>
-                        <label>Complemento:
-                            <input type="text" id="novoComplemento" placeholder="Ex: Bloco A">
                         </label>
                         <label>Bairro:
                             <input type="text" id="novoBairro" placeholder="Ex: Cidade Nova">
                         </label>
-                        <label>Cidade:
+                        <label>Município:
                             <input type="text" id="novoCidade" placeholder="Ex: Rio de Janeiro">
                         </label>
                         <label>UF:
@@ -142,178 +139,84 @@
                         </label>
                     </div>
                     <div class="actions">
-                        <button id="btnSalvarNovoEndereco" class="btn-primary" type="button">Salvar endereço</button>
+                        <button id="btnSalvarNovoEndereco" class="btn-primary" type="button">Salvar logradouro</button>
                         <button id="btnCancelarNovoEndereco" class="btn-outline" type="button">Cancelar</button>
                     </div>
                 </div>
 
                 <div id="enderecosList" role="list">
-                    <p class="empty-state">Nenhum endereço consultado ainda. Busque um endereço acima ou cadastre um novo.</p>
+                    <p class="empty-state">Nenhum endereço consultado ainda. Busque um endereço acima.</p>
                 </div>
             </div>
         </section>
 
-        <!-- 4. Detalhes do Imóvel (SIMPLIFICADO) -->
+        <!-- 4. Survey -->
         <section class="panel" id="formPanel" aria-labelledby="formPanel-title">
             <h2 id="formPanel-title">
-                <span>4. Detalhes do Imóvel</span>
+                <span>4. Survey</span>
                 <button class="toggle-btn" data-target="formBody" type="button" aria-expanded="true" aria-controls="formBody" aria-label="Expandir ou recolher seção">&#9660;</button>
             </h2>
             <div class="panel-body" id="formBody">
-                <div class="form-section">
-                    <h3 class="form-subtitle">Endereço base (do roteiro ou manual)</h3>
-                    <div id="enderecoBaseInfo" class="endereco-base-info">
-                        <p class="empty-state">Selecione uma fonte em "3. Endereços Encontrados".</p>
-                    </div>
+                <p class="hint">Confirme/edite o endereço escolhido e salve como <strong>LogJáCadastrado</strong>.</p>
+
+                <div id="enderecoBaseInfo" class="endereco-base-info">
+                    <p class="empty-state">Selecione uma fonte em "3. Endereços Encontrados".</p>
                 </div>
 
                 <div class="form-section">
-                    <h3 class="form-subtitle">Complemento do imóvel</h3>
-                    <div class="form-grid">
-                        <label>Fonte dos dados:
-                            <select id="fonteSelect" aria-label="Fonte dos dados do endereço"></select>
-                        </label>
-
-                        <label class="field-with-check">
-                            <span>Número: *</span>
-                            <span class="check-inline">
-                                <input type="checkbox" id="numeroRecorrente" title="Manter este número para o próximo cadastro">
-                                <small>manter</small>
-                            </span>
-                            <input type="text" id="numeroInput" placeholder="Ex: 98" inputmode="numeric" required>
-                        </label>
-                    </div>
-                </div>
-
-                <!-- Complemento 1 -->
-                <div class="form-section complemento-bloco">
-                    <h3 class="form-subtitle">
-                        Complemento 1
-                        <span class="check-inline">
-                            <input type="checkbox" id="comp1Recorrente" title="Manter este complemento para o próximo cadastro">
-                            <small>manter</small>
-                        </span>
-                    </h3>
-                    <div class="form-grid">
+                    <h3 class="form-subtitle">Endereço</h3>
+                    <div class="form-grid compact">
                         <label>Tipo:
-                            <select id="comp1Tipo">
+                            <select id="surveyTipo">
                                 <option value="">-- Selecione --</option>
-                                <option>Lote</option>
-                                <option>Quadra</option>
-                                <option>Casa</option>
-                                <option>Apartamento</option>
-                                <option>Bloco</option>
-                                <option>Loja</option>
-                                <option>Sala</option>
-                                <option>Fundos</option>
-                                <option>Outro</option>
+                                <option>Rua</option>
+                                <option>Avenida</option>
+                                <option>Travessa</option>
+                                <option>Estrada</option>
+                                <option>Alameda</option>
+                                <option>Praça</option>
+                                <option>Caminho</option>
+                                <option>Beco</option>
+                                <option>Largo</option>
                             </select>
                         </label>
-                        <label>Valor:
-                            <input type="text" id="comp1Valor" placeholder="Ex: 3" inputmode="numeric">
+                        <label>Logradouro:
+                            <input type="text" id="surveyLogradouro" placeholder="Ex: Martins Lage">
+                        </label>
+                        <label>Bairro:
+                            <input type="text" id="surveyBairro" placeholder="Ex: Engenho Novo">
+                        </label>
+                        <label>Município:
+                            <input type="text" id="surveyMunicipio" placeholder="Ex: Rio de Janeiro">
+                        </label>
+                        <label>UF:
+                            <input type="text" id="surveyUf" placeholder="RJ" maxlength="2">
+                        </label>
+                        <label>CEP:
+                            <input type="text" id="surveyCep" placeholder="00000-000" maxlength="9">
+                        </label>
+                        <label>Latitude:
+                            <input type="text" id="surveyLatitude" placeholder="-22.90200282">
+                        </label>
+                        <label>Longitude:
+                            <input type="text" id="surveyLongitude" placeholder="-43.27065822">
                         </label>
                     </div>
                 </div>
 
-                <!-- Complemento 2 -->
-                <div class="form-section complemento-bloco">
-                    <h3 class="form-subtitle">
-                        Complemento 2
-                        <span class="check-inline">
-                            <input type="checkbox" id="comp2Recorrente" title="Manter este complemento para o próximo cadastro">
-                            <small>manter</small>
-                        </span>
-                    </h3>
-                    <div class="form-grid">
-                        <label>Tipo:
-                            <select id="comp2Tipo">
-                                <option value="">-- Selecione --</option>
-                                <option>Lote</option>
-                                <option>Quadra</option>
-                                <option>Casa</option>
-                                <option>Apartamento</option>
-                                <option>Bloco</option>
-                                <option>Loja</option>
-                                <option>Sala</option>
-                                <option>Fundos</option>
-                                <option>Outro</option>
-                            </select>
-                        </label>
-                        <label>Valor:
-                            <input type="text" id="comp2Valor" placeholder="Ex: B" inputmode="text">
-                        </label>
-                    </div>
-                </div>
-
-                <!-- Complemento 3 -->
-                <div class="form-section complemento-bloco">
-                    <h3 class="form-subtitle">
-                        Complemento 3
-                        <span class="check-inline">
-                            <input type="checkbox" id="comp3Recorrente" title="Manter este complemento para o próximo cadastro">
-                            <small>manter</small>
-                        </span>
-                    </h3>
-                    <div class="form-grid">
-                        <label>Tipo:
-                            <select id="comp3Tipo">
-                                <option value="">-- Selecione --</option>
-                                <option>Lote</option>
-                                <option>Quadra</option>
-                                <option>Casa</option>
-                                <option>Apartamento</option>
-                                <option>Bloco</option>
-                                <option>Loja</option>
-                                <option>Sala</option>
-                                <option>Fundos</option>
-                                <option>Outro</option>
-                            </select>
-                        </label>
-                        <label>Valor:
-                            <input type="text" id="comp3Valor" placeholder="Ex: 5" inputmode="numeric">
-                        </label>
-                    </div>
-                </div>
-
-                <button id="addBtn" class="btn-primary btn-block" type="button">➕ Adicionar à Lista</button>
+                <button id="addBtn" class="btn-primary btn-block" type="button">💾 Salvar logradouro</button>
             </div>
         </section>
 
-        <!-- 5. Cadastrados -->
-        <section class="panel" id="cadastradosPanel" style="display:none;" aria-labelledby="cadastradosPanel-title">
-            <h2 id="cadastradosPanel-title">
-                <span>5. Endereços Cadastrados</span>
-                <button class="toggle-btn" data-target="cadastradosBody" type="button" aria-expanded="true" aria-controls="cadastradosBody" aria-label="Expandir ou recolher seção">&#9660;</button>
-            </h2>
-            <div class="panel-body" id="cadastradosBody">
-                <div class="table-wrapper">
-                    <table id="cadastradosTable">
-                        <thead>
-                            <tr>
-                                <th>Rua</th><th>Nº</th><th>Complementos</th>
-                                <th>Bairro</th><th>Cidade</th><th>CEP</th>
-                                <th>Coords</th><th>Fonte</th><th>Ações</th>
-                            </tr>
-                        </thead>
-                        <tbody></tbody>
-                    </table>
-                </div>
-                <div class="actions">
-                    <button id="exportBtn" class="btn-success" type="button">Exportar XMLs (ZIP)</button>
-                    <button id="clearBtn" class="btn-danger" type="button">Limpar Tudo</button>
-                </div>
-            </div>
-        </section>
-
-        <!-- 6. Upload de Roteiro -->
+        <!-- 5. Upload de Roteiro -->
         <section class="panel" id="uploadPanel" aria-labelledby="uploadPanel-title">
             <h2 id="uploadPanel-title">
-                <span>6. Carregar Roteiro</span>
+                <span>5. Carregar Roteiro</span>
                 <button class="toggle-btn" data-target="uploadBody" type="button" aria-expanded="true" aria-controls="uploadBody" aria-label="Expandir ou recolher seção">&#9660;</button>
             </h2>
             <div class="panel-body" id="uploadBody">
-                <p class="hint">Selecione o arquivo <strong>roteiro.xml</strong> (padrão dos Correios) ou um <strong>.csv</strong>. O sistema importa automaticamente para a base.</p>
-                <div class="form-grid">
+                <p class="hint">Selecione o arquivo <strong>roteiro.xml</strong> (padrão dos Correios). Os logradouros serão salvos em <strong>LogRoteiros</strong> e ficarão disponíveis no motor de busca.</p>
+                <div class="form-grid compact">
                     <label>Arquivo do roteiro:
                         <input type="file" id="roteiroFile" accept=".xml,.csv,.txt" aria-label="Selecionar arquivo de roteiro">
                     </label>
@@ -334,7 +237,6 @@
 
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-    <script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
     <script src="supabase-config.js"></script>
     <script src="script.js"></script>
 </body>
