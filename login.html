@@ -1,0 +1,34 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Login - Cadastro de Endereços</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body class="login-body">
+    <div class="login-box">
+        <h1>📍 Cadastro de Endereços</h1>
+        <p class="login-sub">Faça login para continuar</p>
+
+        <form id="loginForm">
+            <label>
+                Usuário
+                <input type="text" id="userInput" placeholder="Usuário" autocomplete="username" required>
+            </label>
+            <label>
+                Senha
+                <input type="password" id="passInput" placeholder="Senha" autocomplete="current-password" required>
+            </label>
+            <button type="submit" class="btn-primary btn-full">Entrar</button>
+            <p id="loginError" class="login-error"></p>
+        </form>
+
+        <p class="login-hint">🔑 Padrão inicial: usuário <strong>0</strong> · senha <strong>0</strong></p>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <script src="supabase-config.js"></script>
+    <script src="login.js"></script>
+</body>
+</html>

@@ -1,0 +1,135 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Sistema de Cadastro de Endereços</title>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <header>
+        <h1>📍 Cadastro de Endereços</h1>
+        <div class="header-user">
+            <span id="userLabel">👤 -</span>
+            <button id="logoutBtn" class="btn-logout">Sair</button>
+        </div>
+    </header>
+
+    <nav class="side-nav" id="sideNav">
+        <button data-goto="panel1" title="1. Buscar Localização">1️⃣</button>
+        <button data-goto="panel2" title="2. Mapa">2️⃣</button>
+        <button data-goto="resultsPanel" title="3. Endereços Encontrados">3️⃣</button>
+        <button data-goto="formPanel" title="4. Detalhes do Imóvel">4️⃣</button>
+        <button data-goto="cadastradosPanel" title="5. Endereços Cadastrados">5️⃣</button>
+    </nav>
+
+    <div class="container">
+        <div class="top-action">
+            <button id="novaAreaBtn" class="btn-nova-area">➕ Cadastrar nova área</button>
+            <span id="areaLabel" class="area-label"></span>
+        </div>
+
+        <!-- 1. Busca -->
+        <div class="panel" id="panel1">
+            <h2><span>1. Buscar Localização</span><button class="toggle-btn" data-target="panel1-body">▼</button></h2>
+            <div class="panel-body" id="panel1-body">
+                <div class="search-box">
+                    <div class="search-wrapper">
+                        <input type="text" id="searchInput" placeholder="Digite um endereço ou CEP..." autocomplete="off">
+                        <div id="suggestions" class="suggestions"></div>
+                    </div>
+                    <button id="searchBtn">🔍 Buscar</button>
+                </div>
+                <p class="hint">💡 Clique com o <strong>botão direito</strong> no mapa para marcar um ponto</p>
+                <div class="engine-select">
+                    <label>Motor de busca:
+                        <select id="engineSelect">
+                            <option value="osm">OSM (OpenStreetMap)</option>
+                            <option value="netwin">Netwin (catálogo)</option>
+                        </select>
+                    </label>
+                </div>
+            </div>
+        </div>
+
+        <!-- 2. Mapa -->
+        <div class="panel" id="panel2">
+            <h2><span>2. Mapa</span><button class="toggle-btn" data-target="panel2-body">▼</button></h2>
+            <div class="panel-body" id="panel2-body">
+                <p class="hint">💡 <strong>Ctrl + B</strong> trava/destrava o zoom. O mapa já inicia com o zoom <strong>travado</strong>.</p>
+                <div id="map"></div>
+            </div>
+        </div>
+
+        <!-- 3. Endereços Encontrados -->
+        <div class="panel" id="resultsPanel">
+            <h2><span>3. Endereços Encontrados</span><button class="toggle-btn" data-target="resultsBody">▼</button></h2>
+            <div class="panel-body" id="resultsBody">
+                <p class="coords">📌 Coordenadas: <span id="coordsDisplay">-</span></p>
+                <p class="origem">🔎 Origem: <span id="origemDisplay">-</span></p>
+                <div id="aiSuggestion" class="ai-suggestion" style="display:none;"></div>
+                <div id="enderecosList">
+                    <p style="color:#999; font-style:italic;">Nenhum endereço consultado ainda.</p>
+                </div>
+            </div>
+        </div>
+
+        <!-- 4. Detalhes do Imóvel -->
+        <div class="panel" id="formPanel">
+            <h2><span>4. Detalhes do Imóvel</span><button class="toggle-btn" data-target="formBody">▼</button></h2>
+            <div class="panel-body" id="formBody">
+                <div class="form-grid">
+                    <label>Fonte dos dados:
+                        <select id="fonteSelect"></select>
+                    </label>
+                    <label>Número:
+                        <input type="text" id="numeroInput" placeholder="Ex: 98">
+                    </label>
+                    <label>Tipo do Complemento:
+                        <select id="tipoComplemento">
+                            <option value="">-- Selecione --</option>
+                            <option>Casa</option>
+                            <option>Apartamento</option>
+                            <option>Bloco</option>
+                            <option>Loja</option>
+                            <option>Sala</option>
+                            <option>Fundos</option>
+                            <option>Outro</option>
+                        </select>
+                    </label>
+                    <label>Complemento:
+                        <input type="text" id="complementoInput" placeholder="Ex: 3">
+                    </label>
+                </div>
+                <button id="addBtn" class="btn-primary">➕ Adicionar à Lista</button>
+            </div>
+        </div>
+
+        <!-- 5. Cadastrados -->
+        <div class="panel" id="cadastradosPanel" style="display:none;">
+            <h2><span>5. Endereços Cadastrados</span><button class="toggle-btn" data-target="cadastradosBody">▼</button></h2>
+            <div class="panel-body" id="cadastradosBody">
+                <table id="cadastradosTable">
+                    <thead>
+                        <tr>
+                            <th>Rua</th><th>Nº</th><th>Tipo</th><th>Compl.</th>
+                            <th>Bairro</th><th>Cidade</th><th>CEP</th><th>Coords</th><th>Fonte</th><th>Ações</th>
+                        </tr>
+                    </thead>
+                    <tbody></tbody>
+                </table>
+                <div class="actions">
+                    <button id="exportBtn" class="btn-success">📊 Exportar Planilha (CSV)</button>
+                    <button id="clearBtn" class="btn-danger">🗑️ Limpar Tudo</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <script src="supabase-config.js"></script>
+    <script src="script.js"></script>
+</body>
+</html>
