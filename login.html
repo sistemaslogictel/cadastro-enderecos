@@ -11,7 +11,7 @@
         <h1>Cadastro de Endereços</h1>
         <p class="login-sub">Faça login para continuar</p>
 
-        <form id="loginForm">
+        <form id="loginForm" autocomplete="on">
             <label>
                 Código TR
                 <input type="text" id="userInput" placeholder="Ex.: TR682238" autocomplete="username" required>
@@ -20,13 +20,38 @@
                 Senha
                 <input type="password" id="passInput" placeholder="Senha" autocomplete="current-password" required>
             </label>
-            <button type="submit" class="btn-primary btn-full">Entrar</button>
+            <button type="submit" id="loginBtn" class="btn-primary btn-full">Entrar</button>
             <p id="loginError" class="login-error"></p>
         </form>
+
+        <!-- Diagnóstico embutido: só aparece se algo falhar -->
+        <div id="diagBox" style="display:none; margin-top:15px; font-size:0.8rem; text-align:left; color:#c62828; background:#ffebee; padding:10px; border-radius:6px; border:1px solid #ef9a9a; white-space:pre-wrap;"></div>
     </div>
 
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <script src="supabase-config.js"></script>
     <script src="login.js"></script>
+
+    <script>
+        // Diagnóstico de carregamento
+        (function () {
+            const diag = document.getElementById('diagBox');
+            const erros = [];
+
+            if (typeof window.supabase === 'undefined') {
+                erros.push('• Biblioteca do Supabase não carregou (verifique a conexão).');
+            }
+            if (typeof supabase === 'undefined') {
+                erros.push('• Objeto "supabase" não foi criado (verifique supabase-config.js).');
+            }
+            if (typeof document.getElementById('loginForm') === 'undefined' || !document.getElementById('loginForm')) {
+                erros.push('• Formulário de login não encontrado no HTML.');
+            }
+            if (erros.length) {
+                diag.textContent = 'Erros detectados:\n' + erros.join('\n');
+                diag.style.display = 'block';
+            }
+        })();
+    </script>
 </body>
 </html>
