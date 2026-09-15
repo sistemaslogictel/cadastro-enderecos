@@ -33,7 +33,6 @@ let usuarioAtual = null;
             localStorage.setItem('theme', novo);
             update();
         });
-
         window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', (e) => {
             if (!localStorage.getItem('theme')) {
                 html.setAttribute('data-theme', e.matches ? 'dark' : 'light');
@@ -49,7 +48,6 @@ let usuarioAtual = null;
 function showToast(titulo, mensagem = '', tipo = 'info', duracao = 4000) {
     const container = document.getElementById('toastContainer');
     if (!container) return;
-
     const icons = { success: '✓', error: '✕', warning: '⚠', info: 'i' };
     const toast = document.createElement('div');
     toast.className = `toast ${tipo}`;
@@ -62,11 +60,63 @@ function showToast(titulo, mensagem = '', tipo = 'info', duracao = 4000) {
         </div>
     `;
     container.appendChild(toast);
-
     setTimeout(() => {
         toast.classList.add('hiding');
         setTimeout(() => toast.remove(), 300);
     }, duracao);
+}
+
+// ============================================
+// CAMPOS RECORRENTES
+// ============================================
+function carregarCamposRecorrentes() {
+    const manterNumero = localStorage.getItem('manterNumero') === 'true';
+    if (manterNumero) {
+        const numeroSalvo = localStorage.getItem('numeroRecorrente') || '';
+        document.getElementById('manterNumero').checked = true;
+        document.getElementById('numeroInput').value = numeroSalvo;
+    }
+    for (let i = 1; i <= 3; i++) {
+        const manter = localStorage.getItem(`manterComp${i}`) === 'true';
+        if (manter) {
+            document.querySelector(`.manter-complemento[data-idx="${i}"]`).checked = true;
+            document.getElementById(`tipoComplemento${i}`).value = localStorage.getItem(`tipoComp${i}`) || '';
+            document.getElementById(`complemento${i}`).value = localStorage.getItem(`valorComp${i}`) || '';
+        }
+    }
+}
+
+function salvarCamposRecorrentes() {
+    const manterNumero = document.getElementById('manterNumero').checked;
+    localStorage.setItem('manterNumero', manterNumero);
+    if (manterNumero) {
+        localStorage.setItem('numeroRecorrente', document.getElementById('numeroInput').value.trim());
+    } else {
+        localStorage.removeItem('numeroRecorrente');
+    }
+    for (let i = 1; i <= 3; i++) {
+        const manter = document.querySelector(`.manter-complemento[data-idx="${i}"]`).checked;
+        localStorage.setItem(`manterComp${i}`, manter);
+        if (manter) {
+            localStorage.setItem(`tipoComp${i}`, document.getElementById(`tipoComplemento${i}`).value);
+            localStorage.setItem(`valorComp${i}`, document.getElementById(`complemento${i}`).value.trim());
+        } else {
+            localStorage.removeItem(`tipoComp${i}`);
+            localStorage.removeItem(`valorComp${i}`);
+        }
+    }
+}
+
+function limparCamposNaoRecorrentes() {
+    if (!document.getElementById('manterNumero').checked) {
+        document.getElementById('numeroInput').value = '';
+    }
+    for (let i = 1; i <= 3; i++) {
+        if (!document.querySelector(`.manter-complemento[data-idx="${i}"]`).checked) {
+            document.getElementById(`tipoComplemento${i}`).value = '';
+            document.getElementById(`complemento${i}`).value = '';
+        }
+    }
 }
 
 // ============================================
@@ -84,7 +134,6 @@ async function iniciar() {
 
     await carregarAreaAtual();
     await carregarCadastrados();
-
     setTimeout(() => map.invalidateSize(), 200);
 }
 
@@ -124,7 +173,6 @@ document.querySelectorAll('.toggle-btn').forEach(btn => {
         btn.setAttribute('aria-expanded', 'false');
     }
     btn.innerHTML = '&#9660;';
-
     btn.addEventListener('click', (e) => {
         e.stopPropagation();
         const t = document.getElementById(btn.dataset.target);
@@ -166,7 +214,6 @@ document.querySelectorAll('.side-nav button').forEach(btn => {
         target.scrollIntoView({ behavior: 'smooth', block: 'start' });
         target.classList.add('highlight');
         setTimeout(() => target.classList.remove('highlight'), 1000);
-
         document.querySelectorAll('.side-nav button').forEach(b => b.classList.remove('active'));
         btn.classList.add('active');
     });
@@ -184,7 +231,6 @@ const zoomLockControl = L.Control.extend({
         btn.innerHTML = '🔓';
         btn.title = 'Travar zoom (Ctrl + B)';
         btn.type = 'button';
-        btn.setAttribute('aria-label', 'Travar zoom');
         L.DomEvent.disableClickPropagation(btn);
         L.DomEvent.disableScrollPropagation(btn);
         btn.addEventListener('click', (e) => { e.preventDefault(); e.stopPropagation(); toggleZoomLock(); });
@@ -195,75 +241,49 @@ const zoomLockControl = L.Control.extend({
 const zoomLockControlInstance = new zoomLockControl();
 map.addControl(zoomLockControlInstance);
 
-function mostrarToastZoom(msg) {
-    showToast('Zoom', msg, 'info', 1800);
-}
+function mostrarToastZoom(msg) { showToast('Zoom', msg, 'info', 1800); }
 
 function aplicarTravamento() {
-    map.scrollWheelZoom.disable();
-    map.doubleClickZoom.disable();
-    map.touchZoom.disable();
-    map.boxZoom.disable();
-    map.keyboard.disable();
+    map.scrollWheelZoom.disable(); map.doubleClickZoom.disable();
+    map.touchZoom.disable(); map.boxZoom.disable(); map.keyboard.disable();
     if (map.zoomControl) map.zoomControl.remove();
     const btn = zoomLockControl._btn;
-    btn.innerHTML = '🔒';
-    btn.title = 'Destravar zoom (Ctrl + B)';
-    btn.setAttribute('aria-label', 'Destravar zoom');
+    btn.innerHTML = '🔒'; btn.title = 'Destravar zoom (Ctrl + B)';
     btn.classList.add('locked');
 }
 
 function aplicarDestravamento() {
-    map.scrollWheelZoom.enable();
-    map.doubleClickZoom.enable();
-    map.touchZoom.enable();
-    map.boxZoom.enable();
-    map.keyboard.enable();
+    map.scrollWheelZoom.enable(); map.doubleClickZoom.enable();
+    map.touchZoom.enable(); map.boxZoom.enable(); map.keyboard.enable();
     if (!map.zoomControl) map.zoomControl = L.control.zoom({ position: 'topleft' }).addTo(map);
     const btn = zoomLockControl._btn;
-    btn.innerHTML = '🔓';
-    btn.title = 'Travar zoom (Ctrl + B)';
-    btn.setAttribute('aria-label', 'Travar zoom');
+    btn.innerHTML = '🔓'; btn.title = 'Travar zoom (Ctrl + B)';
     btn.classList.remove('locked');
 }
 
 function toggleZoomLock() {
     zoomTravado = !zoomTravado;
-    if (zoomTravado) { aplicarTravamento(); mostrarToastZoom('Zoom travado — Ctrl + B para destravar'); }
+    if (zoomTravado) { aplicarTravamento(); mostrarToastZoom('Zoom travado'); }
     else { aplicarDestravamento(); mostrarToastZoom('Zoom destravado'); }
 }
 
 document.addEventListener('keydown', (e) => {
     if (e.ctrlKey && (e.key === 'b' || e.key === 'B')) { e.preventDefault(); toggleZoomLock(); }
 });
-
 aplicarTravamento();
 
 // ============================================
 // PARSER DE COORDENADAS
-// Aceita formatos:
-//   -22.90200282, -43.27065822
-//   -22.90200282 -43.27065822
-//   (-22.90200282, -43.27065822)
-//   -22.90200282;-43.27065822
 // ============================================
 function tentarParseCoordenadas(query) {
-    // Remove parênteses e colchetes
     const limpo = query.replace(/[()\[\]]/g, '').trim();
-
-    // Regex: captura dois números decimais (com sinal opcional)
     const match = limpo.match(/^(-?\d+(?:[.,]\d+)?)\s*[,;\s]\s*(-?\d+(?:[.,]\d+)?)$/);
-
     if (!match) return null;
-
     const lat = parseFloat(match[1].replace(',', '.'));
     const lng = parseFloat(match[2].replace(',', '.'));
-
-    // Validação de faixa geográfica
     if (isNaN(lat) || isNaN(lng)) return null;
     if (lat < -90 || lat > 90) return null;
     if (lng < -180 || lng > 180) return null;
-
     return { lat, lng };
 }
 
@@ -279,14 +299,9 @@ let abortControllerAtual = null;
 searchInput.addEventListener('input', (e) => {
     const query = e.target.value.trim();
     clearTimeout(debounceTimer);
-
-    // Se for coordenadas, não mostra sugestões — vai direto ao buscar
     if (tentarParseCoordenadas(query)) {
-        suggestionsBox.innerHTML = '';
-        suggestionsBox.style.display = 'none';
-        return;
+        suggestionsBox.innerHTML = ''; suggestionsBox.style.display = 'none'; return;
     }
-
     if (query.length < 3) { suggestionsBox.innerHTML = ''; suggestionsBox.style.display = 'none'; return; }
     debounceTimer = setTimeout(() => buscarSugestoes(query), 350);
 });
@@ -309,8 +324,6 @@ async function buscarSugestoes(query) {
     ultimoQuery = query;
     if (abortControllerAtual) abortControllerAtual.abort();
     abortControllerAtual = new AbortController();
-
-    // Não busca sugestões para coordenadas
     if (tentarParseCoordenadas(query)) return;
 
     const cepLimpo = query.replace(/\D/g, '');
@@ -423,14 +436,11 @@ function irParaLocal(lat, lng, nome, origem = 'busca') {
 }
 
 async function buscarEndereco(query) {
-    // 1. Tenta interpretar como coordenadas
     const coords = tentarParseCoordenadas(query);
     if (coords) {
         irParaLocal(coords.lat, coords.lng, `${coords.lat}, ${coords.lng}`, 'coordenadas');
         return;
     }
-
-    // 2. Fluxo normal: CEP ou endereço textual
     try {
         const cepLimpo = query.replace(/\D/g, '');
         if (cepLimpo.length === 8 && !isNaN(cepLimpo)) {
@@ -506,45 +516,26 @@ async function consultarFontes(lat, lng) {
     const tarefas = [];
     if (cepOSM.length === 8) {
         tarefas.push(
-            fetch(`https://opencep.com/v1/${cepOSM}`)
-                .then(r => r.ok ? r.json() : null)
-                .then(d => {
-                    if (d && !d.erro) {
-                        resultados.push({
-                            fonte: 'OpenCEP',
-                            rua: d.logradouro || '',
-                            numero: '',
-                            bairro: d.bairro || '',
-                            cidade: d.localidade || '',
-                            estado: d.uf || '',
-                            cep: d.cep || '',
-                            pais: 'Brasil',
-                            bruto: `${d.logradouro || ''}, ${d.bairro || ''}, ${d.localidade || ''} - ${d.uf || ''}`
-                        });
-                    }
-                })
-                .catch(() => {})
+            fetch(`https://opencep.com/v1/${cepOSM}`).then(r => r.ok ? r.json() : null).then(d => {
+                if (d && !d.erro) {
+                    resultados.push({
+                        fonte: 'OpenCEP', rua: d.logradouro || '', numero: '', bairro: d.bairro || '',
+                        cidade: d.localidade || '', estado: d.uf || '', cep: d.cep || '', pais: 'Brasil',
+                        bruto: `${d.logradouro || ''}, ${d.bairro || ''}, ${d.localidade || ''} - ${d.uf || ''}`
+                    });
+                }
+            }).catch(() => {})
         );
-
         tarefas.push(
-            fetch(`https://viacep.com.br/ws/${cepOSM}/json/`)
-                .then(r => r.json())
-                .then(d => {
-                    if (d && !d.erro) {
-                        resultados.push({
-                            fonte: 'ViaCEP',
-                            rua: d.logradouro || '',
-                            numero: '',
-                            bairro: d.bairro || '',
-                            cidade: d.localidade || '',
-                            estado: d.uf || '',
-                            cep: d.cep || '',
-                            pais: 'Brasil',
-                            bruto: `${d.logradouro || ''}, ${d.bairro || ''}, ${d.localidade || ''} - ${d.uf || ''}`
-                        });
-                    }
-                })
-                .catch(() => {})
+            fetch(`https://viacep.com.br/ws/${cepOSM}/json/`).then(r => r.json()).then(d => {
+                if (d && !d.erro) {
+                    resultados.push({
+                        fonte: 'ViaCEP', rua: d.logradouro || '', numero: '', bairro: d.bairro || '',
+                        cidade: d.localidade || '', estado: d.uf || '', cep: d.cep || '', pais: 'Brasil',
+                        bruto: `${d.logradouro || ''}, ${d.bairro || ''}, ${d.localidade || ''} - ${d.uf || ''}`
+                    });
+                }
+            }).catch(() => {})
         );
     }
 
@@ -571,7 +562,6 @@ async function consultarFontes(lat, lng) {
         const div = document.createElement('div');
         div.className = 'endereco-card';
         div.setAttribute('role', 'listitem');
-
         if (r.error) {
             div.innerHTML = `
                 <div class="endereco-header">
@@ -584,11 +574,8 @@ async function consultarFontes(lat, lng) {
             const linha1 = [r.rua, r.numero].filter(Boolean).join(', ') || '—';
             const linha2 = [r.bairro, r.cidade, r.estado].filter(Boolean).join(' • ') || '—';
             const linha3 = [r.cep, r.pais].filter(Boolean).join(' • ');
-
             div.innerHTML = `
-                <div class="endereco-header">
-                    <span class="fonte-badge">${escapeHtml(r.fonte)}</span>
-                </div>
+                <div class="endereco-header"><span class="fonte-badge">${escapeHtml(r.fonte)}</span></div>
                 <p class="endereco-linha1">${escapeHtml(linha1)}</p>
                 <p class="endereco-linha2">${escapeHtml(linha2)}</p>
                 ${linha3 ? `<p class="endereco-linha3">${escapeHtml(linha3)}</p>` : ''}
@@ -603,7 +590,7 @@ async function consultarFontes(lat, lng) {
             const r = unicos[parseInt(btn.dataset.idx, 10)];
             if (!r || r.error) return;
             preencherFormulario(r);
-            showToast('Fonte aplicada', `Dados de ${r.fonte} carregados no formulário.`, 'success', 2500);
+            showToast('Fonte aplicada', `Dados de ${r.fonte} carregados.`, 'success', 2500);
         });
     });
 }
@@ -621,26 +608,18 @@ function preencherFormulario(r) {
         fonteSelect.appendChild(option);
     }
     fonteSelect.value = r.fonte;
-
     fonteSelect.dataset.rua = r.rua || '';
     fonteSelect.dataset.bairro = r.bairro || '';
     fonteSelect.dataset.cidade = r.cidade || '';
     fonteSelect.dataset.estado = r.estado || '';
     fonteSelect.dataset.cep = r.cep || '';
     fonteSelect.dataset.pais = r.pais || '';
-
-    if (r.numero) {
-        document.getElementById('numeroInput').value = r.numero;
-    }
-
+    if (r.numero) document.getElementById('numeroInput').value = r.numero;
     const formBody = document.getElementById('formBody');
     if (formBody && formBody.classList.contains('collapsed')) {
         formBody.classList.remove('collapsed');
         const toggle = document.querySelector('#formPanel .toggle-btn');
-        if (toggle) {
-            toggle.classList.remove('collapsed');
-            toggle.setAttribute('aria-expanded', 'true');
-        }
+        if (toggle) { toggle.classList.remove('collapsed'); toggle.setAttribute('aria-expanded', 'true'); }
     }
     document.getElementById('formPanel').scrollIntoView({ behavior: 'smooth', block: 'start' });
 }
@@ -651,33 +630,35 @@ function preencherFormulario(r) {
 document.getElementById('addBtn').addEventListener('click', async () => {
     const fonteSelect = document.getElementById('fonteSelect');
     const fonte = fonteSelect.value;
-    if (!fonte) {
-        showToast('Fonte obrigatória', 'Selecione a fonte dos dados antes de adicionar.', 'warning');
-        return;
-    }
+    if (!fonte) { showToast('Fonte obrigatória', 'Selecione a fonte dos dados.', 'warning'); return; }
 
     const numero = document.getElementById('numeroInput').value.trim();
-    const tipoComplemento = document.getElementById('tipoComplemento').value;
-    const complemento = document.getElementById('complementoInput').value.trim();
-
-    if (!numero) {
-        showToast('Número obrigatório', 'Informe o número do imóvel.', 'warning');
-        return;
-    }
+    if (!numero) { showToast('Número obrigatório', 'Informe o número do imóvel.', 'warning'); return; }
 
     const coordsTexto = document.getElementById('coordsDisplay').textContent;
     const [latStr, lngStr] = coordsTexto.split(',').map(s => s.trim());
     if (!latStr || !lngStr || isNaN(parseFloat(latStr))) {
-        showToast('Sem coordenadas', 'Busque ou marque um ponto no mapa primeiro.', 'warning');
+        showToast('Sem coordenadas', 'Busque ou marque um ponto no mapa.', 'warning');
         return;
     }
+
+    // Monta os 3 complementos
+    const comps = [];
+    for (let i = 1; i <= 3; i++) {
+        const tipo = document.getElementById(`tipoComplemento${i}`).value;
+        const valor = document.getElementById(`complemento${i}`).value.trim();
+        if (tipo || valor) comps.push({ tipo, valor });
+    }
+    const comp1 = comps[0] || { tipo: '', valor: '' };
+    const extras = comps.slice(1).map(c => `${c.tipo || 'Comp'}: ${c.valor}`).join(' | ');
 
     const registro = {
         area_id: areaAtualId,
         rua: fonteSelect.dataset.rua || '',
         numero: numero,
-        tipo_complemento: tipoComplemento || '',
-        complemento: complemento || '',
+        tipo_complemento: comp1.tipo,
+        complemento: comp1.valor,
+        complemento_extra: extras,
         bairro: fonteSelect.dataset.bairro || '',
         cidade: fonteSelect.dataset.cidade || '',
         estado: fonteSelect.dataset.estado || '',
@@ -692,13 +673,9 @@ document.getElementById('addBtn').addEventListener('click', async () => {
     try {
         const { error } = await supabaseClient.from('enderecos').insert([registro]);
         if (error) throw error;
-
         showToast('Endereço adicionado', 'Registro salvo com sucesso.', 'success', 2500);
-
-        document.getElementById('numeroInput').value = '';
-        document.getElementById('tipoComplemento').value = '';
-        document.getElementById('complementoInput').value = '';
-
+        salvarCamposRecorrentes();
+        limparCamposNaoRecorrentes();
         await carregarCadastrados();
     } catch (err) {
         console.error(err);
@@ -710,33 +687,17 @@ document.getElementById('addBtn').addEventListener('click', async () => {
 // CARREGAR CADASTRADOS
 // ============================================
 async function carregarCadastrados() {
-    if (!areaAtualId) {
-        document.getElementById('cadastradosPanel').style.display = 'none';
-        return;
-    }
-
+    if (!areaAtualId) { document.getElementById('cadastradosPanel').style.display = 'none'; return; }
     try {
         const { data, error } = await supabaseClient
-            .from('enderecos')
-            .select('*')
-            .eq('area_id', areaAtualId)
-            .order('id', { ascending: true });
-
+            .from('enderecos').select('*').eq('area_id', areaAtualId).order('id', { ascending: true });
         if (error) throw error;
-
         cadastrados = data || [];
-
         const panel = document.getElementById('cadastradosPanel');
         const tbody = document.querySelector('#cadastradosTable tbody');
         tbody.innerHTML = '';
-
-        if (cadastrados.length === 0) {
-            panel.style.display = 'none';
-            return;
-        }
-
+        if (cadastrados.length === 0) { panel.style.display = 'none'; return; }
         panel.style.display = 'block';
-
         cadastrados.forEach((r, idx) => {
             const tr = document.createElement('tr');
             tr.innerHTML = `
@@ -756,7 +717,6 @@ async function carregarCadastrados() {
             `;
             tbody.appendChild(tr);
         });
-
         tbody.querySelectorAll('.btn-ir').forEach(btn => {
             btn.addEventListener('click', () => {
                 const r = cadastrados[parseInt(btn.dataset.idx, 10)];
@@ -768,7 +728,6 @@ async function carregarCadastrados() {
                 document.getElementById('panel2').scrollIntoView({ behavior: 'smooth', block: 'start' });
             });
         });
-
         tbody.querySelectorAll('.btn-remover').forEach(btn => {
             btn.addEventListener('click', async () => {
                 const id = btn.dataset.id;
@@ -784,13 +743,12 @@ async function carregarCadastrados() {
                 }
             });
         });
-
         marcadoresSalvos.forEach(m => map.removeLayer(m));
         marcadoresSalvos = [];
         cadastrados.forEach(r => {
             if (r.latitude == null || r.longitude == null) return;
             const m = L.marker([r.latitude, r.longitude], { icon: houseIcon }).addTo(map);
-            m.bindPopup(`<strong>${escapeHtml(r.rua)}, ${escapeHtml(r.numero)}</strong><br>${escapeHtml(r.bairro || '')}`);
+            m.bindPopup(`<strong>${escapeHtml(r.rua)}, ${escapeHtml(r.numero)}</strong>`);
             marcadoresSalvos.push(m);
         });
     } catch (err) {
@@ -805,19 +763,9 @@ async function carregarCadastrados() {
 async function carregarAreaAtual() {
     areaAtualId = sessionStorage.getItem('areaAtualId');
     const label = document.getElementById('areaLabel');
-
-    if (!areaAtualId) {
-        label.textContent = 'Nenhuma área selecionada';
-        return;
-    }
-
+    if (!areaAtualId) { label.textContent = 'Nenhuma área selecionada'; return; }
     try {
-        const { data, error } = await supabaseClient
-            .from('areas')
-            .select('*')
-            .eq('id', areaAtualId)
-            .single();
-
+        const { data, error } = await supabaseClient.from('areas').select('*').eq('id', areaAtualId).single();
         if (error) throw error;
         label.textContent = `Área: ${data.nome || data.descricao || areaAtualId}`;
     } catch (err) {
@@ -831,12 +779,9 @@ document.getElementById('novaAreaBtn').addEventListener('click', async () => {
     if (!nome) return;
     try {
         const { data, error } = await supabaseClient
-            .from('areas')
-            .insert([{ nome, usuario_id: usuarioAtual ? usuarioAtual.id : null }])
-            .select()
-            .single();
+            .from('areas').insert([{ nome, usuario_id: usuarioAtual ? usuarioAtual.id : null }])
+            .select().single();
         if (error) throw error;
-
         sessionStorage.setItem('areaAtualId', data.id);
         areaAtualId = data.id;
         document.getElementById('areaLabel').textContent = `Área: ${data.nome}`;
@@ -852,34 +797,25 @@ document.getElementById('novaAreaBtn').addEventListener('click', async () => {
 // EXPORTAR CSV
 // ============================================
 document.getElementById('exportBtn').addEventListener('click', () => {
-    if (cadastrados.length === 0) {
-        showToast('Nada para exportar', 'Cadastre ao menos um endereço.', 'warning');
-        return;
-    }
-
-    const headers = ['Rua', 'Número', 'Tipo Complemento', 'Complemento', 'Bairro', 'Cidade', 'Estado', 'CEP', 'País', 'Latitude', 'Longitude', 'Fonte'];
+    if (cadastrados.length === 0) { showToast('Nada para exportar', 'Cadastre ao menos um endereço.', 'warning'); return; }
+    const headers = ['Rua', 'Número', 'Tipo Complemento', 'Complemento', 'Complemento Extra', 'Bairro', 'Cidade', 'Estado', 'CEP', 'País', 'Latitude', 'Longitude', 'Fonte'];
     const linhas = cadastrados.map(r => [
-        r.rua, r.numero, r.tipo_complemento, r.complemento, r.bairro,
-        r.cidade, r.estado, r.cep, r.pais, r.latitude, r.longitude, r.fonte
+        r.rua, r.numero, r.tipo_complemento, r.complemento, r.complemento_extra,
+        r.bairro, r.cidade, r.estado, r.cep, r.pais, r.latitude, r.longitude, r.fonte
     ]);
-
     const csvEscape = (v) => {
         if (v == null) return '';
         const s = String(v).replace(/"/g, '""');
         return /[",;\n]/.test(s) ? `"${s}"` : s;
     };
-
     const csv = [headers, ...linhas].map(l => l.map(csvEscape).join(';')).join('\n');
     const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8;' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
     a.download = `enderecos_${areaAtualId || 'area'}_${new Date().toISOString().slice(0, 10)}.csv`;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
+    document.body.appendChild(a); a.click(); document.body.removeChild(a);
     URL.revokeObjectURL(url);
-
     showToast('Exportado', `${cadastrados.length} registro(s) em CSV.`, 'success', 2500);
 });
 
@@ -888,17 +824,14 @@ document.getElementById('exportBtn').addEventListener('click', () => {
 // ============================================
 document.getElementById('clearBtn').addEventListener('click', async () => {
     if (!areaAtualId) return;
-    if (!confirm('Tem certeza que deseja apagar TODOS os endereços desta área?')) return;
-
+    if (!confirm('Apagar TODOS os endereços desta área?')) return;
     try {
         const { error } = await supabaseClient.from('enderecos').delete().eq('area_id', areaAtualId);
         if (error) throw error;
-
         marcadoresSalvos.forEach(m => map.removeLayer(m));
         marcadoresSalvos = [];
         cadastrados = [];
-
-        showToast('Limpo', 'Todos os endereços da área foram removidos.', 'success', 2500);
+        showToast('Limpo', 'Todos os endereços foram removidos.', 'success', 2500);
         await carregarCadastrados();
     } catch (err) {
         console.error(err);
@@ -913,55 +846,36 @@ document.getElementById('uploadBtn').addEventListener('click', async () => {
     const fileInput = document.getElementById('roteiroFile');
     const status = document.getElementById('uploadStatus');
     const file = fileInput.files[0];
-
-    if (!file) {
-        showToast('Nenhum arquivo', 'Selecione um arquivo .xml ou .csv.', 'warning');
-        return;
-    }
-
+    if (!file) { showToast('Nenhum arquivo', 'Selecione um arquivo .xml ou .csv.', 'warning'); return; }
     status.textContent = 'Processando arquivo...';
-
     try {
         const texto = await file.text();
         let registros = [];
-
-        if (file.name.toLowerCase().endsWith('.csv')) {
-            registros = parseCSV(texto);
-        } else if (file.name.toLowerCase().endsWith('.xml')) {
-            registros = parseXMLRoteiro(texto);
-        } else {
-            throw new Error('Formato não suportado. Use .csv ou .xml');
-        }
-
+        if (file.name.toLowerCase().endsWith('.csv')) registros = parseCSV(texto);
+        else if (file.name.toLowerCase().endsWith('.xml')) registros = parseXMLRoteiro(texto);
+        else throw new Error('Formato não suportado. Use .csv ou .xml');
         if (registros.length === 0) {
-            status.textContent = 'Nenhum registro válido encontrado.';
+            status.textContent = 'Nenhum registro válido.';
             showToast('Sem registros', 'O arquivo não continha dados válidos.', 'warning');
             return;
         }
-
         const payload = registros.map(r => ({
             area_id: areaAtualId,
-            rua: r.rua || '',
-            numero: r.numero || '',
+            rua: r.rua || '', numero: r.numero || '',
             tipo_complemento: r.tipo_complemento || '',
             complemento: r.complemento || '',
-            bairro: r.bairro || '',
-            cidade: r.cidade || '',
-            estado: r.estado || '',
-            cep: r.cep || '',
-            pais: r.pais || 'Brasil',
+            complemento_extra: r.complemento_extra || '',
+            bairro: r.bairro || '', cidade: r.cidade || '', estado: r.estado || '',
+            cep: r.cep || '', pais: r.pais || 'Brasil',
             latitude: r.latitude != null ? r.latitude : null,
             longitude: r.longitude != null ? r.longitude : null,
             fonte: r.fonte || 'Roteiro',
             usuario_id: usuarioAtual ? usuarioAtual.id : null
         }));
-
         const { error } = await supabaseClient.from('enderecos').insert(payload);
         if (error) throw error;
-
-        status.textContent = `${registros.length} registro(s) importado(s) com sucesso.`;
+        status.textContent = `${registros.length} registro(s) importado(s).`;
         showToast('Roteiro importado', `${registros.length} registro(s).`, 'success', 3000);
-
         fileInput.value = '';
         await carregarCadastrados();
     } catch (err) {
@@ -977,27 +891,20 @@ document.getElementById('uploadBtn').addEventListener('click', async () => {
 function parseCSV(texto) {
     const linhas = texto.split(/\r?\n/).filter(l => l.trim());
     if (linhas.length < 2) return [];
-
     const sep = linhas[0].includes(';') ? ';' : ',';
     const headers = linhas[0].split(sep).map(h => h.trim().toLowerCase().replace(/^"|"$/g, ''));
-
     const idx = (nome) => headers.indexOf(nome);
-
     return linhas.slice(1).map(linha => {
         const cols = linha.split(sep).map(c => c.trim().replace(/^"|"$/g, ''));
-        const get = (campo) => {
-            const i = idx(campo);
-            return i >= 0 ? cols[i] : '';
-        };
-
+        const get = (campo) => { const i = idx(campo); return i >= 0 ? cols[i] : ''; };
         const lat = parseFloat(get('latitude'));
         const lng = parseFloat(get('longitude'));
-
         return {
             rua: get('rua') || get('logradouro'),
             numero: get('numero') || get('número'),
             tipo_complemento: get('tipo_complemento') || get('tipo'),
             complemento: get('complemento'),
+            complemento_extra: get('complemento_extra'),
             bairro: get('bairro'),
             cidade: get('cidade') || get('localidade'),
             estado: get('estado') || get('uf'),
@@ -1014,21 +921,17 @@ function parseXMLRoteiro(texto) {
     const parser = new DOMParser();
     const xml = parser.parseFromString(texto, 'text/xml');
     const registros = [];
-
     const nodes = xml.querySelectorAll('endereco, address, registro, item, linha');
     nodes.forEach(node => {
-        const get = (tag) => {
-            const el = node.querySelector(tag);
-            return el ? el.textContent.trim() : '';
-        };
+        const get = (tag) => { const el = node.querySelector(tag); return el ? el.textContent.trim() : ''; };
         const lat = parseFloat(get('latitude') || get('lat'));
         const lng = parseFloat(get('longitude') || get('lng') || get('lon'));
-
         registros.push({
             rua: get('logradouro') || get('rua') || get('street'),
             numero: get('numero') || get('número') || get('number'),
             tipo_complemento: get('tipo_complemento') || get('tipo'),
             complemento: get('complemento'),
+            complemento_extra: get('complemento_extra'),
             bairro: get('bairro') || get('neighborhood'),
             cidade: get('cidade') || get('localidade') || get('city'),
             estado: get('uf') || get('estado') || get('state'),
@@ -1039,7 +942,6 @@ function parseXMLRoteiro(texto) {
             fonte: 'Roteiro XML'
         });
     });
-
     return registros.filter(r => r.rua || r.cep);
 }
 
@@ -1048,20 +950,16 @@ function parseXMLRoteiro(texto) {
 // ============================================
 document.getElementById('downloadModeloBtn').addEventListener('click', () => {
     const modelo = [
-        'rua;numero;tipo_complemento;complemento;bairro;cidade;estado;cep;latitude;longitude;fonte',
-        'Rua Exemplo;123;Casa;A;Centro;Rio de Janeiro;RJ;20000-000;-22.90200282;-43.27065822;Modelo'
+        'rua;numero;tipo_complemento;complemento;complemento_extra;bairro;cidade;estado;cep;latitude;longitude;fonte',
+        'Rua Exemplo;123;Quadra;B;Lote: 2 | Casa: 5;Centro;Rio de Janeiro;RJ;20000-000;-22.90200282;-43.27065822;Modelo'
     ].join('\n');
-
     const blob = new Blob(['\uFEFF' + modelo], { type: 'text/csv;charset=utf-8;' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
     a.download = 'modelo_roteiro.csv';
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
+    document.body.appendChild(a); a.click(); document.body.removeChild(a);
     URL.revokeObjectURL(url);
-
     showToast('Modelo baixado', 'Preencha e importe novamente.', 'success', 2500);
 });
 
@@ -1071,17 +969,15 @@ document.getElementById('downloadModeloBtn').addEventListener('click', () => {
 function escapeHtml(str) {
     if (str == null) return '';
     return String(str)
-        .replace(/&/g, '&amp;')
-        .replace(/</g, '&lt;')
-        .replace(/>/g, '&gt;')
-        .replace(/"/g, '&quot;')
-        .replace(/'/g, '&#39;');
+        .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
 }
 
 // ============================================
 // INICIALIZAÇÃO
 // ============================================
 document.addEventListener('DOMContentLoaded', () => {
+    carregarCamposRecorrentes();
     iniciar().catch(err => {
         console.error('Erro na inicialização:', err);
         showToast('Erro ao iniciar', err.message, 'error');

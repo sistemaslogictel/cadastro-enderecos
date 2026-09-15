@@ -36,7 +36,6 @@
             --radius-md: 10px;
             --radius-lg: 16px;
         }
-
         [data-theme="dark"] {
             --bg-primary: #1a202c;
             --bg-secondary: #2d3748;
@@ -49,22 +48,16 @@
             --accent-hover: #7a9bf0;
             --danger: #fc8181;
         }
-
         * { box-sizing: border-box; margin: 0; padding: 0; }
-
         body {
             font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
             background: linear-gradient(135deg, var(--bg-secondary) 0%, var(--bg-tertiary) 100%);
             color: var(--text-primary);
             min-height: 100vh;
-            display: flex;
-            align-items: center;
-            justify-content: center;
+            display: flex; align-items: center; justify-content: center;
             padding: 20px;
         }
-
         .login-container { width: 100%; max-width: 420px; }
-
         .login-box {
             background: var(--bg-primary);
             border-radius: var(--radius-lg);
@@ -72,22 +65,17 @@
             padding: 40px;
             border: 1px solid var(--border-color);
         }
-
         .login-header { text-align: center; margin-bottom: 32px; }
-
         .login-header .logo {
-            width: 64px; height: 64px;
-            margin: 0 auto 16px;
+            width: 64px; height: 64px; margin: 0 auto 16px;
             display: flex; align-items: center; justify-content: center;
             background: linear-gradient(135deg, var(--accent) 0%, var(--accent-hover) 100%);
             border-radius: 16px; color: white;
             font-size: 28px; font-weight: 700;
             box-shadow: var(--shadow-md);
         }
-
         .login-header h1 { font-size: 24px; font-weight: 700; margin-bottom: 8px; }
         .login-header p { font-size: 14px; color: var(--text-secondary); }
-
         .form-group { margin-bottom: 20px; }
         .form-group label {
             display: block; font-size: 14px; font-weight: 500;
@@ -105,7 +93,6 @@
             background: var(--bg-primary);
         }
         .form-group input::placeholder { color: var(--text-tertiary); }
-
         .btn-login {
             width: 100%; padding: 14px; font-size: 15px; font-weight: 600;
             font-family: inherit; color: white;
@@ -116,7 +103,6 @@
         }
         .btn-login:hover:not(:disabled) { transform: translateY(-1px); box-shadow: var(--shadow-lg); }
         .btn-login:disabled { opacity: 0.6; cursor: not-allowed; }
-
         .error-message {
             display: none;
             background: rgba(229, 62, 62, 0.1);
@@ -128,7 +114,6 @@
             white-space: pre-wrap;
         }
         .error-message.show { display: block; }
-
         .theme-toggle-login {
             position: fixed; top: 20px; right: 20px;
             width: 40px; height: 40px; border-radius: 50%;
@@ -136,9 +121,7 @@
             cursor: pointer; display: flex; align-items: center; justify-content: center;
             font-size: 18px; box-shadow: var(--shadow-sm);
         }
-
         .footer-login { text-align: center; margin-top: 24px; font-size: 12px; color: var(--text-tertiary); }
-
         @media (max-width: 480px) {
             .login-box { padding: 28px 24px; }
             .login-header h1 { font-size: 20px; }
@@ -214,7 +197,6 @@
             errorBox.textContent = msg;
             errorBox.classList.add('show');
         }
-
         function limparErro() {
             errorBox.textContent = '';
             errorBox.classList.remove('show');
@@ -229,25 +211,41 @@
                 return;
             }
 
-            const usuarioDigitado = document.getElementById('usuario').value.trim().toLowerCase();
-            const senhaDigitada = document.getElementById('senha').value;
+            const username = document.getElementById('usuario').value.trim().toLowerCase();
+            const senha = document.getElementById('senha').value;
 
-            if (!usuarioDigitado || !senhaDigitada) {
+            if (!username || !senha) {
                 mostrarErro('Preencha usuário e senha.');
                 return;
             }
-
-            const emailCompleto = usuarioDigitado.includes('@')
-                ? usuarioDigitado
-                : `${usuarioDigitado}@logictel.local`;
 
             loginBtn.disabled = true;
             loginBtn.textContent = 'Entrando...';
 
             try {
+                // 1. Resolve username -> email interno via RPC
+                const { data: emailInterno, error: rpcError } = await supabaseClient
+                    .rpc('resolve_username_email', { p_username: username });
+
+                if (rpcError) {
+                    console.error('Erro RPC:', rpcError);
+                    mostrarErro('Erro ao consultar usuário: ' + rpcError.message);
+                    loginBtn.disabled = false;
+                    loginBtn.textContent = 'Entrar';
+                    return;
+                }
+
+                if (!emailInterno) {
+                    mostrarErro('Usuário não encontrado.');
+                    loginBtn.disabled = false;
+                    loginBtn.textContent = 'Entrar';
+                    return;
+                }
+
+                // 2. Login com o email interno
                 const { data, error } = await supabaseClient.auth.signInWithPassword({
-                    email: emailCompleto,
-                    password: senhaDigitada
+                    email: emailInterno,
+                    password: senha
                 });
 
                 if (error) {
@@ -259,8 +257,8 @@
                         mostrarErro('Usuário não confirmado. Contate o administrador.');
                     } else if (msg.includes('too many requests') || msg.includes('rate limit')) {
                         mostrarErro('Muitas tentativas. Aguarde alguns minutos.');
-                    } else if (msg.includes('failed to fetch') || msg.includes('network')) {
-                        mostrarErro('Falha de conexão. Verifique sua internet.');
+                    } else if (msg.includes('database error')) {
+                        mostrarErro('Erro interno no servidor de autenticação. Contate o administrador.');
                     } else {
                         mostrarErro('Erro: ' + (error.message || 'desconhecido'));
                     }
@@ -276,8 +274,8 @@
                     return;
                 }
 
-                sessionStorage.setItem('usuarioLogado', usuarioDigitado);
-                sessionStorage.setItem('usuarioNome', data.user.user_metadata?.nome || usuarioDigitado);
+                sessionStorage.setItem('usuarioLogado', username);
+                sessionStorage.setItem('usuarioNome', data.user.user_metadata?.nome || username);
 
                 window.location.href = 'index.html';
 
