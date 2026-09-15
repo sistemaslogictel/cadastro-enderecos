@@ -41,6 +41,7 @@
         <button data-goto="resultsPanel" title="3. Endereços Encontrados" type="button">3</button>
         <button data-goto="formPanel" title="4. Survey" type="button">4</button>
         <button data-goto="uploadPanel" title="5. Carregar Roteiro" type="button">5</button>
+        <button data-goto="listPanel" title="6. Surveys Salvos" type="button">6</button>
     </nav>
 
     <main class="container" id="main-content" role="main">
@@ -58,22 +59,16 @@
             <div class="panel-body" id="panel1-body">
                 <div class="search-box">
                     <div class="search-wrapper">
-                        <input type="text" id="searchInput" placeholder="Digite um endereço, CEP ou nome de rua..." autocomplete="off" aria-label="Buscar endereço ou CEP">
-                        <div id="suggestions" class="suggestions" role="listbox" aria-label="Sugestões de endereço"></div>
+                        <input type="text" id="searchInput" placeholder="Digite o nome do logradouro do roteiro..." autocomplete="off" aria-label="Buscar logradouro">
+                        <div id="suggestions" class="suggestions" role="listbox" aria-label="Sugestões de logradouro"></div>
                     </div>
                     <button id="searchBtn" type="button">Buscar</button>
                 </div>
-                <p class="hint">Clique com o <strong>botão direito</strong> no mapa para marcar um ponto</p>
-                <div class="engine-select">
-                    <label>Motor de busca:
-                        <select id="engineSelect" aria-label="Selecione o motor de busca">
-                            <option value="osm">OpenStreetMap</option>
-                            <option value="logcadastrados">LogJáCadastrados</option>
-                            <option value="logroteiros">LogRoteiros</option>
-                            <option value="todos">Todos</option>
-                        </select>
-                    </label>
-                </div>
+                <p class="hint">
+                    Só é possível salvar logradouros que estejam no <strong>Roteiro</strong>.
+                    Não achou o seu? Envie um e-mail para
+                    <a href="mailto:pp-logradouro@correios.com.br?subject=Inclus%C3%A3o%20de%20logradouro%20no%20roteiro">PP-Logradouro</a>.
+                </p>
             </div>
         </section>
 
@@ -98,54 +93,8 @@
             <div class="panel-body" id="resultsBody">
                 <p class="coords">Coordenadas: <span id="coordsDisplay">-</span></p>
                 <p class="origem">Origem: <span id="origemDisplay">-</span></p>
-
-                <div class="results-header">
-                    <h3 class="results-subtitle">Fontes consultadas</h3>
-                    <button id="btnNovoEnderecoManual" class="btn-outline" type="button">➕ Cadastrar logradouro novo</button>
-                </div>
-
-                <div id="novoEnderecoForm" class="novo-endereco-form" style="display:none;">
-                    <div class="form-grid compact">
-                        <label>CEP:
-                            <input type="text" id="novoCep" placeholder="00000-000" inputmode="numeric" maxlength="9">
-                        </label>
-                        <label>Tipo:
-                            <select id="novoTipo">
-                                <option>Rua</option>
-                                <option>Avenida</option>
-                                <option>Travessa</option>
-                                <option>Estrada</option>
-                                <option>Alameda</option>
-                                <option>Praça</option>
-                                <option>Caminho</option>
-                                <option>Beco</option>
-                                <option>Largo</option>
-                            </select>
-                        </label>
-                        <label>Logradouro:
-                            <input type="text" id="novoLogradouro" placeholder="Ex: Dom Marcos Barbosa">
-                        </label>
-                        <label>Nº:
-                            <input type="text" id="novoNumero" placeholder="Ex: 178" inputmode="numeric">
-                        </label>
-                        <label>Bairro:
-                            <input type="text" id="novoBairro" placeholder="Ex: Cidade Nova">
-                        </label>
-                        <label>Município:
-                            <input type="text" id="novoCidade" placeholder="Ex: Rio de Janeiro">
-                        </label>
-                        <label>UF:
-                            <input type="text" id="novoUf" placeholder="RJ" maxlength="2">
-                        </label>
-                    </div>
-                    <div class="actions">
-                        <button id="btnSalvarNovoEndereco" class="btn-primary" type="button">Salvar logradouro</button>
-                        <button id="btnCancelarNovoEndereco" class="btn-outline" type="button">Cancelar</button>
-                    </div>
-                </div>
-
                 <div id="enderecosList" role="list">
-                    <p class="empty-state">Nenhum endereço consultado ainda. Busque um endereço acima.</p>
+                    <p class="empty-state">Nenhum endereço consultado ainda. Busque um logradouro acima.</p>
                 </div>
             </div>
         </section>
@@ -157,12 +106,11 @@
                 <button class="toggle-btn" data-target="formBody" type="button" aria-expanded="true" aria-controls="formBody" aria-label="Expandir ou recolher seção">&#9660;</button>
             </h2>
             <div class="panel-body" id="formBody">
-                <p class="hint">Confirme/edite o endereço escolhido e salve como <strong>LogJáCadastrado</strong>.</p>
-
                 <div id="enderecoBaseInfo" class="endereco-base-info">
                     <p class="empty-state">Selecione uma fonte em "3. Endereços Encontrados".</p>
                 </div>
 
+                <!-- Endereço (do roteiro, editável) -->
                 <div class="form-section">
                     <h3 class="form-subtitle">Endereço</h3>
                     <div class="form-grid compact">
@@ -190,11 +138,27 @@
                             <input type="text" id="surveyMunicipio" placeholder="Ex: Rio de Janeiro">
                         </label>
                         <label>UF:
-                            <input type="text" id="surveyUf" placeholder="RJ" maxlength="2">
+                            <select id="surveyUf">
+                                <option value="">--</option>
+                                <option>AC</option><option>AL</option><option>AP</option><option>AM</option>
+                                <option>BA</option><option>CE</option><option>DF</option><option>ES</option>
+                                <option>GO</option><option>MA</option><option>MT</option><option>MS</option>
+                                <option>MG</option><option>PA</option><option>PB</option><option>PR</option>
+                                <option>PE</option><option>PI</option><option>RJ</option><option>RN</option>
+                                <option>RS</option><option>RO</option><option>RR</option><option>SC</option>
+                                <option>SP</option><option>SE</option><option>TO</option>
+                            </select>
                         </label>
                         <label>CEP:
                             <input type="text" id="surveyCep" placeholder="00000-000" maxlength="9">
                         </label>
+                    </div>
+                </div>
+
+                <!-- Coordenadas -->
+                <div class="form-section">
+                    <h3 class="form-subtitle">Coordenadas</h3>
+                    <div class="form-grid compact">
                         <label>Latitude:
                             <input type="text" id="surveyLatitude" placeholder="-22.90200282">
                         </label>
@@ -204,7 +168,113 @@
                     </div>
                 </div>
 
-                <button id="addBtn" class="btn-primary btn-block" type="button">💾 Salvar logradouro</button>
+                <!-- Número -->
+                <div class="form-section">
+                    <h3 class="form-subtitle">Nº:</h3>
+                    <div class="form-grid compact">
+                        <label class="field-with-check">
+                            <span>Número:
+                                <span class="check-inline">
+                                    <input type="checkbox" id="numeroRecorrente" title="Manter este número para o próximo survey">
+                                    <small>manter</small>
+                                </span>
+                            </span>
+                            <input type="text" id="numeroInput" placeholder="Ex: 98" inputmode="numeric">
+                        </label>
+                    </div>
+                </div>
+
+                <!-- Complemento 1 -->
+                <div class="form-section complemento-bloco">
+                    <h3 class="form-subtitle">
+                        Complemento 1
+                        <span class="check-inline">
+                            <input type="checkbox" id="comp1Recorrente" title="Manter este complemento para o próximo survey">
+                            <small>manter</small>
+                        </span>
+                    </h3>
+                    <div class="form-grid compact">
+                        <label>Tipo:
+                            <select id="comp1Tipo">
+                                <option value="">-- Selecione --</option>
+                                <option>Lote</option>
+                                <option>Quadra</option>
+                                <option>Casa</option>
+                                <option>Apartamento</option>
+                                <option>Bloco</option>
+                                <option>Loja</option>
+                                <option>Sala</option>
+                                <option>Fundos</option>
+                                <option>Outro</option>
+                            </select>
+                        </label>
+                        <label>Comp 1:
+                            <input type="text" id="comp1Valor" placeholder="Ex: 3">
+                        </label>
+                    </div>
+                </div>
+
+                <!-- Complemento 2 -->
+                <div class="form-section complemento-bloco">
+                    <h3 class="form-subtitle">
+                        Complemento 2
+                        <span class="check-inline">
+                            <input type="checkbox" id="comp2Recorrente" title="Manter este complemento para o próximo survey">
+                            <small>manter</small>
+                        </span>
+                    </h3>
+                    <div class="form-grid compact">
+                        <label>Tipo:
+                            <select id="comp2Tipo">
+                                <option value="">-- Selecione --</option>
+                                <option>Lote</option>
+                                <option>Quadra</option>
+                                <option>Casa</option>
+                                <option>Apartamento</option>
+                                <option>Bloco</option>
+                                <option>Loja</option>
+                                <option>Sala</option>
+                                <option>Fundos</option>
+                                <option>Outro</option>
+                            </select>
+                        </label>
+                        <label>Comp 1:
+                            <input type="text" id="comp2Valor" placeholder="Ex: 4">
+                        </label>
+                    </div>
+                </div>
+
+                <!-- Complemento 3 -->
+                <div class="form-section complemento-bloco">
+                    <h3 class="form-subtitle">
+                        Complemento 3
+                        <span class="check-inline">
+                            <input type="checkbox" id="comp3Recorrente" title="Manter este complemento para o próximo survey">
+                            <small>manter</small>
+                        </span>
+                    </h3>
+                    <div class="form-grid compact">
+                        <label>Tipo:
+                            <select id="comp3Tipo">
+                                <option value="">-- Selecione --</option>
+                                <option>Lote</option>
+                                <option>Quadra</option>
+                                <option>Casa</option>
+                                <option>Apartamento</option>
+                                <option>Bloco</option>
+                                <option>Loja</option>
+                                <option>Sala</option>
+                                <option>Fundos</option>
+                                <option>Outro</option>
+                            </select>
+                        </label>
+                        <label>Comp 1:
+                            <input type="text" id="comp3Valor" placeholder="Ex: 3">
+                        </label>
+                    </div>
+                </div>
+
+                <button id="addBtn" class="btn-primary btn-block" type="button">💾 Adicionar ao Survey</button>
             </div>
         </section>
 
@@ -215,7 +285,7 @@
                 <button class="toggle-btn" data-target="uploadBody" type="button" aria-expanded="true" aria-controls="uploadBody" aria-label="Expandir ou recolher seção">&#9660;</button>
             </h2>
             <div class="panel-body" id="uploadBody">
-                <p class="hint">Selecione o arquivo <strong>roteiro.xml</strong> (padrão dos Correios). Os logradouros serão salvos em <strong>LogRoteiros</strong> e ficarão disponíveis no motor de busca.</p>
+                <p class="hint">Selecione o arquivo <strong>roteiro.xml</strong> (padrão dos Correios). Os logradouros serão salvos e ficarão disponíveis no motor de busca.</p>
                 <div class="form-grid compact">
                     <label>Arquivo do roteiro:
                         <input type="file" id="roteiroFile" accept=".xml,.csv,.txt" aria-label="Selecionar arquivo de roteiro">
@@ -225,6 +295,32 @@
                     <button id="uploadBtn" class="btn-primary" type="button">Importar Roteiro</button>
                 </div>
                 <div id="uploadStatus" style="margin-top:15px; font-size:0.9rem; color:var(--text-secondary);" role="status" aria-live="polite"></div>
+            </div>
+        </section>
+
+        <!-- 6. Surveys Salvos -->
+        <section class="panel" id="listPanel" aria-labelledby="listPanel-title">
+            <h2 id="listPanel-title">
+                <span>6. Surveys Salvos</span>
+                <button class="toggle-btn" data-target="listBody" type="button" aria-expanded="true" aria-controls="listBody" aria-label="Expandir ou recolher seção">&#9660;</button>
+            </h2>
+            <div class="panel-body" id="listBody">
+                <div class="table-wrapper">
+                    <table id="surveysTable">
+                        <thead>
+                            <tr>
+                                <th>Logradouro</th><th>Nº</th><th>Complementos</th>
+                                <th>Bairro</th><th>Município/UF</th><th>CEP</th>
+                                <th>Ações</th>
+                            </tr>
+                        </thead>
+                        <tbody></tbody>
+                    </table>
+                </div>
+                <div class="actions">
+                    <button id="exportBtn" class="btn-success" type="button">Exportar XMLs (ZIP)</button>
+                    <button id="clearBtn" class="btn-danger" type="button">Limpar Tudo</button>
+                </div>
             </div>
         </section>
     </main>
@@ -237,6 +333,7 @@
 
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
     <script src="supabase-config.js"></script>
     <script src="script.js"></script>
 </body>
