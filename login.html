@@ -165,7 +165,7 @@
                 <div class="form-group">
                     <label for="usuario">Usuário</label>
                     <input type="text" id="usuario" name="usuario"
-                           placeholder="Ex: tr757584"
+                           placeholder="Ex: tr123456"
                            autocomplete="username" required autofocus>
                 </div>
 
@@ -189,9 +189,6 @@
     <script src="supabase-config.js"></script>
 
     <script>
-        // ============================================
-        // TEMA CLARO / ESCURO
-        // ============================================
         (function initTheme() {
             const html = document.documentElement;
             const btn = document.getElementById('themeToggle');
@@ -209,9 +206,6 @@
             });
         })();
 
-        // ============================================
-        // LOGIN
-        // ============================================
         const form = document.getElementById('loginForm');
         const errorBox = document.getElementById('errorMessage');
         const loginBtn = document.getElementById('loginBtn');
@@ -230,7 +224,7 @@
             e.preventDefault();
             limparErro();
 
-            if (typeof supabase === 'undefined' || !supabase) {
+            if (typeof supabaseClient === 'undefined' || !supabaseClient) {
                 mostrarErro('Supabase não carregado. Recarregue a página (Ctrl+F5).');
                 return;
             }
@@ -251,7 +245,7 @@
             loginBtn.textContent = 'Entrando...';
 
             try {
-                const { data, error } = await supabase.auth.signInWithPassword({
+                const { data, error } = await supabaseClient.auth.signInWithPassword({
                     email: emailCompleto,
                     password: senhaDigitada
                 });

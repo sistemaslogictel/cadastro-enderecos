@@ -44,7 +44,7 @@ let usuarioAtual = null;
 })();
 
 // ============================================
-// TOASTS — Feedback visual
+// TOASTS
 // ============================================
 function showToast(titulo, mensagem = '', tipo = 'info', duracao = 4000) {
     const container = document.getElementById('toastContainer');
@@ -73,7 +73,7 @@ function showToast(titulo, mensagem = '', tipo = 'info', duracao = 4000) {
 // ESTADO GLOBAL
 // ============================================
 async function iniciar() {
-    const { data: { user } } = await supabase.auth.getUser();
+    const { data: { user } } = await supabaseClient.auth.getUser();
     if (!user) {
         window.location.href = 'login.html';
         return;
@@ -89,7 +89,7 @@ async function iniciar() {
 }
 
 document.getElementById('logoutBtn').addEventListener('click', async () => {
-    await supabase.auth.signOut();
+    await supabaseClient.auth.signOut();
     sessionStorage.removeItem('usuarioLogado');
     sessionStorage.removeItem('usuarioNome');
     sessionStorage.removeItem('areaAtualId');
@@ -173,7 +173,7 @@ document.querySelectorAll('.side-nav button').forEach(btn => {
 });
 
 // ============================================
-// TRAVAR ZOOM (inicia travado)
+// TRAVAR ZOOM
 // ============================================
 let zoomTravado = true;
 
@@ -240,6 +240,34 @@ document.addEventListener('keydown', (e) => {
 aplicarTravamento();
 
 // ============================================
+// PARSER DE COORDENADAS
+// Aceita formatos:
+//   -22.90200282, -43.27065822
+//   -22.90200282 -43.27065822
+//   (-22.90200282, -43.27065822)
+//   -22.90200282;-43.27065822
+// ============================================
+function tentarParseCoordenadas(query) {
+    // Remove parênteses e colchetes
+    const limpo = query.replace(/[()\[\]]/g, '').trim();
+
+    // Regex: captura dois números decimais (com sinal opcional)
+    const match = limpo.match(/^(-?\d+(?:[.,]\d+)?)\s*[,;\s]\s*(-?\d+(?:[.,]\d+)?)$/);
+
+    if (!match) return null;
+
+    const lat = parseFloat(match[1].replace(',', '.'));
+    const lng = parseFloat(match[2].replace(',', '.'));
+
+    // Validação de faixa geográfica
+    if (isNaN(lat) || isNaN(lng)) return null;
+    if (lat < -90 || lat > 90) return null;
+    if (lng < -180 || lng > 180) return null;
+
+    return { lat, lng };
+}
+
+// ============================================
 // AUTOCOMPLETE
 // ============================================
 const searchInput = document.getElementById('searchInput');
@@ -251,6 +279,14 @@ let abortControllerAtual = null;
 searchInput.addEventListener('input', (e) => {
     const query = e.target.value.trim();
     clearTimeout(debounceTimer);
+
+    // Se for coordenadas, não mostra sugestões — vai direto ao buscar
+    if (tentarParseCoordenadas(query)) {
+        suggestionsBox.innerHTML = '';
+        suggestionsBox.style.display = 'none';
+        return;
+    }
+
     if (query.length < 3) { suggestionsBox.innerHTML = ''; suggestionsBox.style.display = 'none'; return; }
     debounceTimer = setTimeout(() => buscarSugestoes(query), 350);
 });
@@ -273,6 +309,9 @@ async function buscarSugestoes(query) {
     ultimoQuery = query;
     if (abortControllerAtual) abortControllerAtual.abort();
     abortControllerAtual = new AbortController();
+
+    // Não busca sugestões para coordenadas
+    if (tentarParseCoordenadas(query)) return;
 
     const cepLimpo = query.replace(/\D/g, '');
     if (cepLimpo.length === 8) {
@@ -377,12 +416,21 @@ function irParaLocal(lat, lng, nome, origem = 'busca') {
     document.getElementById('coordsDisplay').textContent = `${lat.toFixed(8)}, ${lng.toFixed(8)}`;
     document.getElementById('origemDisplay').textContent =
         origem === 'busca' ? 'Busca por texto/endereço' :
+        origem === 'coordenadas' ? 'Coordenadas informadas' :
         origem === 'netwin' ? 'Netwin' :
         'Clique no mapa (botão direito)';
     consultarFontes(lat, lng);
 }
 
 async function buscarEndereco(query) {
+    // 1. Tenta interpretar como coordenadas
+    const coords = tentarParseCoordenadas(query);
+    if (coords) {
+        irParaLocal(coords.lat, coords.lng, `${coords.lat}, ${coords.lng}`, 'coordenadas');
+        return;
+    }
+
+    // 2. Fluxo normal: CEP ou endereço textual
     try {
         const cepLimpo = query.replace(/\D/g, '');
         if (cepLimpo.length === 8 && !isNaN(cepLimpo)) {
@@ -475,7 +523,7 @@ async function consultarFontes(lat, lng) {
                         });
                     }
                 })
-                .catch(() => { /* silencioso */ })
+                .catch(() => {})
         );
 
         tarefas.push(
@@ -496,7 +544,7 @@ async function consultarFontes(lat, lng) {
                         });
                     }
                 })
-                .catch(() => { /* silencioso */ })
+                .catch(() => {})
         );
     }
 
@@ -561,7 +609,7 @@ async function consultarFontes(lat, lng) {
 }
 
 // ============================================
-// PREENCHER FORMULÁRIO COM A FONTE ESCOLHIDA
+// PREENCHER FORMULÁRIO
 // ============================================
 function preencherFormulario(r) {
     const fonteSelect = document.getElementById('fonteSelect');
@@ -642,7 +690,7 @@ document.getElementById('addBtn').addEventListener('click', async () => {
     };
 
     try {
-        const { error } = await supabase.from('enderecos').insert([registro]);
+        const { error } = await supabaseClient.from('enderecos').insert([registro]);
         if (error) throw error;
 
         showToast('Endereço adicionado', 'Registro salvo com sucesso.', 'success', 2500);
@@ -668,7 +716,7 @@ async function carregarCadastrados() {
     }
 
     try {
-        const { data, error } = await supabase
+        const { data, error } = await supabaseClient
             .from('enderecos')
             .select('*')
             .eq('area_id', areaAtualId)
@@ -726,7 +774,7 @@ async function carregarCadastrados() {
                 const id = btn.dataset.id;
                 if (!confirm('Remover este endereço?')) return;
                 try {
-                    const { error } = await supabase.from('enderecos').delete().eq('id', id);
+                    const { error } = await supabaseClient.from('enderecos').delete().eq('id', id);
                     if (error) throw error;
                     showToast('Removido', 'Endereço excluído.', 'success', 2000);
                     await carregarCadastrados();
@@ -764,7 +812,7 @@ async function carregarAreaAtual() {
     }
 
     try {
-        const { data, error } = await supabase
+        const { data, error } = await supabaseClient
             .from('areas')
             .select('*')
             .eq('id', areaAtualId)
@@ -782,7 +830,7 @@ document.getElementById('novaAreaBtn').addEventListener('click', async () => {
     const nome = prompt('Nome da nova área:');
     if (!nome) return;
     try {
-        const { data, error } = await supabase
+        const { data, error } = await supabaseClient
             .from('areas')
             .insert([{ nome, usuario_id: usuarioAtual ? usuarioAtual.id : null }])
             .select()
@@ -843,7 +891,7 @@ document.getElementById('clearBtn').addEventListener('click', async () => {
     if (!confirm('Tem certeza que deseja apagar TODOS os endereços desta área?')) return;
 
     try {
-        const { error } = await supabase.from('enderecos').delete().eq('area_id', areaAtualId);
+        const { error } = await supabaseClient.from('enderecos').delete().eq('area_id', areaAtualId);
         if (error) throw error;
 
         marcadoresSalvos.forEach(m => map.removeLayer(m));
@@ -908,7 +956,7 @@ document.getElementById('uploadBtn').addEventListener('click', async () => {
             usuario_id: usuarioAtual ? usuarioAtual.id : null
         }));
 
-        const { error } = await supabase.from('enderecos').insert(payload);
+        const { error } = await supabaseClient.from('enderecos').insert(payload);
         if (error) throw error;
 
         status.textContent = `${registros.length} registro(s) importado(s) com sucesso.`;
