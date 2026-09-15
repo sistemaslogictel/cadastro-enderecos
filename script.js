@@ -67,9 +67,9 @@ function showToast(titulo, mensagem = '', tipo = 'info', duracao = 4000) {
 // ============================================
 // ÁREA PADRÃO — garante que existe uma área
 // ============================================
-async function garantirAreaPadrao() {
+async function garantirAreaPadrao(forcar = false) {
     let id = sessionStorage.getItem('areaAtualId');
-    if (id) { areaAtualId = id; return id; }
+    if (id && !forcar) { areaAtualId = id; return id; }
 
     try {
         const { data: existentes, error: errBusca } = await supabaseClient
@@ -94,15 +94,24 @@ async function garantirAreaPadrao() {
             .insert([{ nome: 'Geral', usuario_id: usuarioAtual ? usuarioAtual.id : null }])
             .select().single();
 
-        if (error) throw error;
+        if (error) {
+            console.error('[ÁREA PADRÃO] erro no INSERT:', error);
+            showToast(
+                'Erro no banco',
+                'INSERT em areas falhou: ' + (error.message || JSON.stringify(error)),
+                'error',
+                10000
+            );
+            throw error;
+        }
 
         id = data.id;
         sessionStorage.setItem('areaAtualId', id);
         areaAtualId = id;
+        console.log('[ÁREA PADRÃO] criada com id:', id);
         return id;
     } catch (err) {
         console.error('[ÁREA PADRÃO] Erro:', err);
-        showToast('Aviso', 'Não foi possível criar a área padrão. Verifique as policies no Supabase.', 'warning', 6000);
         return null;
     }
 }
@@ -490,51 +499,70 @@ map.on('contextmenu', async (e) => {
 });
 
 // ============================================
-// CONSULTAR FONTES
+// CONSULTAR FONTES — prioridade ViaCEP > OpenCEP > OSM
 // ============================================
 async function consultarFontes(lat, lng) {
     const list = document.getElementById('enderecosList');
     list.innerHTML = '<p class="empty-state"><span class="loading"></span>Consultando fontes...</p>';
 
-    const resultados = [];
+    // 1) Primeiro consulta OSM para saber o CEP (aproximado)
+    let osm = null;
     let cepOSM = '';
-
     try {
         const url = `https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}&addressdetails=1&accept-language=pt-BR`;
         const res = await fetch(url);
         const data = await res.json();
         const a = data.address || {};
-        resultados.push({
+        osm = {
             fonte: 'OpenStreetMap',
-            rua: a.road || a.pedestrian || '', numero: a.house_number || '',
-            bairro: a.suburb || a.neighbourhood || '', cidade: a.city || a.town || a.village || '',
-            estado: a.state || '', cep: a.postcode || '', pais: a.country || '',
+            rua: a.road || a.pedestrian || '',
+            numero: a.house_number || '',
+            bairro: a.suburb || a.neighbourhood || '',
+            cidade: a.city || a.town || a.village || '',
+            estado: a.state || '',
+            cep: a.postcode || '',
+            pais: a.country || '',
             bruto: data.display_name || ''
-        });
+        };
         cepOSM = (a.postcode || '').replace(/\D/g, '');
     } catch (e) {
-        resultados.push({ fonte: 'OpenStreetMap', error: 'Falha na consulta' });
+        console.warn('OSM falhou:', e);
     }
 
+    // 2) Com o CEP do OSM, consulta ViaCEP e OpenCEP (fontes oficiais)
+    const resultados = [];
     const tarefas = [];
+
     if (cepOSM.length === 8) {
         tarefas.push(
-            fetch(`https://opencep.com/v1/${cepOSM}`).then(r => r.ok ? r.json() : null).then(d => {
+            fetch(`https://viacep.com.br/ws/${cepOSM}/json/`).then(r => r.json()).then(d => {
                 if (d && !d.erro) {
                     resultados.push({
-                        fonte: 'OpenCEP', rua: d.logradouro || '', numero: '', bairro: d.bairro || '',
-                        cidade: d.localidade || '', estado: d.uf || '', cep: d.cep || '', pais: 'Brasil',
+                        fonte: 'ViaCEP (oficial)',
+                        rua: d.logradouro || '',
+                        numero: '',
+                        bairro: d.bairro || '',
+                        cidade: d.localidade || '',
+                        estado: d.uf || '',
+                        cep: d.cep || '',
+                        pais: 'Brasil',
                         bruto: `${d.logradouro || ''}, ${d.bairro || ''}, ${d.localidade || ''} - ${d.uf || ''}`
                     });
                 }
             }).catch(() => {})
         );
         tarefas.push(
-            fetch(`https://viacep.com.br/ws/${cepOSM}/json/`).then(r => r.json()).then(d => {
+            fetch(`https://opencep.com/v1/${cepOSM}`).then(r => r.ok ? r.json() : null).then(d => {
                 if (d && !d.erro) {
                     resultados.push({
-                        fonte: 'ViaCEP', rua: d.logradouro || '', numero: '', bairro: d.bairro || '',
-                        cidade: d.localidade || '', estado: d.uf || '', cep: d.cep || '', pais: 'Brasil',
+                        fonte: 'OpenCEP',
+                        rua: d.logradouro || '',
+                        numero: '',
+                        bairro: d.bairro || '',
+                        cidade: d.localidade || '',
+                        estado: d.uf || '',
+                        cep: d.cep || '',
+                        pais: 'Brasil',
                         bruto: `${d.logradouro || ''}, ${d.bairro || ''}, ${d.localidade || ''} - ${d.uf || ''}`
                     });
                 }
@@ -544,10 +572,14 @@ async function consultarFontes(lat, lng) {
 
     await Promise.allSettled(tarefas);
 
+    // 3) Adiciona OSM por último
+    if (osm) resultados.push(osm);
+
+    // 4) Deduplica
     const vistos = new Set();
     const unicos = resultados.filter(r => {
-        if (r.error) return true;
-        const chave = `${(r.rua || '').toLowerCase()}|${(r.numero || '').toLowerCase()}|${(r.cidade || '').toLowerCase()}`;
+        if (!r) return false;
+        const chave = `${(r.rua || '').toLowerCase()}|${(r.cep || '').replace(/\D/g,'')}`;
         if (vistos.has(chave)) return false;
         vistos.add(chave);
         return true;
@@ -597,8 +629,9 @@ function renderizarTabelaFontes(unicos, container) {
                 <td>—</td>
             `;
         } else {
+            const badgeClass = (r.fonte || '').toLowerCase().includes('viacep') ? 'fonte-badge oficial' : 'fonte-badge';
             tr.innerHTML = `
-                <td><span class="fonte-badge">${escapeHtml(r.fonte)}</span></td>
+                <td><span class="${badgeClass}">${escapeHtml(r.fonte)}</span></td>
                 <td>${escapeHtml(r.rua || '—')}</td>
                 <td>${escapeHtml(r.numero || '—')}</td>
                 <td>${escapeHtml(r.bairro || '—')}</td>
@@ -758,7 +791,7 @@ document.getElementById('btnSalvarNovoEndereco').addEventListener('click', async
         irParaLocal(latitude, longitude, novoRegistro.bruto, 'manual');
     }
 
-        ['novoCep','novoLogradouro','novoNumero','novoComplemento','novoBairro','novoCidade','novoUf'].forEach(id => {
+    ['novoCep','novoLogradouro','novoNumero','novoComplemento','novoBairro','novoCidade','novoUf'].forEach(id => {
         document.getElementById(id).value = '';
     });
     document.getElementById('novoEnderecoForm').style.display = 'none';
@@ -767,7 +800,7 @@ document.getElementById('btnSalvarNovoEndereco').addEventListener('click', async
 });
 
 // ============================================
-// ADICIONAR À LISTA (SIMPLIFICADO)
+// ADICIONAR À LISTA
 // ============================================
 document.getElementById('addBtn').addEventListener('click', async () => {
     if (!enderecoBaseSelecionado) {
@@ -778,12 +811,12 @@ document.getElementById('addBtn').addEventListener('click', async () => {
     const numero = document.getElementById('numeroInput').value.trim();
     if (!numero) { showToast('Número obrigatório', 'Informe o número do imóvel.', 'warning'); return; }
 
-    // Garante área (cria "Geral" se não existir)
+    // Força nova tentativa de criar área, se não tiver
     if (!areaAtualId) {
-        await garantirAreaPadrao();
+        await garantirAreaPadrao(true);
     }
     if (!areaAtualId) {
-        showToast('Sem área', 'Não foi possível criar a área padrão. Verifique o Supabase.', 'error', 6000);
+        showToast('Sem área', 'Não foi possível criar a área padrão. Verifique as policies no Supabase.', 'error', 8000);
         return;
     }
 
@@ -831,8 +864,12 @@ document.getElementById('addBtn').addEventListener('click', async () => {
     };
 
     try {
+        console.log('[ADD] inserindo:', registro);
         const { error } = await supabaseClient.from('enderecos').insert([registro]);
-        if (error) throw error;
+        if (error) {
+            console.error('[ADD] erro:', error);
+            throw error;
+        }
 
         showToast('Endereço adicionado', 'Registro salvo com sucesso.', 'success', 2500);
 
@@ -854,7 +891,7 @@ document.getElementById('addBtn').addEventListener('click', async () => {
         await carregarCadastrados();
     } catch (err) {
         console.error(err);
-        showToast('Erro ao salvar', err.message, 'error');
+        showToast('Erro ao salvar', err.message, 'error', 8000);
     }
 });
 
@@ -952,7 +989,7 @@ async function carregarAreaAtual() {
 }
 
 // ============================================
-// BOTÃO "LIMPAR LISTA" (substitui "Cadastrar nova área")
+// BOTÃO "LIMPAR LISTA"
 // ============================================
 document.getElementById('novaAreaBtn').addEventListener('click', async () => {
     if (!areaAtualId) {
@@ -1174,11 +1211,11 @@ document.getElementById('uploadBtn').addEventListener('click', async () => {
 
         // Garante área padrão se não existir
         if (!areaAtualId) {
-            await garantirAreaPadrao();
+            await garantirAreaPadrao(true);
         }
         if (!areaAtualId) {
             status.textContent = 'Não foi possível criar a área padrão.';
-            showToast('Sem área', 'Verifique as policies no Supabase.', 'error', 6000);
+            showToast('Sem área', 'Verifique as policies no Supabase.', 'error', 8000);
             return;
         }
 
