@@ -61,6 +61,30 @@ function showToast(titulo, mensagem = '', tipo = 'info', duracao = 4000) {
 }
 
 // ============================================
+// VERIFICAR SE USUÁRIO É "ADM" (prefixo A)
+// Ex: ATR757584, ATT123456, ADD999 → TRUE
+// Ex: TR757584, TT123, admin → FALSE
+// ============================================
+function usuarioEhAdm() {
+    const login = (sessionStorage.getItem('usuarioLogado') || '').trim().toUpperCase();
+    const email = (usuarioAtual && usuarioAtual.email ? usuarioAtual.email : '').toUpperCase();
+    const regex = /^A[A-Z]{2,}\d+/;
+    return regex.test(login) || regex.test(email);
+}
+
+// ============================================
+// APLICAR PERMISSÕES POR TIPO DE USUÁRIO
+// ============================================
+function aplicarPermissoes() {
+    const adm = usuarioEhAdm();
+    const panel5 = document.getElementById('uploadPanel');
+    const btn5 = document.querySelector('.side-nav button[data-goto="uploadPanel"]');
+    if (panel5) panel5.style.display = adm ? '' : 'none';
+    if (btn5) btn5.style.display = adm ? '' : 'none';
+    console.log('[PERMISSÃO] adm?', adm, '| login:', sessionStorage.getItem('usuarioLogado'));
+}
+
+// ============================================
 // ESTADO GLOBAL
 // ============================================
 async function iniciar() {
@@ -79,7 +103,9 @@ async function iniciar() {
     const nome = sessionStorage.getItem('usuarioNome') || sessionStorage.getItem('usuarioLogado') || '-';
     document.getElementById('userLabel').textContent = nome;
 
-    setTimeout(() => map.invalidateSize(), 200);
+    aplicarPermissoes();
+
+    setTimeout(() => map.invalidateSize(), 400);
     await carregarSurveys();
 }
 
@@ -225,7 +251,7 @@ function tentarParseCoordenadas(query) {
 }
 
 // ============================================
-// MOTOR DE BUSCA — SOMENTE ROTEIRO
+// MOTOR DE BUSCA — ROTEIRO (concatenação de colunas)
 // ============================================
 const searchInput = document.getElementById('searchInput');
 const suggestionsBox = document.getElementById('suggestions');
@@ -240,7 +266,7 @@ searchInput.addEventListener('input', (e) => {
         suggestionsBox.innerHTML = ''; suggestionsBox.style.display = 'none'; return;
     }
     if (query.length < 2) { suggestionsBox.innerHTML = ''; suggestionsBox.style.display = 'none'; return; }
-    debounceTimer = setTimeout(() => buscarSugestoes(query), 300);
+    debounceTimer = setTimeout(() => buscarSugestoes(query), 400);
 });
 
 searchInput.addEventListener('keypress', (e) => {
@@ -255,9 +281,6 @@ document.addEventListener('click', (e) => {
     if (!e.target.closest('.search-box')) suggestionsBox.style.display = 'none';
 });
 
-// ============================================
-// MOTOR DE BUSCA — ROTEIRO (logradouro + CEP + UF)
-// ============================================
 async function buscarSugestoes(query) {
     if (query === ultimoQuery) return;
     ultimoQuery = query;
@@ -285,48 +308,52 @@ async function buscarSugestoes(query) {
             return;
         }
 
-        // === CASO 2: LOGRAADOURO (texto) ===
+        // === CASO 2: LOGRADOURO (texto) ===
         const normalizar = (s) => (s || '')
             .toLowerCase()
             .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
             .replace(/\s+/g, ' ')
             .trim();
 
-        // Remove prefixos tipo "rua", "av", etc.
         const queryNorm = normalizar(query)
             .replace(/^(rua|r\.?|avenida|av\.?|travessa|tv\.?|estrada|est\.?|alameda|al\.?|praca|praça|pc\.?|largo|beco|caminho)\s+/i, '')
             .trim();
 
-        // Palavras-chave (cada uma com 3+ letras para evitar ruído)
-        const palavras = queryNorm.split(/\s+/).filter(p => p.length >= 3);
+        const palavras = queryNorm.split(/\s+/).filter(p => p.length >= 2);
         if (palavras.length === 0) {
-            suggestionsBox.innerHTML = '<div class="suggestion-item empty">Digite ao menos 3 letras.</div>';
+            suggestionsBox.innerHTML = '<div class="suggestion-item empty">Digite ao menos 2 letras.</div>';
             return;
         }
 
-        // Estratégia: busca o termo MAIS SELETIVO (mais longo) no banco,
-        // depois filtra no cliente aceitando as outras palavras por similaridade.
+        // Puxa lote pela palavra mais longa (mais seletiva)
         const palavraChave = [...palavras].sort((a, b) => b.length - a.length)[0];
 
         let q = supabaseClient
             .from('logradouros')
             .select('*')
             .eq('origem', 'Roteiro XML')
-            .or(`logradouro.ilike.%${palavraChave}%,bairro.ilike.%${palavraChave}%,municipio.ilike.%${palavraChave}%`)
-            .limit(100);
+            .or(`logradouro.ilike.%${palavraChave}%,bairro.ilike.%${palavraChave}%,municipio.ilike.%${palavraChave}%,cep.ilike.%${palavraChave}%`)
+            .limit(200);
 
         if (ufFiltro) q = q.eq('uf', ufFiltro);
 
         const { data, error } = await q;
         if (error) throw error;
 
-        // Filtro no cliente: TODAS as palavras devem estar contidas em algum campo
-        // (com tolerância: aceita se a palavra digitada está contida OU contém a do banco)
+        // Concatena todas as colunas relevantes em uma string pra fazer o LIKE "junto"
+        const concatenarRegistro = (r) => normalizar([
+            r.tipo,
+            r.logradouro,
+            r.bairro,
+            r.municipio,
+            r.uf,
+            r.cep ? String(r.cep).replace(/\D/g, '') : ''
+        ].filter(Boolean).join(' '));
+
         const passaFiltro = (r) => {
-            const blob = normalizar([r.tipo, r.logradouro, r.bairro, r.municipio, r.uf].filter(Boolean).join(' '));
+            const blob = concatenarRegistro(r);
             return palavras.every(p => {
                 if (blob.includes(p)) return true;
-                // Fallback: similaridade por substring (ex: "martin" x "martins")
                 const palavrasBlob = blob.split(/\s+/);
                 return palavrasBlob.some(pb =>
                     pb.length >= 3 && (pb.includes(p) || p.includes(pb))
@@ -336,19 +363,23 @@ async function buscarSugestoes(query) {
 
         let filtrados = (data || []).filter(passaFiltro);
 
-        // Se nada passou com a palavra-chave mais longa,
-        // tenta com a SEGUNDA mais longa (pode ser que "lage" tenha match melhor que "martins")
+        // Fallback: tenta com a segunda palavra mais longa
         if (filtrados.length === 0 && palavras.length > 1) {
             const segunda = [...palavras].sort((a, b) => b.length - a.length)[1];
             let q2 = supabaseClient
                 .from('logradouros')
                 .select('*')
                 .eq('origem', 'Roteiro XML')
-                .or(`logradouro.ilike.%${segunda}%,bairro.ilike.%${segunda}%,municipio.ilike.%${segunda}%`)
-                .limit(100);
+                .or(`logradouro.ilike.%${segunda}%,bairro.ilike.%${segunda}%,municipio.ilike.%${segunda}%,cep.ilike.%${segunda}%`)
+                .limit(200);
             if (ufFiltro) q2 = q2.eq('uf', ufFiltro);
             const { data: data2 } = await q2;
             filtrados = (data2 || []).filter(passaFiltro);
+        }
+
+        // Fallback final: se ainda vazio, mostra o que o banco trouxe
+        if (filtrados.length === 0 && data && data.length > 0) {
+            filtrados = data;
         }
 
         renderizarSugestoes(filtrados, query);
@@ -359,7 +390,9 @@ async function buscarSugestoes(query) {
     }
 }
 
-// Renderiza sugestões
+// ============================================
+// RENDERIZA AS SUGESTÕES
+// ============================================
 function renderizarSugestoes(lista, query) {
     suggestionsBox.innerHTML = '';
     if (!lista || lista.length === 0) {
@@ -387,6 +420,20 @@ function renderizarSugestoes(lista, query) {
         suggestionsBox.appendChild(div);
     });
     suggestionsBox.style.display = 'block';
+}
+
+// ============================================
+// TEXTO FORMATADO DO LOGRADOURO
+// ============================================
+function formatarTextoLogradouro(r) {
+    const partes = [
+        [r.tipo, r.logradouro].filter(Boolean).join(' '),
+        r.bairro,
+        r.municipio,
+        r.uf
+    ].filter(Boolean);
+    const texto = partes.join(', ');
+    return r.cep ? `${texto}, ${formatarCEP(r.cep)}` : texto;
 }
 
 document.getElementById('searchBtn').addEventListener('click', () => {
@@ -703,7 +750,7 @@ async function carregarSurveys() {
         const { data: detalhes, error: errDet } = await supabaseClient
             .from('survey_detalhes')
             .select('*')
-            .order('created_at', { ascending: true });
+                        .order('created_at', { ascending: true });
         if (errDet) throw errDet;
 
         if (!detalhes || detalhes.length === 0) {
@@ -806,7 +853,7 @@ async function carregarSurveys() {
 }
 
 // ============================================
-// LIMPAR LISTA (botão do topo) — apaga todos os survey_detalhes
+// LIMPAR LISTA (botão do topo)
 // ============================================
 document.getElementById('novaAreaBtn').addEventListener('click', async () => {
     if (!confirm('Apagar TODOS os surveys salvos? (o roteiro será mantido)')) return;
@@ -890,7 +937,6 @@ document.getElementById('exportBtn').addEventListener('click', async () => {
 
         const total = window._surveysCache.length;
 
-        // Apaga os surveys exportados
         const { error } = await supabaseClient
             .from('survey_detalhes')
             .delete()
@@ -1003,9 +1049,14 @@ function gerarXMLEdificio(survey, logradouro, numero) {
 }
 
 // ============================================
-// UPLOAD DE ROTEIRO → tabela logradouros (sem duplicar)
+// UPLOAD DE ROTEIRO (só ADM)
 // ============================================
 document.getElementById('uploadBtn').addEventListener('click', async () => {
+    if (!usuarioEhAdm()) {
+        showToast('Sem permissão', 'Apenas usuários ATR/ATT/ADD podem importar roteiros.', 'error', 5000);
+        return;
+    }
+
     const fileInput = document.getElementById('roteiroFile');
     const status = document.getElementById('uploadStatus');
     const file = fileInput.files[0];
@@ -1097,12 +1148,7 @@ document.getElementById('uploadBtn').addEventListener('click', async () => {
         }
 
         status.textContent = `${inseridos} novo(s) importado(s). ${ignorados} duplicado(s) ignorado(s).`;
-        showToast(
-            'Roteiro importado',
-            `${inseridos} novo(s) | ${ignorados} duplicado(s) ignorado(s).`,
-            'success',
-            4000
-        );
+        showToast('Roteiro importado', `${inseridos} novo(s) | ${ignorados} duplicado(s) ignorado(s).`, 'success', 4000);
         fileInput.value = '';
     } catch (err) {
         console.error('[UPLOAD] Erro:', err);
@@ -1223,6 +1269,23 @@ function formatarCEP(cep) {
 }
 
 // ============================================
+// AJUSTE DE TAMANHO DO MAPA
+// ============================================
+window.addEventListener('resize', () => {
+    setTimeout(() => map.invalidateSize(), 200);
+});
+
+if (typeof ResizeObserver !== 'undefined') {
+    const ro = new ResizeObserver(() => {
+        setTimeout(() => map.invalidateSize(), 100);
+    });
+    const mapEl = document.getElementById('map');
+    if (mapEl) ro.observe(mapEl);
+    const containerEl = document.querySelector('.layout-2col');
+    if (containerEl) ro.observe(containerEl);
+}
+
+// ============================================
 // INICIALIZAÇÃO
 // ============================================
 document.addEventListener('DOMContentLoaded', () => {
@@ -1230,4 +1293,4 @@ document.addEventListener('DOMContentLoaded', () => {
         console.error('Erro na inicialização:', err);
         showToast('Erro ao iniciar', err.message, 'error');
     });
-});       
+});
