@@ -110,6 +110,7 @@ async function iniciar() {
     aplicarPermissoes();
     setTimeout(() => map.invalidateSize(), 400);
     renderizarSurveys();
+    inicializarChatIA();
 }
 
 document.getElementById('logoutBtn').addEventListener('click', async () => {
@@ -146,8 +147,14 @@ let enderecoBaseSelecionado = null;
 const houseSVG = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 42"><path d="M16 1 L1 15 L1 17 L5 17 L5 33 L12 33 L12 24 L20 24 L20 33 L27 33 L27 17 L31 17 L31 15 Z" fill="#2a4fd6" stroke="#1e3c72" stroke-width="0.6" stroke-linejoin="round"/><rect x="7" y="5" width="4" height="7" fill="#2a4fd6" stroke="#1e3c72" stroke-width="0.6"/><ellipse cx="16" cy="41" rx="9" ry="1.2" fill="rgba(0,0,0,0.25)"/></svg>`;
 const houseIcon = L.divIcon({ className: 'house-marker', html: houseSVG, iconSize: [14, 18], iconAnchor: [7, 18], popupAnchor: [0, -18] });
 
+const houseIconIA = L.divIcon({
+    className: 'house-marker',
+    html: houseSVG.replace(/#2a4fd6/g, '#16a34a').replace(/#1e3c72/g, '#15803d'),
+    iconSize: [14, 18], iconAnchor: [7, 18], popupAnchor: [0, -18]
+});
+
 // ============================================
-// HELPER: RECOLHER / EXPANDIR CARD
+// HELPERS DE CARD
 // ============================================
 function recolherCard(panelId) {
     const panel = document.getElementById(panelId);
@@ -227,7 +234,7 @@ document.getElementById('fullscreenBtn')?.addEventListener('click', (e) => {
 });
 
 // ============================================
-// HEADER NAV — botões fixos no topo
+// HEADER NAV
 // ============================================
 document.querySelectorAll('.header-nav button').forEach(btn => {
     btn.addEventListener('click', () => {
@@ -586,7 +593,6 @@ async function selecionarParaSurvey(r) {
         `;
     }
 
-    // AUTO-AVANÇO: recolhe o card 2 e abre o 3
     recolherCard('resultsPanel');
     expandirCard('formPanel');
     irParaCard('formPanel');
@@ -635,7 +641,6 @@ async function buscarOpcoesOSM(end) {
 }
 
 function renderizarOpcoesOSM(opcoes, end) {
-    // Desmarca checkboxes de recorrência se o usuário não marcou (mantém comportamento)
     const list = document.getElementById('enderecosList');
     const wrapper = document.createElement('div');
     wrapper.className = 'table-wrapper';
@@ -679,7 +684,6 @@ function renderizarOpcoesOSM(opcoes, end) {
             setH('surveyLongitude', o.lng.toFixed(8));
             irParaLocal(o.lat, o.lng, o.display_name || montarTextoLogradouro(end), 'Roteiro + OSM');
             showToast('Coordenadas aplicadas', 'Localização marcada no mapa.', 'success', 2500);
-            // AUTO-AVANÇO também
             recolherCard('resultsPanel');
             expandirCard('formPanel');
             irParaCard('formPanel');
@@ -688,7 +692,7 @@ function renderizarOpcoesOSM(opcoes, end) {
 }
 
 // ============================================
-// ADICIONAR AO SURVEY (memória apenas)
+// ADICIONAR AO SURVEY (memória)
 // ============================================
 document.getElementById('addBtn').addEventListener('click', async () => {
     if (!enderecoBaseSelecionado || !enderecoBaseSelecionado._registro_id) {
@@ -718,21 +722,21 @@ document.getElementById('addBtn').addEventListener('click', async () => {
     if (comp2Tipo || comp2Valor) complementos.push({ tipo: comp2Tipo || '', valor: comp2Valor || '' });
     if (comp3Tipo || comp3Valor) complementos.push({ tipo: comp3Tipo || '', valor: comp3Valor || '' });
 
-    // Guarda em MEMÓRIA (não vai pro banco)
     _surveyIdSeq += 1;
     surveysMemoria.push({
         _id: 'mem_' + _surveyIdSeq,
-                logradouro: { ...enderecoBaseSelecionado },
+        _ia: false,
+        logradouro: { ...enderecoBaseSelecionado },
         numero: numero,
         pisos: pisos || null,
         complementos: complementos,
         latitude: lat,
-        longitude: lng
+        longitude: lng,
+        created_at: new Date().toISOString()
     });
 
     showToast('Survey salvo', 'Nº e complementos adicionados à lista.', 'success', 2500);
 
-    // Limpa respeitando as checkboxes "Recorrência"
     const limpar = (id, manterId) => {
         const manter = manterId ? document.getElementById(manterId) : null;
         if (manter && manter.checked) return;
@@ -750,15 +754,13 @@ document.getElementById('addBtn').addEventListener('click', async () => {
     limpar('comp3Valor', 'comp3Recorrente');
 
     renderizarSurveys();
-
-    // AUTO-AVANÇO: recolhe o card 3 (Survey) e abre o card 4 (Surveys Salvos)
     recolherCard('formPanel');
     expandirCard('listPanel');
     irParaCard('listPanel');
 });
 
 // ============================================
-// RENDERIZAR SURVEYS SALVOS (em memória)
+// RENDERIZAR SURVEYS SALVOS
 // ============================================
 function renderizarSurveys() {
     const panel = document.getElementById('listPanel');
@@ -781,8 +783,9 @@ function renderizarSurveys() {
             ? comps.map(c => `${c.tipo || '?'}: ${c.valor || ''}`).join(' | ')
             : '—';
         const tr = document.createElement('tr');
+        if (s._ia) tr.className = 'linha-ia';
         tr.innerHTML = `
-            <td>${escapeHtml([l.tipo, l.rua].filter(Boolean).join(' ') || '—')}</td>
+            <td>${escapeHtml([l.tipo, l.rua].filter(Boolean).join(' ') || '—')}${s._ia ? '<span class="ia-tag">🤖 IA</span>' : ''}</td>
             <td>${escapeHtml(s.numero || '')}</td>
             <td>${escapeHtml(compTexto)}</td>
             <td>${escapeHtml(l.bairro || '')}</td>
@@ -796,7 +799,6 @@ function renderizarSurveys() {
         tbody.appendChild(tr);
     });
 
-    // Botão "ir" (centralizar no mapa)
     tbody.querySelectorAll('.btn-ir').forEach(btn => {
         btn.addEventListener('click', () => {
             const s = surveysMemoria[parseInt(btn.dataset.idx, 10)];
@@ -809,14 +811,13 @@ function renderizarSurveys() {
             }
             map.setView([lat, lng], 18);
             if (marcadorAtual) map.removeLayer(marcadorAtual);
-            marcadorAtual = L.marker([lat, lng], { icon: houseIcon }).addTo(map);
+            marcadorAtual = L.marker([lat, lng], { icon: s._ia ? houseIconIA : houseIcon }).addTo(map);
             const nome = s.logradouro ? s.logradouro.rua : '';
             marcadorAtual.bindPopup(`<strong>${escapeHtml(nome)}, ${escapeHtml(s.numero || '')}</strong>`).openPopup();
             document.getElementById('panel2').scrollIntoView({ behavior: 'smooth', block: 'start' });
         });
     });
 
-    // Botão remover
     tbody.querySelectorAll('.btn-remover').forEach(btn => {
         btn.addEventListener('click', () => {
             const id = btn.dataset.id;
@@ -831,9 +832,6 @@ function renderizarSurveys() {
     renderizarMarcadoresSurveys();
 }
 
-// ============================================
-// MARCADORES DOS SURVEYS NO MAPA
-// ============================================
 function renderizarMarcadoresSurveys() {
     marcadoresSurveys.forEach(m => map.removeLayer(m));
     marcadoresSurveys = [];
@@ -842,7 +840,8 @@ function renderizarMarcadoresSurveys() {
         const lat = s.latitude != null ? Number(s.latitude) : (s.logradouro && s.logradouro.lat);
         const lng = s.longitude != null ? Number(s.longitude) : (s.logradouro && s.logradouro.lng);
         if (lat == null || lng == null) return;
-        const m = L.marker([lat, lng], { icon: houseIcon }).addTo(map);
+        const icon = s._ia ? houseIconIA : houseIcon;
+        const m = L.marker([lat, lng], { icon: icon }).addTo(map);
         const nome = s.logradouro ? s.logradouro.rua : '';
         m.bindPopup(`<strong>${escapeHtml(nome)}, ${escapeHtml(s.numero || '')}</strong>`);
         marcadoresSurveys.push(m);
@@ -850,7 +849,7 @@ function renderizarMarcadoresSurveys() {
 }
 
 // ============================================
-// LIMPAR TUDO (botão dentro da seção 4)
+// LIMPAR TUDO
 // ============================================
 document.getElementById('clearBtn')?.addEventListener('click', () => {
     if (surveysMemoria.length === 0) {
@@ -866,7 +865,7 @@ document.getElementById('clearBtn')?.addEventListener('click', () => {
 });
 
 // ============================================
-// EXPORTAR XMLs (ZIP) — e limpa a lista
+// EXPORTAR XMLs (ZIP)
 // ============================================
 document.getElementById('exportBtn')?.addEventListener('click', async () => {
     if (surveysMemoria.length === 0) {
@@ -903,7 +902,6 @@ document.getElementById('exportBtn')?.addEventListener('click', async () => {
 
         const total = surveysMemoria.length;
 
-        // Limpa memória após exportar
         surveysMemoria = [];
         marcadoresSurveys.forEach(m => map.removeLayer(m));
         marcadoresSurveys = [];
@@ -917,7 +915,7 @@ document.getElementById('exportBtn')?.addEventListener('click', async () => {
 });
 
 // ============================================
-// GERAR XML NO FORMATO "edificio"
+// GERAR XML
 // ============================================
 function gerarXMLEdificio(survey, logradouro, numero) {
     const l = logradouro || {};
@@ -1211,6 +1209,402 @@ if (typeof ResizeObserver !== 'undefined') {
     if (mapEl) ro.observe(mapEl);
     const containerEl = document.querySelector('.layout-2col');
     if (containerEl) ro.observe(containerEl);
+}
+
+// ============================================
+// IA LOGICTEL — CHAT CONTROLLER
+// ============================================
+const iaChatEl = document.getElementById('iaChat');
+const iaFabEl = document.getElementById('iaFab');
+const iaFabBadge = document.getElementById('iaFabBadge');
+const iaChatBody = document.getElementById('iaChatBody');
+const iaChatHeader = document.getElementById('iaChatHeader');
+const iaMinimizeBtn = document.getElementById('iaMinimizeBtn');
+const iaCloseBtn = document.getElementById('iaCloseBtn');
+
+let iaPendencia = null;  // guarda o "estado" atual da conversa
+let iaNaoLidas = 0;
+
+function inicializarChatIA() {
+    if (!iaChatEl) return;
+
+    iaChatHeader?.addEventListener('click', (e) => {
+        if (e.target.closest('.ia-chat-actions')) return;
+        abrirChatIA();
+    });
+
+    iaMinimizeBtn?.addEventListener('click', (e) => {
+        e.stopPropagation();
+        minimizarChatIA();
+    });
+
+    iaCloseBtn?.addEventListener('click', (e) => {
+        e.stopPropagation();
+        fecharChatIA();
+    });
+
+    iaFabEl?.addEventListener('click', abrirChatIA);
+
+    document.getElementById('detectarPadroesBtn')?.addEventListener('click', () => {
+        abrirChatIA();
+        detectarPadroes();
+    });
+}
+
+function abrirChatIA() {
+    if (!iaChatEl) return;
+    iaChatEl.dataset.state = 'open';
+    if (iaFabEl) iaFabEl.style.display = 'none';
+    iaNaoLidas = 0;
+    if (iaFabBadge) iaFabBadge.style.display = 'none';
+    iaChatBody.scrollTop = iaChatBody.scrollHeight;
+}
+
+function minimizarChatIA() {
+    if (!iaChatEl) return;
+    iaChatEl.dataset.state = 'minimized';
+    if (iaFabEl) iaFabEl.style.display = 'none';
+}
+
+function fecharChatIA() {
+    if (!iaChatEl) return;
+    iaChatEl.dataset.state = 'closed';
+    if (iaFabEl) iaFabEl.style.display = '';
+    if (iaNaoLidas > 0 && iaFabBadge) {
+        iaFabBadge.style.display = '';
+        iaFabBadge.textContent = String(iaNaoLidas);
+    }
+}
+
+function adicionarMensagemIA(html, comDigitando = false) {
+    if (!iaChatBody) return;
+
+    if (comDigitando) {
+        const typing = document.createElement('div');
+        typing.className = 'ia-msg ia-msg-ia';
+        typing.id = 'iaTyping';
+        typing.innerHTML = '<div class="ia-typing"><span></span><span></span><span></span></div>';
+        iaChatBody.appendChild(typing);
+        iaChatBody.scrollTop = iaChatBody.scrollHeight;
+    }
+}
+
+function escreverMensagemIA(html, delay = 400) {
+    adicionarMensagemIA('', true);
+    setTimeout(() => {
+        const typing = document.getElementById('iaTyping');
+        if (typing) typing.remove();
+        const div = document.createElement('div');
+        div.className = 'ia-msg ia-msg-ia';
+        div.innerHTML = html;
+        iaChatBody.appendChild(div);
+        iaChatBody.scrollTop = iaChatBody.scrollHeight;
+        if (iaChatEl.dataset.state !== 'open') {
+            iaNaoLidas++;
+            if (iaFabBadge) {
+                iaFabBadge.style.display = '';
+                iaFabBadge.textContent = String(iaNaoLidas);
+            }
+        }
+    }, delay);
+}
+
+function escreverMensagemUser(texto) {
+    if (!iaChatBody) return;
+    const div = document.createElement('div');
+    div.className = 'ia-msg ia-msg-user';
+    div.textContent = texto;
+    iaChatBody.appendChild(div);
+    iaChatBody.scrollTop = iaChatBody.scrollHeight;
+}
+
+function limparChatIA() {
+    if (iaChatBody) iaChatBody.innerHTML = '';
+    iaPendencia = null;
+}
+
+// ============================================
+// IA — DETECÇÃO DE PADRÕES
+// ============================================
+function detectarPadroes() {
+    if (!surveysMemoria || surveysMemoria.length < 5) {
+        escreverMensagemIA(
+            `Olá! Eu sou a <strong>IA Logictel</strong>.<br><br>
+            Para detectar padrões, preciso de pelo menos <strong>5 surveys</strong> cadastrados.
+            Você tem <strong>${surveysMemoria ? surveysMemoria.length : 0}</strong> até agora.<br><br>
+            Cadastre mais alguns e clique em <strong>🔍 Detectar Padrões</strong> novamente.`
+        );
+        return;
+    }
+
+    // Ordena por created_at
+    const lista = [...surveysMemoria].sort((a, b) =>
+        new Date(a.created_at) - new Date(b.created_at)
+    );
+
+    const padrao = encontrarPadrao(lista);
+
+    if (!padrao) {
+        escreverMensagemIA(
+            `Analisei seus <strong>${lista.length}</strong> surveys e <strong>não encontrei um padrão claro</strong> nos últimos 5 registros.<br><br>
+            Para eu detectar um padrão, os 5 últimos precisam ter:
+            <ul style="margin:8px 0 8px 16px;font-size:0.8rem;">
+                <li>Mesmo logradouro e mesma fachada; ou</li>
+                <li>Mesmo logradouro e mesma combinação de complementos fixos, com <strong>1 valor incrementando</strong> (1,2,3,4,5).</li>
+            </ul>
+            Continue cadastrando e tente de novo.`
+        );
+        return;
+    }
+
+    iaPendencia = padrao;
+    escreverMensagemIA(
+        `IA Logictel observou um <strong>padrão de ${padrao.quantidade} ${padrao.descricao}</strong> 
+        no endereço <strong>${escapeHtml(padrao.enderecoResumo)}</strong>.<br><br>
+        Deseja continuar a sequência automaticamente?`,
+        false
+    );
+
+    // Botões Sim/Não
+    setTimeout(() => {
+        const wrapper = document.createElement('div');
+        wrapper.className = 'ia-msg ia-msg-ia';
+        wrapper.innerHTML = `
+            <div class="ia-msg-actions">
+                <button class="ia-btn ia-btn-success" id="iaSimBtn" type="button">Sim</button>
+                <button class="ia-btn ia-btn-secondary" id="iaNaoBtn" type="button">Não</button>
+            </div>
+        `;
+        iaChatBody.appendChild(wrapper);
+        iaChatBody.scrollTop = iaChatBody.scrollHeight;
+
+        document.getElementById('iaSimBtn').addEventListener('click', () => {
+            escreverMensagemUser('Sim');
+            wrapper.querySelector('.ia-msg-actions').remove();
+            perguntarQuantidade();
+        });
+        document.getElementById('iaNaoBtn').addEventListener('click', () => {
+            escreverMensagemUser('Não');
+            wrapper.querySelector('.ia-msg-actions').remove();
+            escreverMensagemIA('Tudo bem! Se precisar, é só clicar em <strong>🔍 Detectar Padrões</strong> novamente.');
+            iaPendencia = null;
+        });
+    }, 500);
+}
+
+// ============================================
+// IA — ENCONTRAR PADRÃO
+// ============================================
+function encontrarPadrao(lista) {
+    if (lista.length < 5) return null;
+
+    // Analisa as últimas N=5+ entradas consecutivas
+    // Foca nas 5 últimas
+    const ultimos = lista.slice(-5);
+    if (ultimos.length < 5) return null;
+
+    // Checa se mesmo logradouro
+    const logradouroRef = ultimos[0].logradouro && ultimos[0].logradouro.rua;
+    if (!logradouroRef) return null;
+    const mesmoLogradouro = ultimos.every(s => s.logradouro && s.logradouro.rua === logradouroRef);
+    if (!mesmoLogradouro) return null;
+
+    // Checa se mesmo bairro/cidade/uf
+    const l0 = ultimos[0].logradouro;
+    const mesmoLocal = ultimos.every(s =>
+        s.logradouro &&
+        s.logradouro.bairro === l0.bairro &&
+        s.logradouro.cidade === l0.cidade &&
+        s.logradouro.estado === l0.estado
+    );
+    if (!mesmoLocal) return null;
+
+    // TIPO 1: fachada (numero) incrementa
+    const numeros = ultimos.map(s => parseInt(String(s.numero || '').replace(/\D/g, ''), 10));
+    const numsValidos = numeros.every(n => !isNaN(n));
+    if (numsValidos) {
+        const d1 = numeros[1] - numeros[0];
+        const mesmoDelta = d1 !== 0 && numeros.every((n, i) => i === 0 || (n - numeros[i-1]) === d1);
+        if (mesmoDelta) {
+            return {
+                tipo: 'fachada',
+                quantidade: 5,
+                descricao: 'fachadas',
+                enderecoResumo: `${l0.tipo || ''} ${l0.rua}, ${l0.bairro || ''}`.trim(),
+                campo: 'numero',
+                ultimoValor: numeros[numeros.length - 1],
+                delta: d1,
+                ultimos: ultimos
+            };
+        }
+    }
+
+    // TIPO 2: um complemento incrementa
+    const numComps = Math.max(...ultimos.map(s => (s.complementos || []).length));
+    for (let c = 0; c < numComps; c++) {
+        const valores = ultimos.map(s => {
+            const comp = (s.complementos || [])[c];
+            return comp ? parseInt(String(comp.valor).replace(/\D/g, ''), 10) : NaN;
+        });
+        if (valores.some(v => isNaN(v))) continue;
+
+        const d1 = valores[1] - valores[0];
+        const mesmoDelta = d1 !== 0 && valores.every((v, i) => i === 0 || (v - valores[i-1]) === d1);
+        if (!mesmoDelta) continue;
+
+        // Verifica se os outros campos estão fixos
+        const outrosFixos = ultimos.every(s => {
+            if (s.numero !== ultimos[0].numero) return false;
+            const comps = s.complementos || [];
+            for (let k = 0; k < numComps; k++) {
+                if (k === c) continue;
+                const a = (comps[k] || {}).valor;
+                const b = (ultimos[0].complementos[k] || {}).valor;
+                if (a !== b) return false;
+                const ta = (comps[k] || {}).tipo;
+                const tb = (ultimos[0].complementos[k] || {}).tipo;
+                if (ta !== tb) return false;
+            }
+            return true;
+        });
+        if (!outrosFixos) continue;
+
+        const tipoRef = (ultimos[0].complementos[c] || {}).tipo || 'complemento';
+        return {
+            tipo: 'complemento',
+            quantidade: 5,
+            descricao: tipoRef.toLowerCase(),
+            enderecoResumo: `${l0.tipo || ''} ${l0.rua}, ${ultimos[0].numero}, ${l0.bairro || ''}`.trim(),
+            campo: 'complemento_' + c,
+            compIndex: c,
+            ultimoValor: valores[valores.length - 1],
+            delta: d1,
+            ultimos: ultimos
+        };
+    }
+
+    return null;
+}
+
+// ============================================
+// IA — PERGUNTAR QUANTIDADE
+// ============================================
+function perguntarQuantidade() {
+    if (!iaPendencia) return;
+
+    const div = document.createElement('div');
+    div.className = 'ia-msg ia-msg-ia';
+    div.id = 'iaPerguntaQuantidade';
+    div.innerHTML = `
+        Quantas residências devo cadastrar nesse padrão?<br>
+        <small style="color:var(--text-tertiary)">Padrão detectado: <strong>${escapeHtml(iaPendencia.descricao)}</strong>. Máximo: 100.</small>
+        <div class="ia-msg-input-group">
+            <input type="number" id="iaQtdInput" min="1" max="100" placeholder="Ex: 20">
+            <button class="ia-btn ia-btn-success" id="iaCriarBtn" type="button">Criar</button>
+        </div>
+    `;
+    iaChatBody.appendChild(div);
+    iaChatBody.scrollTop = iaChatBody.scrollHeight;
+
+    const input = document.getElementById('iaQtdInput');
+    const btn = document.getElementById('iaCriarBtn');
+    input?.focus();
+
+    const executar = () => {
+        const qtd = parseInt(input.value, 10);
+        if (isNaN(qtd) || qtd < 1) {
+            showToast('Valor inválido', 'Informe um número entre 1 e 100.', 'warning');
+            return;
+        }
+        if (qtd > 100) {
+            showToast('Limite excedido', 'O máximo é 100 por vez.', 'warning');
+            return;
+        }
+        div.remove();
+        escreverMensagemUser(String(qtd));
+        gerarSequenciaIA(qtd);
+    };
+
+    btn?.addEventListener('click', executar);
+    input?.addEventListener('keypress', (e) => {
+        if (e.key === 'Enter') { e.preventDefault(); executar(); }
+    });
+}
+
+// ============================================
+// IA — GERAR SEQUÊNCIA
+// ============================================
+function gerarSequenciaIA(quantidade) {
+    if (!iaPendencia) return;
+
+    const pad = iaPendencia;
+    const ultimos = pad.ultimos;
+
+    // Calcula delta médio de coordenadas
+    let deltaLat = 0, deltaLng = 0, contDelta = 0;
+    for (let i = 1; i < ultimos.length; i++) {
+        const a = ultimos[i - 1];
+        const b = ultimos[i];
+        const latA = a.latitude != null ? Number(a.latitude) : (a.logradouro && a.logradouro.lat);
+        const lngA = a.longitude != null ? Number(a.longitude) : (a.logradouro && a.logradouro.lng);
+        const latB = b.latitude != null ? Number(b.latitude) : (b.logradouro && b.logradouro.lat);
+        const lngB = b.longitude != null ? Number(b.longitude) : (b.logradouro && b.logradouro.lng);
+        if (latA != null && lngA != null && latB != null && lngB != null) {
+            deltaLat += (latB - latA);
+            deltaLng += (lngB - lngA);
+            contDelta++;
+        }
+    }
+    if (contDelta > 0) {
+        deltaLat /= contDelta;
+        deltaLng /= contDelta;
+    }
+
+    const ultimoSurvey = ultimos[ultimos.length - 1];
+    const ultLat = ultimoSurvey.latitude != null ? Number(ultimoSurvey.latitude) : (ultimoSurvey.logradouro && ultimoSurvey.logradouro.lat);
+    const ultLng = ultimoSurvey.longitude != null ? Number(ultimoSurvey.longitude) : (ultimoSurvey.logradouro && ultimoSurvey.logradouro.lng);
+
+    let criados = 0;
+
+    for (let i = 1; i <= quantidade; i++) {
+        // Clona o último survey
+        const novo = JSON.parse(JSON.stringify(ultimoSurvey));
+        novo._id = 'ia_' + (++_surveyIdSeq);
+        novo._ia = true;
+        novo.created_at = new Date().toISOString();
+
+        // Atualiza o campo que incrementa
+        if (pad.tipo === 'fachada') {
+            novo.numero = String(pad.ultimoValor + pad.delta * i);
+        } else if (pad.tipo === 'complemento') {
+            const comp = novo.complementos[pad.compIndex];
+            if (comp) {
+                const prefixo = String(comp.valor).replace(/\d+$/, '');
+                comp.valor = prefixo + String(pad.ultimoValor + pad.delta * i);
+            }
+        }
+
+        // Aplica o delta médio nas coords
+        if (ultLat != null && ultLng != null && (deltaLat !== 0 || deltaLng !== 0)) {
+            novo.latitude = +(ultLat + deltaLat * i).toFixed(8);
+            novo.longitude = +(ultLng + deltaLng * i).toFixed(8);
+        }
+
+        surveysMemoria.push(novo);
+        criados++;
+    }
+
+    renderizarSurveys();
+    expandirCard('listPanel');
+    irParaCard('listPanel');
+
+    escreverMensagemIA(
+        `✅ Pronto! Criei <strong>${criados} novos surveys</strong> continuando o padrão.<br><br>
+        Eles aparecem na lista com <strong>fundo verde</strong> e a etiqueta <strong>🤖 IA</strong> para você diferenciar.
+        Você pode remover só os da IA se quiser, usando a lixeira verde.`
+    );
+
+    iaPendencia = null;
 }
 
 // ============================================

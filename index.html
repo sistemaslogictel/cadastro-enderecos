@@ -39,7 +39,7 @@
             <span class="brand-divider"></span>
             <h1 class="app-title">Cadastro de Roteiro</h1>
 
-            <!-- SIDE NAV DENTRO DO HEADER (fixo) -->
+            <!-- NAV DENTRO DO HEADER -->
             <nav class="header-nav" id="sideNav" aria-label="Navegação rápida entre seções">
                 <button data-goto="panel1" title="1. Buscar Localização" type="button">1</button>
                 <button data-goto="resultsPanel" title="2. Endereços Encontrados" type="button">2</button>
@@ -49,6 +49,12 @@
             </nav>
         </div>
         <div class="app-header-right">
+            <button class="icon-btn" id="detectarPadroesBtn" type="button" title="Detectar Padrões (IA)" aria-label="Detectar Padrões IA">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <circle cx="11" cy="11" r="8"></circle>
+                    <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+                </svg>
+            </button>
             <button class="icon-btn" id="themeToggle" type="button" title="Alternar tema" aria-label="Alternar tema">
                 <span aria-hidden="true">🌙</span>
             </button>
@@ -268,7 +274,6 @@
                         <input type="hidden" id="surveyLatitude">
                         <input type="hidden" id="surveyLongitude">
 
-                        <!-- BOTÃO ADICIONAR AO SURVEY -->
                         <button id="addBtn" class="btn-add-survey" type="button">
                             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                                 <line x1="12" y1="5" x2="12" y2="19"></line>
@@ -389,6 +394,57 @@
     </main>
 
     <div class="toast-container" id="toastContainer" aria-live="polite" aria-atomic="true"></div>
+
+    <!-- ============================================ -->
+    <!-- CHAT DA IA (estilo Messenger, flutuante à direita) -->
+    <!-- ============================================ -->
+    <div class="ia-chat" id="iaChat" data-state="closed">
+        <!-- Cabeçalho -->
+        <div class="ia-chat-header" id="iaChatHeader">
+            <div class="ia-chat-avatar">
+                <span aria-hidden="true">🤖</span>
+            </div>
+            <div class="ia-chat-title">
+                <strong>IA Logictel</strong>
+                <span class="ia-chat-status">Online</span>
+            </div>
+            <div class="ia-chat-actions">
+                <button class="ia-chat-btn" id="iaMinimizeBtn" type="button" title="Minimizar" aria-label="Minimizar">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <line x1="5" y1="12" x2="19" y2="12"></line>
+                    </svg>
+                </button>
+                <button class="ia-chat-btn" id="iaCloseBtn" type="button" title="Fechar" aria-label="Fechar">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <line x1="18" y1="6" x2="6" y2="18"></line>
+                        <line x1="6" y1="6" x2="18" y2="18"></line>
+                    </svg>
+                </button>
+            </div>
+        </div>
+
+        <!-- Corpo (mensagens) -->
+        <div class="ia-chat-body" id="iaChatBody">
+            <!-- Mensagens são injetadas pelo JS -->
+        </div>
+
+        <!-- Footer (input rápido, opcional) -->
+        <div class="ia-chat-footer" id="iaChatFooter" style="display:none;">
+            <input type="text" id="iaChatInput" placeholder="Digite uma resposta..." autocomplete="off">
+            <button id="iaChatSendBtn" type="button" title="Enviar" aria-label="Enviar">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <line x1="22" y1="2" x2="11" y2="13"></line>
+                    <polygon points="22 2 15 22 11 13 2 9 22 2"></polygon>
+                </svg>
+            </button>
+        </div>
+    </div>
+
+    <!-- BOTÃO FLUTUANTE DO CHAT (aparece quando minimizado) -->
+    <button class="ia-fab" id="iaFab" type="button" title="Abrir IA Logictel" aria-label="Abrir IA Logictel" style="display:none;">
+        <span aria-hidden="true">🤖</span>
+        <span class="ia-fab-badge" id="iaFabBadge" style="display:none;">1</span>
+    </button>
 
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
