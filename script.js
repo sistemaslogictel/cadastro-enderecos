@@ -668,7 +668,7 @@ async function selecionarParaSurvey(r) {
 
     const infoBox = document.getElementById('enderecoBaseInfo');
     if (infoBox) {
-        c        const linha1 = [enderecoBaseSelecionado.tipo, enderecoBaseSelecionado.rua].filter(Boolean).join(' ') || '—';
+                 const linha1 = [enderecoBaseSelecionado.tipo, enderecoBaseSelecionado.rua].filter(Boolean).join(' ') || '—';
         const linha2 = [
             enderecoBaseSelecionado.bairro,
             [enderecoBaseSelecionado.cidade, enderecoBaseSelecionado.estado].filter(Boolean).join('/')
