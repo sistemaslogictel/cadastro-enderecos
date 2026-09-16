@@ -528,7 +528,6 @@ function irParaLocal(lat, lng, nome, origem) {
     document.getElementById('coordsDisplay').textContent = `${lat.toFixed(8)}, ${lng.toFixed(8)}`;
     document.getElementById('origemDisplay').textContent = `Roteiro (${origem || 'logradouro'})`;
 
-    // Ativa drag com mousedown e atualiza coords ao soltar
     marcadorAtual.on('mousedown', () => marcadorAtual.dragging.enable());
     marcadorAtual.on('dragend', () => {
         const pos = marcadorAtual.getLatLng();
@@ -669,7 +668,7 @@ async function selecionarParaSurvey(r) {
 
     const infoBox = document.getElementById('enderecoBaseInfo');
     if (infoBox) {
-        const linha1 = [enderecoBaseSelecionado.tipo, enderecoBaseSelecionado.rua].filter(Boolean).join(' ') || '—';
+        c        const linha1 = [enderecoBaseSelecionado.tipo, enderecoBaseSelecionado.rua].filter(Boolean).join(' ') || '—';
         const linha2 = [
             enderecoBaseSelecionado.bairro,
             [enderecoBaseSelecionado.cidade, enderecoBaseSelecionado.estado].filter(Boolean).join('/')
@@ -1146,6 +1145,8 @@ document.getElementById('exportBtn')?.addEventListener('click', async () => {
 
 // ============================================
 // GERAR XML NO FORMATO "edificio" (novo padrão)
+// - Tags vazias SEMPRE com forma longa: <tag></tag>
+// - Complementos vazios são OMITIDOS do XML
 // ============================================
 function gerarXMLEdificio(survey, logradouro, numero) {
     const l = logradouro || {};
@@ -1154,6 +1155,9 @@ function gerarXMLEdificio(survey, logradouro, numero) {
         return String(v).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
             .replace(/"/g, '&quot;').replace(/'/g, '&apos;');
     };
+
+    // Garante que TODA tag saia na forma <tag>valor</tag>, mesmo com valor vazio
+    const tag = (nome, valor) => `<${nome}>${xmlEscape(valor == null ? '' : valor)}</${nome}>`;
 
     const agora = new Date();
     const pad = (n) => String(n).padStart(2, '0');
@@ -1181,13 +1185,22 @@ function gerarXMLEdificio(survey, logradouro, numero) {
     const idEdificio = '';
     const numeroFachada = survey.numero || 'SN';
 
+    // ===== COMPLEMENTOS: só os que têm tipo E valor =====
     const comps = Array.isArray(survey.complementos) ? survey.complementos : [];
-    const idComp1 = comps[0] ? getIdComplemento(comps[0].tipo) : '';
-    const arg1 = comps[0] ? comps[0].valor : '';
-    const idComp2 = comps[1] ? getIdComplemento(comps[1].tipo) : '';
-    const arg2 = comps[1] ? comps[1].valor : '';
-    const idComp3 = comps[2] ? getIdComplemento(comps[2].tipo) : '';
-    const arg3 = comps[2] ? comps[2].valor : '';
+    const compsValidos = comps
+        .map(c => ({
+            tipo: (c.tipo || '').trim(),
+            valor: (c.valor || '').trim()
+        }))
+        .filter(c => c.tipo && c.valor);
+
+    // Bloco de complementos (só emite as linhas dos que existem)
+    let blocoComplementos = '';
+    compsValidos.forEach((c, i) => {
+        const n = i + 1;
+        blocoComplementos += `    ${tag('id_complemento' + n, getIdComplemento(c.tipo))}\n`;
+        blocoComplementos += `    ${tag('argumento' + n, c.valor)}\n`;
+    });
 
     const cep = (l.cep || '').toString().replace(/\D/g, '');
     const idRoteiro = l.id_roteiro || l._registro_id || '';
@@ -1196,41 +1209,35 @@ function gerarXMLEdificio(survey, logradouro, numero) {
 
     return `<?xml version="1.0" encoding="UTF-8"?><edificio tipo="M" versao="7.9.2">
   <gravado>false</gravado>
-  <nEdificio>${xmlEscape(nEdificio)}</nEdificio>
-  <coordX>${xmlEscape(coordX)}</coordX>
-  <coordY>${xmlEscape(coordY)}</coordY>
-  <codigoZona>${xmlEscape(codigoZona)}</codigoZona>
-  <nomeZona>${xmlEscape(nomeZona)}</nomeZona>
-  <localidade>${xmlEscape(localidade)}</localidade>
+  ${tag('nEdificio', nEdificio)}
+  ${tag('coordX', coordX)}
+  ${tag('coordY', coordY)}
+  ${tag('codigoZona', codigoZona)}
+  ${tag('nomeZona', nomeZona)}
+  ${tag('localidade', localidade)}
   <enderecoEdificio>
-    <id>${xmlEscape(idEdificio)}</id>
-    <logradouro>${xmlEscape(logradouroCompleto)}</logradouro>
-    <numero_fachada>${xmlEscape(numeroFachada)}</numero_fachada>
-    <id_complemento1>${xmlEscape(idComp1)}</id_complemento1>
-    <argumento1>${xmlEscape(arg1)}</argumento1>
-    <id_complemento2>${xmlEscape(idComp2)}</id_complemento2>
-    <argumento2>${xmlEscape(arg2)}</argumento2>
-    <id_complemento3>${xmlEscape(idComp3)}</id_complemento3>
-    <argumento3>${xmlEscape(arg3)}</argumento3>
-    <cep>${xmlEscape(cep)}</cep>
-    <bairro>${xmlEscape(bairro)}</bairro>
-    <id_roteiro>${xmlEscape(idRoteiro)}</id_roteiro>
-    <id_localidade>${xmlEscape(idLocalidade)}</id_localidade>
-    <cod_lograd>${xmlEscape(codLograd)}</cod_lograd>
+    ${tag('id', idEdificio)}
+    ${tag('logradouro', logradouroCompleto)}
+    ${tag('numero_fachada', numeroFachada)}
+${blocoComplementos}    ${tag('cep', cep)}
+    ${tag('bairro', bairro)}
+    ${tag('id_roteiro', idRoteiro)}
+    ${tag('id_localidade', idLocalidade)}
+    ${tag('cod_lograd', codLograd)}
   </enderecoEdificio>
   <tecnico>
-    <id>${xmlEscape(TECNICO_FIXO_ID)}</id>
-    <nome>${xmlEscape(TECNICO_FIXO_NOME)}</nome>
+    ${tag('id', TECNICO_FIXO_ID)}
+    ${tag('nome', TECNICO_FIXO_NOME)}
   </tecnico>
   <empresa>
     <id>6</id>
     <nome>LOGICTEL</nome>
   </empresa>
-  <data>${dataFormatada}</data>
-  <totalUCs>1</totalUCs>
-  <ocupacao>EDIFICACAOCOMPLETA</ocupacao>
-  <numPisos>${xmlEscape(numPisos)}</numPisos>
-  <destinacao>RESIDENCIA</destinacao>
+  ${tag('data', dataFormatada)}
+  ${tag('totalUCs', '1')}
+  ${tag('ocupacao', 'EDIFICACAOCOMPLETA')}
+  ${tag('numPisos', numPisos)}
+  ${tag('destinacao', 'RESIDENCIA')}
 </edificio>
 `;
 }
