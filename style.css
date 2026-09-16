@@ -1478,3 +1478,79 @@ tr.linha-ia .btn-ir {
 .icon-btn-export:hover {
     background: rgba(34, 197, 94, 0.3) !important;
 }
+
+/* ============================================
+   TABELA DE SURVEYS — layout compacto
+   ============================================ */
+#surveysTable {
+    table-layout: fixed;
+    width: 100%;
+    font-size: 0.78rem;
+}
+
+#surveysTable th,
+#surveysTable td {
+    padding: 8px 8px;
+    vertical-align: middle;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+#surveysTable th {
+    font-size: 0.66rem;
+    letter-spacing: 0.03em;
+}
+
+#surveysTable td.mono {
+    font-family: var(--font-mono);
+    font-size: 0.72rem;
+}
+
+/* Coluna de ações — botões compactos */
+#surveysTable .acoes-cell {
+    display: flex;
+    gap: 3px;
+    justify-content: center;
+    align-items: center;
+    white-space: nowrap;
+}
+
+#surveysTable .acoes-cell button {
+    padding: 4px 6px !important;
+    font-size: 0.72rem !important;
+    line-height: 1;
+    border-radius: 5px !important;
+    min-width: 26px;
+    height: 26px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+}
+
+/* Marcador arrastável */
+.house-marker {
+    cursor: grab;
+}
+.house-marker:active {
+    cursor: grabbing;
+}
+
+/* Botão editar na tabela */
+.btn-editar {
+    background: var(--blue-soft) !important;
+    color: var(--blue) !important;
+    border: 1px solid var(--blue) !important;
+}
+.btn-editar:hover {
+    background: var(--blue) !important;
+    color: #fff !important;
+}
+
+/* Botão exportar no header */
+.icon-btn-export {
+    background: rgba(34, 197, 94, 0.18) !important;
+}
+.icon-btn-export:hover {
+    background: rgba(34, 197, 94, 0.3) !important;
+}

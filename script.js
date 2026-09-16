@@ -16,6 +16,56 @@ const COORD_DEFAULT_FALLBACK = {
 };
 
 // ============================================
+// TÉCNICO FIXO (padrão do XML)
+// ============================================
+const TECNICO_FIXO_NOME = 'Osvaldo Miguel Magalhães';
+const TECNICO_FIXO_ID = '';
+
+// ============================================
+// TABELA DE IDS DE COMPLEMENTO
+// ============================================
+const COMPLEMENTO_IDS = {
+    'academia': 121, 'acampamento': 1, 'administração': 114, 'administracao': 114,
+    'ala': 2, 'almoxarifado': 3, 'alto': 4, 'altos': 5, 'ambulatório': 6, 'ambulatorio': 6,
+    'andar': 7, 'anexo': 8, 'apartamento': 9, 'armazém': 10, 'armazem': 10,
+    'ate': 11, 'baixos': 12, 'banca': 13, 'barrão': 14, 'barrao': 14, 'beco': 15,
+    'bloco': 16, 'box': 17, 'brigada de incêncio': 115, 'brigada de incendio': 115,
+    'cais': 18, 'carpintaria': 20, 'casa': 22, 'cela': 23, 'central': 24, 'chácara': 124, 'chacara': 124,
+    'cobertura': 25, 'colina': 26, 'condomínio': 27, 'condominio': 27,
+    'conjunto': 28, 'conjunto residencial': 29, 'corredor': 30,
+    'depósito': 31, 'deposito': 31, 'diretoria': 32, 'divisão': 34, 'divisao': 34,
+    'edifício': 35, 'edificio': 35, 'entrada': 36, 'escritório': 37, 'escritorio': 37,
+    'espaço de convivência': 38, 'espaco de convivencia': 38, 'estação': 39, 'estacao': 39,
+    'etapa': 40, 'frente': 43, 'fundos': 44, 'fórum': 42, 'forum': 42,
+    'galeria': 45, 'galpão': 46, 'galpao': 46, 'garagem': 47, 'gleba': 48, 'granja': 49,
+    'grupo': 50, 'guichê': 52, 'guiche': 52, 'hagar': 53, 'lado': 55, 'lanchonete': 56,
+    'letra': 57, 'loja': 58, 'lote': 59, 'loteamento': 60, 'lâmina': 56, 'lamina': 56,
+    'mansão': 62, 'mansao': 62, 'mart': 63, 'mercado': 64, 'mezanino': 65, 'módulo': 66, 'modulo': 66,
+    'não disponível': 119, 'nao disponivel': 119, 'não se aplica': 117, 'nao se aplica': 117,
+    'núcleo': 67, 'nucleo': 67, 'oficina mecânica': 68, 'oficina mecanica': 68,
+    'orgão': 69, 'orgao': 69, 'palácio': 70, 'palacio': 70, 'parada': 71,
+    'pavilhão': 73, 'pavilhao': 73, 'pavimento': 74, 'pilotis': 75, 'piso': 76, 'plataforma': 77,
+    'portão': 81, 'portao': 81, 'porão': 80, 'porao': 80, 'poço': 78, 'poco': 78,
+    'presidência': 83, 'presidencia': 83, 'prédio': 82, 'predio': 82, 'pátio': 72, 'patio': 72,
+    'quadra': 85, 'quarto': 86, 'quilômetro': 87, 'quilometro': 87,
+    'quinta': 88, 'quiosque': 89, 'ramal': 90, 'recepção': 91, 'recepcao': 91,
+    'refeitório': 92, 'refeitorio': 92, 'restaurante': 93, 'rótula': 95, 'rotula': 95,
+    'sala': 96, 'sala técnica': 116, 'sala tecnica': 116,
+    'salão de eventos': 120, 'salao de eventos': 120,
+    'sem complemento': 118, 'setor': 98, 'seção': 97, 'secao': 97,
+    'sobrado': 100, 'sobreloja': 101, 'stand': 102, 'sub número': 122, 'sub numero': 122,
+    'subestação': 103, 'subestacao': 103, 'subsolo': 104, 'super quadra': 105,
+    'terreno': 106, 'torre': 109, 'travessa': 110, 'trecho': 111, 'térreo': 107, 'terreo': 107,
+    'vila': 112, 'vizinho': 113, 'xx': 99
+};
+
+function getIdComplemento(tipo) {
+    if (!tipo) return '';
+    const k = String(tipo).trim().toLowerCase();
+    return COMPLEMENTO_IDS[k] ?? '';
+}
+
+// ============================================
 // TEMA CLARO / ESCURO
 // ============================================
 (function initTheme() {
@@ -114,12 +164,11 @@ async function iniciar() {
     const nome = sessionStorage.getItem('usuarioNome') || sessionStorage.getItem('usuarioLogado') || '-';
     document.getElementById('userLabel').textContent = nome;
 
-        aplicarPermissoes();
+    aplicarPermissoes();
     setTimeout(() => map.invalidateSize(), 400);
     renderizarSurveys();
     inicializarChatIA();
 
-    // Handler do botão Exportar no header
     document.getElementById('exportHeaderBtn')?.addEventListener('click', () => {
         document.getElementById('exportBtn')?.click();
     });
@@ -469,15 +518,51 @@ document.getElementById('searchBtn').addEventListener('click', () => {
 });
 
 // ============================================
-// IR PARA LOCAL
+// IR PARA LOCAL (marcador arrastável)
 // ============================================
 function irParaLocal(lat, lng, nome, origem) {
     map.setView([lat, lng], 17);
     if (marcadorAtual) map.removeLayer(marcadorAtual);
-    marcadorAtual = L.marker([lat, lng], { icon: houseIcon }).addTo(map);
+    marcadorAtual = L.marker([lat, lng], { icon: houseIcon, draggable: false }).addTo(map);
     marcadorAtual.bindPopup(`<strong>${escapeHtml(nome)}</strong>`).openPopup();
     document.getElementById('coordsDisplay').textContent = `${lat.toFixed(8)}, ${lng.toFixed(8)}`;
     document.getElementById('origemDisplay').textContent = `Roteiro (${origem || 'logradouro'})`;
+
+    // Ativa drag com mousedown e atualiza coords ao soltar
+    marcadorAtual.on('mousedown', () => marcadorAtual.dragging.enable());
+    marcadorAtual.on('dragend', () => {
+        const pos = marcadorAtual.getLatLng();
+        const setH = (id, val) => { const el = document.getElementById(id); if (el) el.value = val; };
+        setH('surveyLatitude', pos.lat.toFixed(8));
+        setH('surveyLongitude', pos.lng.toFixed(8));
+        document.getElementById('coordsDisplay').textContent = `${pos.lat.toFixed(8)}, ${pos.lng.toFixed(8)}`;
+        document.getElementById('origemDisplay').textContent = 'Ajustado manualmente (arrastado)';
+        if (_surveyEditandoIdx != null && surveysMemoria[_surveyEditandoIdx]) {
+            surveysMemoria[_surveyEditandoIdx].latitude = +pos.lat.toFixed(8);
+            surveysMemoria[_surveyEditandoIdx].longitude = +pos.lng.toFixed(8);
+        }
+    });
+}
+
+// ============================================
+// TORNAR MARCADOR DE SURVEY ARRASTÁVEL
+// ============================================
+function tornarMarcadorArrastavel(marker, surveyRef) {
+    marker.on('mousedown', () => marker.dragging.enable());
+    marker.on('dragend', () => {
+        const pos = marker.getLatLng();
+        if (surveyRef) {
+            surveyRef.latitude = +pos.lat.toFixed(8);
+            surveyRef.longitude = +pos.lng.toFixed(8);
+            if (marcadorAtual === marker) {
+                const setH = (id, val) => { const el = document.getElementById(id); if (el) el.value = val; };
+                setH('surveyLatitude', pos.lat.toFixed(8));
+                setH('surveyLongitude', pos.lng.toFixed(8));
+                document.getElementById('coordsDisplay').textContent = `${pos.lat.toFixed(8)}, ${pos.lng.toFixed(8)}`;
+                document.getElementById('origemDisplay').textContent = 'Ajustado manualmente (arrastado)';
+            }
+        }
+    });
 }
 
 // ============================================
@@ -566,7 +651,6 @@ async function selecionarParaSurvey(r) {
             renderizarOpcoesOSM(opcoes, enderecoBaseSelecionado);
             showToast('Encontramos opções no OSM', 'Clique em uma opção para marcar no mapa.', 'success', 3500);
         } else {
-            // FALLBACK: OSM não achou — usa coord default
             const lat = COORD_DEFAULT_FALLBACK.lat;
             const lng = COORD_DEFAULT_FALLBACK.lng;
             setH('surveyLatitude', lat.toFixed(8));
@@ -700,7 +784,7 @@ function renderizarOpcoesOSM(opcoes, end) {
 }
 
 // ============================================
-// ADICIONAR AO SURVEY (memória) / SALVAR EDIÇÃO
+// ADICIONAR AO SURVEY / SALVAR EDIÇÃO
 // ============================================
 document.getElementById('addBtn').addEventListener('click', async () => {
     if (!enderecoBaseSelecionado || !enderecoBaseSelecionado._registro_id) {
@@ -852,7 +936,6 @@ function abrirEdicaoSurvey(idx) {
         addBtn.style.background = 'var(--warning)';
     }
 
-    // Botão Cancelar (só aparece no modo edição)
     let cancelBtn = document.getElementById('cancelarEdicaoBtn');
     if (!cancelBtn) {
         cancelBtn = document.createElement('button');
@@ -922,9 +1005,9 @@ function renderizarSurveys() {
         const tr = document.createElement('tr');
         if (s._ia) tr.className = 'linha-ia';
         tr.innerHTML = `
-            <td>${escapeHtml([l.tipo, l.rua].filter(Boolean).join(' ') || '—')}${s._ia ? '<span class="ia-tag">🤖 IA</span>' : ''}</td>
+            <td title="${escapeHtml([l.tipo, l.rua].filter(Boolean).join(' '))}">${escapeHtml([l.tipo, l.rua].filter(Boolean).join(' ') || '—')}${s._ia ? '<span class="ia-tag">🤖 IA</span>' : ''}</td>
             <td>${escapeHtml(s.numero || '')}</td>
-            <td>${escapeHtml(compTexto)}</td>
+            <td title="${escapeHtml(compTexto)}">${escapeHtml(compTexto)}</td>
             <td>${escapeHtml(l.bairro || '')}</td>
             <td>${escapeHtml([l.cidade, l.estado].filter(Boolean).join('/') || '')}</td>
             <td class="mono">${escapeHtml(formatarCEP(l.cep || ''))}</td>
@@ -938,9 +1021,7 @@ function renderizarSurveys() {
     });
 
     tbody.querySelectorAll('.btn-editar').forEach(btn => {
-        btn.addEventListener('click', () => {
-            abrirEdicaoSurvey(parseInt(btn.dataset.idx, 10));
-        });
+        btn.addEventListener('click', () => abrirEdicaoSurvey(parseInt(btn.dataset.idx, 10)));
     });
 
     tbody.querySelectorAll('.btn-ir').forEach(btn => {
@@ -955,9 +1036,10 @@ function renderizarSurveys() {
             }
             map.setView([lat, lng], 18);
             if (marcadorAtual) map.removeLayer(marcadorAtual);
-            marcadorAtual = L.marker([lat, lng], { icon: s._ia ? houseIconIA : houseIcon }).addTo(map);
+            marcadorAtual = L.marker([lat, lng], { icon: s._ia ? houseIconIA : houseIcon, draggable: false }).addTo(map);
             const nome = s.logradouro ? s.logradouro.rua : '';
             marcadorAtual.bindPopup(`<strong>${escapeHtml(nome)}, ${escapeHtml(s.numero || '')}</strong>`).openPopup();
+            tornarMarcadorArrastavel(marcadorAtual, s);
             document.getElementById('panel2').scrollIntoView({ behavior: 'smooth', block: 'start' });
         });
     });
@@ -985,9 +1067,10 @@ function renderizarMarcadoresSurveys() {
         const lng = s.longitude != null ? Number(s.longitude) : (s.logradouro && s.logradouro.lng);
         if (lat == null || lng == null) return;
         const icon = s._ia ? houseIconIA : houseIcon;
-        const m = L.marker([lat, lng], { icon: icon }).addTo(map);
+        const m = L.marker([lat, lng], { icon: icon, draggable: false }).addTo(map);
         const nome = s.logradouro ? s.logradouro.rua : '';
         m.bindPopup(`<strong>${escapeHtml(nome)}, ${escapeHtml(s.numero || '')}</strong>`);
+        tornarMarcadorArrastavel(m, s);
         marcadoresSurveys.push(m);
     });
 }
@@ -1027,7 +1110,8 @@ document.getElementById('exportBtn')?.addEventListener('click', async () => {
             .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
             .replace(/\s+/g, '_').toUpperCase();
         const agora = new Date();
-        const carimbo = `${agora.getFullYear()}${String(agora.getMonth()+1).padStart(2,'0')}${String(agora.getDate()).padStart(2,'0')}${String(agora.getHours()).padStart(2,'0')}${String(agora.getMinutes()).padStart(2,'0')}`;
+        const pad = (n) => String(n).padStart(2, '0');
+        const carimbo = `${agora.getFullYear()}${pad(agora.getMonth()+1)}${pad(agora.getDate())}${pad(agora.getHours())}${pad(agora.getMinutes())}${pad(agora.getSeconds())}`;
         const nomeZipBase = `${localidade}_${carimbo}`;
 
         surveysMemoria.forEach((s, idx) => {
@@ -1061,7 +1145,7 @@ document.getElementById('exportBtn')?.addEventListener('click', async () => {
 });
 
 // ============================================
-// GERAR XML
+// GERAR XML NO FORMATO "edificio" (novo padrão)
 // ============================================
 function gerarXMLEdificio(survey, logradouro, numero) {
     const l = logradouro || {};
@@ -1089,24 +1173,30 @@ function gerarXMLEdificio(survey, logradouro, numero) {
 
     const coordX = lng != null ? lng.toFixed(6) : '';
     const coordY = lat != null ? lat.toFixed(6) : '';
-    const codigoZona = l.codigo_zona || '';
-    const nomeZona = l.nome_zona || codigoZona;
+
+    const nEdificio = '';
+    const codigoZona = 'Neutra';
+    const nomeZona = 'Neutra';
     const localidade = l.localidade || l.cidade || '';
-    const idEdificio = l.id_roteiro || l._registro_id || numero;
-    const numeroFachada = survey.numero || '';
+    const idEdificio = '';
+    const numeroFachada = survey.numero || 'SN';
+
+    const comps = Array.isArray(survey.complementos) ? survey.complementos : [];
+    const idComp1 = comps[0] ? getIdComplemento(comps[0].tipo) : '';
+    const arg1 = comps[0] ? comps[0].valor : '';
+    const idComp2 = comps[1] ? getIdComplemento(comps[1].tipo) : '';
+    const arg2 = comps[1] ? comps[1].valor : '';
+    const idComp3 = comps[2] ? getIdComplemento(comps[2].tipo) : '';
+    const arg3 = comps[2] ? comps[2].valor : '';
+
     const cep = (l.cep || '').toString().replace(/\D/g, '');
-    const codBairro = l.cod_bairro || '';
     const idRoteiro = l.id_roteiro || l._registro_id || '';
     const idLocalidade = l.id_localidade || '';
-    const tecnicoNome = (usuarioAtual && usuarioAtual.user_metadata && usuarioAtual.user_metadata.nome) || '';
-    const tecnicoId = (usuarioAtual && usuarioAtual.id) || '';
-    const empresaId = '6';
-    const empresaNome = 'LOGICTEL';
     const numPisos = survey.pisos && !isNaN(parseInt(survey.pisos, 10)) ? String(parseInt(survey.pisos, 10)) : '1';
 
     return `<?xml version="1.0" encoding="UTF-8"?><edificio tipo="M" versao="7.9.2">
   <gravado>false</gravado>
-  <nEdificio></nEdificio>
+  <nEdificio>${xmlEscape(nEdificio)}</nEdificio>
   <coordX>${xmlEscape(coordX)}</coordX>
   <coordY>${xmlEscape(coordY)}</coordY>
   <codigoZona>${xmlEscape(codigoZona)}</codigoZona>
@@ -1116,23 +1206,27 @@ function gerarXMLEdificio(survey, logradouro, numero) {
     <id>${xmlEscape(idEdificio)}</id>
     <logradouro>${xmlEscape(logradouroCompleto)}</logradouro>
     <numero_fachada>${xmlEscape(numeroFachada)}</numero_fachada>
+    <id_complemento1>${xmlEscape(idComp1)}</id_complemento1>
+    <argumento1>${xmlEscape(arg1)}</argumento1>
+    <id_complemento2>${xmlEscape(idComp2)}</id_complemento2>
+    <argumento2>${xmlEscape(arg2)}</argumento2>
+    <id_complemento3>${xmlEscape(idComp3)}</id_complemento3>
+    <argumento3>${xmlEscape(arg3)}</argumento3>
     <cep>${xmlEscape(cep)}</cep>
-    <cod_bairro>${xmlEscape(codBairro)}</cod_bairro>
     <bairro>${xmlEscape(bairro)}</bairro>
     <id_roteiro>${xmlEscape(idRoteiro)}</id_roteiro>
     <id_localidade>${xmlEscape(idLocalidade)}</id_localidade>
     <cod_lograd>${xmlEscape(codLograd)}</cod_lograd>
   </enderecoEdificio>
   <tecnico>
-    <id>${xmlEscape(tecnicoId)}</id>
-    <nome>${xmlEscape(tecnicoNome)}</nome>
+    <id>${xmlEscape(TECNICO_FIXO_ID)}</id>
+    <nome>${xmlEscape(TECNICO_FIXO_NOME)}</nome>
   </tecnico>
   <empresa>
-    <id>${xmlEscape(empresaId)}</id>
-    <nome>${xmlEscape(empresaNome)}</nome>
+    <id>6</id>
+    <nome>LOGICTEL</nome>
   </empresa>
   <data>${dataFormatada}</data>
-  <observacoes></observacoes>
   <totalUCs>1</totalUCs>
   <ocupacao>EDIFICACAOCOMPLETA</ocupacao>
   <numPisos>${xmlEscape(numPisos)}</numPisos>
@@ -1739,7 +1833,6 @@ function encontrarPadrao(lista) {
     );
     if (!mesmoLocal) return null;
 
-    // TIPO 1: fachada incrementa
     const numeros = ultimos.map(s => parseInt(String(s.numero || '').replace(/\D/g, ''), 10));
     const numsValidos = numeros.every(n => !isNaN(n));
     if (numsValidos) {
@@ -1759,7 +1852,6 @@ function encontrarPadrao(lista) {
         }
     }
 
-    // TIPO 2: complemento incrementa
     const numComps = Math.max(...ultimos.map(s => (s.complementos || []).length));
     for (let c = 0; c < numComps; c++) {
         const valores = ultimos.map(s => {

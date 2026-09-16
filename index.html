@@ -39,7 +39,6 @@
             <span class="brand-divider"></span>
             <h1 class="app-title">Cadastro de Roteiro</h1>
 
-            <!-- NAV DENTRO DO HEADER -->
             <nav class="header-nav" id="sideNav" aria-label="Navegação rápida entre seções">
                 <button data-goto="panel1" title="1. Buscar Localização" type="button">1</button>
                 <button data-goto="resultsPanel" title="2. Endereços Encontrados" type="button">2</button>
@@ -49,7 +48,6 @@
             </nav>
         </div>
         <div class="app-header-right">
-            <!-- BOTÃO EXPORTAR ZIP (aparece só quando há surveys) -->
             <button class="icon-btn icon-btn-export" id="exportHeaderBtn" type="button" title="Exportar XMLs (ZIP)" aria-label="Exportar XMLs (ZIP)" style="display:none;">
                 <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                     <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
@@ -58,7 +56,6 @@
                 </svg>
             </button>
 
-            <!-- BOTÃO DETECTAR PADRÕES IA -->
             <button class="icon-btn" id="detectarPadroesBtn" type="button" title="Detectar Padrões (IA)" aria-label="Detectar Padrões IA">
                 <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                     <circle cx="11" cy="11" r="8"></circle>
@@ -89,7 +86,6 @@
     <!-- CONTAINER -->
     <main class="app-main" id="main-content" role="main">
         <div class="layout-2col">
-            <!-- COLUNA ESQUERDA -->
             <div class="col-left">
 
                 <!-- 1. Buscar Localização -->
@@ -219,14 +215,49 @@
                                     <label for="comp1Tipo" class="field-label-sm">Tipo</label>
                                     <select id="comp1Tipo">
                                         <option value="">Selecione</option>
-                                        <option>Lote</option><option>Quadra</option><option>Casa</option>
-                                        <option>Apartamento</option><option>Bloco</option><option>Loja</option>
-                                        <option>Sala</option><option>Fundos</option><option>Outro</option>
+                                        <option>Academia</option><option>Acampamento</option><option>Administração</option>
+                                        <option>Ala</option><option>Almoxarifado</option><option>Alto</option><option>Altos</option>
+                                        <option>Ambulatório</option><option>Andar</option><option>Anexo</option>
+                                        <option>Apartamento</option><option>Armazém</option><option>ATE</option>
+                                        <option>Baixos</option><option>Banca</option><option>Barrão</option>
+                                        <option>Beco</option><option>Bloco</option><option>Box</option>
+                                        <option>Brigada de incêncio</option><option>Cais</option><option>Carpintaria</option>
+                                        <option>Casa</option><option>Cela</option><option>Central</option>
+                                        <option>Chácara</option><option>Cobertura</option><option>Colina</option>
+                                        <option>Condomínio</option><option>Conjunto</option><option>Conjunto Residencial</option>
+                                        <option>Corredor</option><option>Depósito</option><option>Diretoria</option>
+                                        <option>Divisão</option><option>Edifício</option><option>Entrada</option>
+                                        <option>Escritório</option><option>Espaço de Convivência</option><option>Estação</option>
+                                        <option>Etapa</option><option>Frente</option><option>Fundos</option>
+                                        <option>Fórum</option><option>Galeria</option><option>Galpão</option>
+                                        <option>Garagem</option><option>Gleba</option><option>Granja</option>
+                                        <option>Grupo</option><option>Guichê</option><option>Hagar</option>
+                                        <option>Lado</option><option>Lanchonete</option><option>Letra</option>
+                                        <option>Loja</option><option>Lote</option><option>Loteamento</option>
+                                        <option>Lâmina</option><option>Mansão</option><option>Mart</option>
+                                        <option>Mercado</option><option>Mezanino</option><option>Módulo</option>
+                                        <option>Não Disponível</option><option>Não se aplica</option>
+                                        <option>Núcleo</option><option>Oficina mecânica</option><option>Orgão</option>
+                                        <option>Palácio</option><option>Parada</option><option>Pavilhão</option>
+                                        <option>Pavimento</option><option>Pilotis</option><option>Piso</option>
+                                        <option>Plataforma</option><option>Portão</option><option>Porão</option>
+                                        <option>Poço</option><option>Presidência</option><option>Prédio</option>
+                                        <option>Pátio</option><option>Quadra</option><option>Quarto</option>
+                                        <option>Quilômetro</option><option>Quinta</option><option>Quiosque</option>
+                                        <option>Ramal</option><option>Recepção</option><option>Refeitório</option>
+                                        <option>Restaurante</option><option>Rótula</option><option>Sala</option>
+                                        <option>Sala técnica</option><option>Salão de eventos</option>
+                                        <option>Sem complemento</option><option>Setor</option><option>Seção</option>
+                                        <option>Sobrado</option><option>Sobreloja</option><option>Stand</option>
+                                        <option>Sub número</option><option>Subestação</option><option>Subsolo</option>
+                                        <option>Super quadra</option><option>Terreno</option><option>Torre</option>
+                                        <option>Travessa</option><option>Trecho</option><option>Térreo</option>
+                                        <option>Vila</option><option>Vizinho</option><option>XX</option>
                                     </select>
                                 </div>
                                 <div>
                                     <label for="comp1Valor" class="field-label-sm">Complemento 1</label>
-                                    <input type="text" id="comp1Valor" placeholder="Ex.: Casa, Bloco, Apto...">
+                                    <input type="text" id="comp1Valor" placeholder="Ex.: 5">
                                 </div>
                                 <label class="check-inline check-inline-right">
                                     <input type="checkbox" id="comp1Recorrente">
@@ -242,14 +273,49 @@
                                     <label for="comp2Tipo" class="field-label-sm">Tipo</label>
                                     <select id="comp2Tipo">
                                         <option value="">Selecione</option>
-                                        <option>Lote</option><option>Quadra</option><option>Casa</option>
-                                        <option>Apartamento</option><option>Bloco</option><option>Loja</option>
-                                        <option>Sala</option><option>Fundos</option><option>Outro</option>
+                                        <option>Academia</option><option>Acampamento</option><option>Administração</option>
+                                        <option>Ala</option><option>Almoxarifado</option><option>Alto</option><option>Altos</option>
+                                        <option>Ambulatório</option><option>Andar</option><option>Anexo</option>
+                                        <option>Apartamento</option><option>Armazém</option><option>ATE</option>
+                                        <option>Baixos</option><option>Banca</option><option>Barrão</option>
+                                        <option>Beco</option><option>Bloco</option><option>Box</option>
+                                        <option>Brigada de incêncio</option><option>Cais</option><option>Carpintaria</option>
+                                        <option>Casa</option><option>Cela</option><option>Central</option>
+                                        <option>Chácara</option><option>Cobertura</option><option>Colina</option>
+                                        <option>Condomínio</option><option>Conjunto</option><option>Conjunto Residencial</option>
+                                        <option>Corredor</option><option>Depósito</option><option>Diretoria</option>
+                                        <option>Divisão</option><option>Edifício</option><option>Entrada</option>
+                                        <option>Escritório</option><option>Espaço de Convivência</option><option>Estação</option>
+                                        <option>Etapa</option><option>Frente</option><option>Fundos</option>
+                                        <option>Fórum</option><option>Galeria</option><option>Galpão</option>
+                                        <option>Garagem</option><option>Gleba</option><option>Granja</option>
+                                        <option>Grupo</option><option>Guichê</option><option>Hagar</option>
+                                        <option>Lado</option><option>Lanchonete</option><option>Letra</option>
+                                        <option>Loja</option><option>Lote</option><option>Loteamento</option>
+                                        <option>Lâmina</option><option>Mansão</option><option>Mart</option>
+                                        <option>Mercado</option><option>Mezanino</option><option>Módulo</option>
+                                        <option>Não Disponível</option><option>Não se aplica</option>
+                                        <option>Núcleo</option><option>Oficina mecânica</option><option>Orgão</option>
+                                        <option>Palácio</option><option>Parada</option><option>Pavilhão</option>
+                                        <option>Pavimento</option><option>Pilotis</option><option>Piso</option>
+                                        <option>Plataforma</option><option>Portão</option><option>Porão</option>
+                                        <option>Poço</option><option>Presidência</option><option>Prédio</option>
+                                        <option>Pátio</option><option>Quadra</option><option>Quarto</option>
+                                        <option>Quilômetro</option><option>Quinta</option><option>Quiosque</option>
+                                        <option>Ramal</option><option>Recepção</option><option>Refeitório</option>
+                                        <option>Restaurante</option><option>Rótula</option><option>Sala</option>
+                                        <option>Sala técnica</option><option>Salão de eventos</option>
+                                        <option>Sem complemento</option><option>Setor</option><option>Seção</option>
+                                        <option>Sobrado</option><option>Sobreloja</option><option>Stand</option>
+                                        <option>Sub número</option><option>Subestação</option><option>Subsolo</option>
+                                        <option>Super quadra</option><option>Terreno</option><option>Torre</option>
+                                        <option>Travessa</option><option>Trecho</option><option>Térreo</option>
+                                        <option>Vila</option><option>Vizinho</option><option>XX</option>
                                     </select>
                                 </div>
                                 <div>
                                     <label for="comp2Valor" class="field-label-sm">Complemento 2</label>
-                                    <input type="text" id="comp2Valor" placeholder="Ex.: Torre, Loja, Sala...">
+                                    <input type="text" id="comp2Valor" placeholder="Ex.: Casa Creche 52">
                                 </div>
                                 <label class="check-inline check-inline-right">
                                     <input type="checkbox" id="comp2Recorrente">
@@ -265,14 +331,49 @@
                                     <label for="comp3Tipo" class="field-label-sm">Tipo</label>
                                     <select id="comp3Tipo">
                                         <option value="">Selecione</option>
-                                        <option>Lote</option><option>Quadra</option><option>Casa</option>
-                                        <option>Apartamento</option><option>Bloco</option><option>Loja</option>
-                                        <option>Sala</option><option>Fundos</option><option>Outro</option>
+                                        <option>Academia</option><option>Acampamento</option><option>Administração</option>
+                                        <option>Ala</option><option>Almoxarifado</option><option>Alto</option><option>Altos</option>
+                                        <option>Ambulatório</option><option>Andar</option><option>Anexo</option>
+                                        <option>Apartamento</option><option>Armazém</option><option>ATE</option>
+                                        <option>Baixos</option><option>Banca</option><option>Barrão</option>
+                                        <option>Beco</option><option>Bloco</option><option>Box</option>
+                                        <option>Brigada de incêncio</option><option>Cais</option><option>Carpintaria</option>
+                                        <option>Casa</option><option>Cela</option><option>Central</option>
+                                        <option>Chácara</option><option>Cobertura</option><option>Colina</option>
+                                        <option>Condomínio</option><option>Conjunto</option><option>Conjunto Residencial</option>
+                                        <option>Corredor</option><option>Depósito</option><option>Diretoria</option>
+                                        <option>Divisão</option><option>Edifício</option><option>Entrada</option>
+                                        <option>Escritório</option><option>Espaço de Convivência</option><option>Estação</option>
+                                        <option>Etapa</option><option>Frente</option><option>Fundos</option>
+                                        <option>Fórum</option><option>Galeria</option><option>Galpão</option>
+                                        <option>Garagem</option><option>Gleba</option><option>Granja</option>
+                                        <option>Grupo</option><option>Guichê</option><option>Hagar</option>
+                                        <option>Lado</option><option>Lanchonete</option><option>Letra</option>
+                                        <option>Loja</option><option>Lote</option><option>Loteamento</option>
+                                        <option>Lâmina</option><option>Mansão</option><option>Mart</option>
+                                        <option>Mercado</option><option>Mezanino</option><option>Módulo</option>
+                                        <option>Não Disponível</option><option>Não se aplica</option>
+                                        <option>Núcleo</option><option>Oficina mecânica</option><option>Orgão</option>
+                                        <option>Palácio</option><option>Parada</option><option>Pavilhão</option>
+                                        <option>Pavimento</option><option>Pilotis</option><option>Piso</option>
+                                        <option>Plataforma</option><option>Portão</option><option>Porão</option>
+                                        <option>Poço</option><option>Presidência</option><option>Prédio</option>
+                                        <option>Pátio</option><option>Quadra</option><option>Quarto</option>
+                                        <option>Quilômetro</option><option>Quinta</option><option>Quiosque</option>
+                                        <option>Ramal</option><option>Recepção</option><option>Refeitório</option>
+                                        <option>Restaurante</option><option>Rótula</option><option>Sala</option>
+                                        <option>Sala técnica</option><option>Salão de eventos</option>
+                                        <option>Sem complemento</option><option>Setor</option><option>Seção</option>
+                                        <option>Sobrado</option><option>Sobreloja</option><option>Stand</option>
+                                        <option>Sub número</option><option>Subestação</option><option>Subsolo</option>
+                                        <option>Super quadra</option><option>Terreno</option><option>Torre</option>
+                                        <option>Travessa</option><option>Trecho</option><option>Térreo</option>
+                                        <option>Vila</option><option>Vizinho</option><option>XX</option>
                                     </select>
                                 </div>
                                 <div>
                                     <label for="comp3Valor" class="field-label-sm">Complemento 3</label>
-                                    <input type="text" id="comp3Valor" placeholder="Ex.: Condomínio, Edifício, Galpão...">
+                                    <input type="text" id="comp3Valor" placeholder="Ex.: B2B">
                                 </div>
                                 <label class="check-inline check-inline-right">
                                     <input type="checkbox" id="comp3Recorrente">
@@ -312,10 +413,23 @@
                     <div class="card-body" id="listBody">
                         <div class="table-wrapper">
                             <table id="surveysTable">
+                                <colgroup>
+                                    <col style="width: 22%;">
+                                    <col style="width: 8%;">
+                                    <col style="width: 26%;">
+                                    <col style="width: 14%;">
+                                    <col style="width: 14%;">
+                                    <col style="width: 8%;">
+                                    <col style="width: 8%;">
+                                </colgroup>
                                 <thead>
                                     <tr>
-                                        <th>Logradouro</th><th>Nº</th><th>Complementos</th>
-                                        <th>Bairro</th><th>Município/UF</th><th>CEP</th>
+                                        <th>Logradouro</th>
+                                        <th>Nº</th>
+                                        <th>Complementos</th>
+                                        <th>Bairro</th>
+                                        <th>Município/UF</th>
+                                        <th>CEP</th>
                                         <th>Ações</th>
                                     </tr>
                                 </thead>
@@ -352,8 +466,8 @@
                             <line x1="12" y1="3" x2="12" y2="15"></line>
                         </svg>
                         <h2 class="card-title">Cadastrar Roteiro</h2>
-                        <button class="toggle-btn" data-target="uploadBody" type="button" aria-expanded="true">&#9660;</button>
-                    </header>
+                        <button class="toggle-btn" data-target="uploadBody" type="button" aria-expanded="true">&#9660;</button
+                                                </header>
                     <div class="card-body" id="uploadBody">
                         <div class="info-box">
                             <span class="info-icon">i</span>
