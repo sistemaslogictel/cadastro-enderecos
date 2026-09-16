@@ -1148,16 +1148,30 @@ document.getElementById('exportBtn')?.addEventListener('click', async () => {
 // - Tags vazias SEMPRE com forma longa: <tag></tag>
 // - Complementos vazios são OMITIDOS do XML
 // ============================================
+// ============================================
+// GERAR XML NO FORMATO "edificio" (novo padrão)
+// - Tags vazias SEMPRE com forma longa: <tag></tag>
+// - Complementos vazios são OMITIDOS do XML
+// - Sem auto-fechamento em nenhuma hipótese
+// ============================================
 function gerarXMLEdificio(survey, logradouro, numero) {
     const l = logradouro || {};
     const xmlEscape = (v) => {
         if (v == null) return '';
-        return String(v).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
-            .replace(/"/g, '&quot;').replace(/'/g, '&apos;');
+        return String(v)
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;')
+            .replace(/'/g, '&apos;');
     };
 
-    // Garante que TODA tag saia na forma <tag>valor</tag>, mesmo com valor vazio
-    const tag = (nome, valor) => `<${nome}>${xmlEscape(valor == null ? '' : valor)}</${nome}>`;
+    // Helper: garante SEMPRE a forma <tag>valor</tag>, sem abreviar
+    const tag = (nome, valor) => {
+        const v = (valor == null ? '' : String(valor));
+        // Usa interpolação simples — a string resultante é literalmente `<tag>valor</tag>`
+        return '<' + nome + '>' + xmlEscape(v) + '</' + nome + '>';
+    };
 
     const agora = new Date();
     const pad = (n) => String(n).padStart(2, '0');
@@ -1198,8 +1212,8 @@ function gerarXMLEdificio(survey, logradouro, numero) {
     let blocoComplementos = '';
     compsValidos.forEach((c, i) => {
         const n = i + 1;
-        blocoComplementos += `    ${tag('id_complemento' + n, getIdComplemento(c.tipo))}\n`;
-        blocoComplementos += `    ${tag('argumento' + n, c.valor)}\n`;
+        blocoComplementos += '    ' + tag('id_complemento' + n, getIdComplemento(c.tipo)) + '\n';
+        blocoComplementos += '    ' + tag('argumento' + n, c.valor) + '\n';
     });
 
     const cep = (l.cep || '').toString().replace(/\D/g, '');
@@ -1207,39 +1221,45 @@ function gerarXMLEdificio(survey, logradouro, numero) {
     const idLocalidade = l.id_localidade || '';
     const numPisos = survey.pisos && !isNaN(parseInt(survey.pisos, 10)) ? String(parseInt(survey.pisos, 10)) : '1';
 
-    return `<?xml version="1.0" encoding="UTF-8"?><edificio tipo="M" versao="7.9.2">
-  <gravado>false</gravado>
-  ${tag('nEdificio', nEdificio)}
-  ${tag('coordX', coordX)}
-  ${tag('coordY', coordY)}
-  ${tag('codigoZona', codigoZona)}
-  ${tag('nomeZona', nomeZona)}
-  ${tag('localidade', localidade)}
-  <enderecoEdificio>
-    ${tag('id', idEdificio)}
-    ${tag('logradouro', logradouroCompleto)}
-    ${tag('numero_fachada', numeroFachada)}
-${blocoComplementos}    ${tag('cep', cep)}
-    ${tag('bairro', bairro)}
-    ${tag('id_roteiro', idRoteiro)}
-    ${tag('id_localidade', idLocalidade)}
-    ${tag('cod_lograd', codLograd)}
-  </enderecoEdificio>
-  <tecnico>
-    ${tag('id', TECNICO_FIXO_ID)}
-    ${tag('nome', TECNICO_FIXO_NOME)}
-  </tecnico>
-  <empresa>
-    <id>6</id>
-    <nome>LOGICTEL</nome>
-  </empresa>
-  ${tag('data', dataFormatada)}
-  ${tag('totalUCs', '1')}
-  ${tag('ocupacao', 'EDIFICACAOCOMPLETA')}
-  ${tag('numPisos', numPisos)}
-  ${tag('destinacao', 'RESIDENCIA')}
-</edificio>
-`;
+    // ===== MONTA A STRING FINAL (sem parser intermediário) =====
+    // Cada linha é concatenada manualmente para evitar qualquer transformação
+    let xml = '';
+    xml += '<?xml version="1.0" encoding="UTF-8"?>\n';
+    xml += '<edificio tipo="M" versao="7.9.2">\n';
+    xml += '  ' + tag('gravado', 'false') + '\n';
+    xml += '  ' + tag('nEdificio', nEdificio) + '\n';
+    xml += '  ' + tag('coordX', coordX) + '\n';
+    xml += '  ' + tag('coordY', coordY) + '\n';
+    xml += '  ' + tag('codigoZona', codigoZona) + '\n';
+    xml += '  ' + tag('nomeZona', nomeZona) + '\n';
+    xml += '  ' + tag('localidade', localidade) + '\n';
+    xml += '  <enderecoEdificio>\n';
+    xml += '    ' + tag('id', idEdificio) + '\n';
+    xml += '    ' + tag('logradouro', logradouroCompleto) + '\n';
+    xml += '    ' + tag('numero_fachada', numeroFachada) + '\n';
+    xml += blocoComplementos; // já vem com 4 espaços e \n
+    xml += '    ' + tag('cep', cep) + '\n';
+    xml += '    ' + tag('bairro', bairro) + '\n';
+    xml += '    ' + tag('id_roteiro', idRoteiro) + '\n';
+    xml += '    ' + tag('id_localidade', idLocalidade) + '\n';
+    xml += '    ' + tag('cod_lograd', codLograd) + '\n';
+    xml += '  </enderecoEdificio>\n';
+    xml += '  <tecnico>\n';
+    xml += '    ' + tag('id', TECNICO_FIXO_ID) + '\n';
+    xml += '    ' + tag('nome', TECNICO_FIXO_NOME) + '\n';
+    xml += '  </tecnico>\n';
+    xml += '  <empresa>\n';
+    xml += '    ' + tag('id', '6') + '\n';
+    xml += '    ' + tag('nome', 'LOGICTEL') + '\n';
+    xml += '  </empresa>\n';
+    xml += '  ' + tag('data', dataFormatada) + '\n';
+    xml += '  ' + tag('totalUCs', '1') + '\n';
+    xml += '  ' + tag('ocupacao', 'EDIFICACAOCOMPLETA') + '\n';
+    xml += '  ' + tag('numPisos', numPisos) + '\n';
+    xml += '  ' + tag('destinacao', 'RESIDENCIA') + '\n';
+    xml += '</edificio>\n';
+
+    return xml;
 }
 
 // ============================================
