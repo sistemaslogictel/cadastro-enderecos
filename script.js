@@ -18,8 +18,8 @@ const COORD_DEFAULT_FALLBACK = {
 // ============================================
 // TÉCNICO FIXO (padrão do XML)
 // ============================================
-const TECNICO_FIXO_NOME = 'Osvaldo Miguel Magalhães';
-const TECNICO_FIXO_ID = '';
+const TECNICO_FIXO_ID = '1368684093';
+const TECNICO_FIXO_NOME = 'JOÃO GABRIEL REIS VILAS BOAS';
 
 // ============================================
 // TABELA DE IDS DE COMPLEMENTO
@@ -655,7 +655,7 @@ async function selecionarParaSurvey(r) {
             setH('surveyLatitude', lat.toFixed(8));
             setH('surveyLongitude', lng.toFixed(8));
             enderecoBaseSelecionado.lat = lat;
-            enderecoBaseSelecionado.lng = lng;
+                        enderecoBaseSelecionado.lng = lng;
             irParaLocal(lat, lng, montarTextoLogradouro(enderecoBaseSelecionado), 'Roteiro (coord. padrão)');
             showToast(
                 'Coordenada padrão aplicada',
@@ -668,7 +668,7 @@ async function selecionarParaSurvey(r) {
 
     const infoBox = document.getElementById('enderecoBaseInfo');
     if (infoBox) {
-                 const linha1 = [enderecoBaseSelecionado.tipo, enderecoBaseSelecionado.rua].filter(Boolean).join(' ') || '—';
+        const linha1 = [enderecoBaseSelecionado.tipo, enderecoBaseSelecionado.rua].filter(Boolean).join(' ') || '—';
         const linha2 = [
             enderecoBaseSelecionado.bairro,
             [enderecoBaseSelecionado.cidade, enderecoBaseSelecionado.estado].filter(Boolean).join('/')
@@ -1144,15 +1144,12 @@ document.getElementById('exportBtn')?.addEventListener('click', async () => {
 });
 
 // ============================================
-// GERAR XML NO FORMATO "edificio" (novo padrão)
+// GERAR XML NO FORMATO "edificio"
 // - Tags vazias SEMPRE com forma longa: <tag></tag>
-// - Complementos vazios são OMITIDOS do XML
-// ============================================
-// ============================================
-// GERAR XML NO FORMATO "edificio" (novo padrão)
-// - Tags vazias SEMPRE com forma longa: <tag></tag>
-// - Complementos vazios são OMITIDOS do XML
-// - Sem auto-fechamento em nenhuma hipótese
+// - Complementos vazios são OMITIDOS
+// - <id> do endereço sempre vazio
+// - <codigoZona> e <nomeZona> sempre "Neutra"
+// - <tecnico> hardcoded
 // ============================================
 function gerarXMLEdificio(survey, logradouro, numero) {
     const l = logradouro || {};
@@ -1166,10 +1163,8 @@ function gerarXMLEdificio(survey, logradouro, numero) {
             .replace(/'/g, '&apos;');
     };
 
-    // Helper: garante SEMPRE a forma <tag>valor</tag>, sem abreviar
     const tag = (nome, valor) => {
         const v = (valor == null ? '' : String(valor));
-        // Usa interpolação simples — a string resultante é literalmente `<tag>valor</tag>`
         return '<' + nome + '>' + xmlEscape(v) + '</' + nome + '>';
     };
 
@@ -1221,8 +1216,7 @@ function gerarXMLEdificio(survey, logradouro, numero) {
     const idLocalidade = l.id_localidade || '';
     const numPisos = survey.pisos && !isNaN(parseInt(survey.pisos, 10)) ? String(parseInt(survey.pisos, 10)) : '1';
 
-    // ===== MONTA A STRING FINAL (sem parser intermediário) =====
-    // Cada linha é concatenada manualmente para evitar qualquer transformação
+    // ===== MONTA A STRING FINAL =====
     let xml = '';
     xml += '<?xml version="1.0" encoding="UTF-8"?>\n';
     xml += '<edificio tipo="M" versao="7.9.2">\n';
@@ -1237,7 +1231,7 @@ function gerarXMLEdificio(survey, logradouro, numero) {
     xml += '    ' + tag('id', idEdificio) + '\n';
     xml += '    ' + tag('logradouro', logradouroCompleto) + '\n';
     xml += '    ' + tag('numero_fachada', numeroFachada) + '\n';
-    xml += blocoComplementos; // já vem com 4 espaços e \n
+    xml += blocoComplementos;
     xml += '    ' + tag('cep', cep) + '\n';
     xml += '    ' + tag('bairro', bairro) + '\n';
     xml += '    ' + tag('id_roteiro', idRoteiro) + '\n';
