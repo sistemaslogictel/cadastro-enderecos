@@ -8,6 +8,14 @@ if (!sessionStorage.getItem('usuarioLogado')) {
 let usuarioAtual = null;
 
 // ============================================
+// COORDENADA DEFAULT (fallback quando OSM não acha o logradouro)
+// ============================================
+const COORD_DEFAULT_FALLBACK = {
+    lat: -22.857891546641735,
+    lng: -43.35499423386818
+};
+
+// ============================================
 // TEMA CLARO / ESCURO
 // ============================================
 (function initTheme() {
@@ -85,6 +93,7 @@ function aplicarPermissoes() {
 let surveysMemoria = [];
 let _surveyIdSeq = 0;
 let _iaJaDisparou = false;
+let _surveyEditandoIdx = null;
 
 // ============================================
 // INICIAR
@@ -105,10 +114,15 @@ async function iniciar() {
     const nome = sessionStorage.getItem('usuarioNome') || sessionStorage.getItem('usuarioLogado') || '-';
     document.getElementById('userLabel').textContent = nome;
 
-    aplicarPermissoes();
+        aplicarPermissoes();
     setTimeout(() => map.invalidateSize(), 400);
     renderizarSurveys();
     inicializarChatIA();
+
+    // Handler do botão Exportar no header
+    document.getElementById('exportHeaderBtn')?.addEventListener('click', () => {
+        document.getElementById('exportBtn')?.click();
+    });
 }
 
 document.getElementById('logoutBtn').addEventListener('click', async () => {
@@ -447,7 +461,6 @@ document.getElementById('searchBtn').addEventListener('click', () => {
     const query = searchInput.value.trim();
     if (query) {
         buscarSugestoes(query);
-        // auto-avanço: minimiza o 1, abre o 2
         recolherCard('panel1');
         expandirCard('resultsPanel');
         irParaCard('resultsPanel');
@@ -503,7 +516,7 @@ function normalizarTipo(t) {
 }
 
 // ============================================
-// SELECIONAR → SURVEY (minimiza 2, abre 3)
+// SELECIONAR LOGRADOURO → SURVEY
 // ============================================
 async function selecionarParaSurvey(r) {
     enderecoBaseSelecionado = {
@@ -553,9 +566,20 @@ async function selecionarParaSurvey(r) {
             renderizarOpcoesOSM(opcoes, enderecoBaseSelecionado);
             showToast('Encontramos opções no OSM', 'Clique em uma opção para marcar no mapa.', 'success', 3500);
         } else {
-            showToast('Sem coordenadas',
-                'Não encontramos esse logradouro no OpenStreetMap. Marque manualmente com o botão direito no mapa.',
-                'warning', 6000);
+            // FALLBACK: OSM não achou — usa coord default
+            const lat = COORD_DEFAULT_FALLBACK.lat;
+            const lng = COORD_DEFAULT_FALLBACK.lng;
+            setH('surveyLatitude', lat.toFixed(8));
+            setH('surveyLongitude', lng.toFixed(8));
+            enderecoBaseSelecionado.lat = lat;
+            enderecoBaseSelecionado.lng = lng;
+            irParaLocal(lat, lng, montarTextoLogradouro(enderecoBaseSelecionado), 'Roteiro (coord. padrão)');
+            showToast(
+                'Coordenada padrão aplicada',
+                'O logradouro não foi encontrado no OpenStreetMap. Ajuste manualmente com o botão direito no mapa se precisar.',
+                'warning',
+                6000
+            );
         }
     }
 
@@ -577,7 +601,6 @@ async function selecionarParaSurvey(r) {
         `;
     }
 
-    // Auto-avanço: minimiza o 2, abre o 3
     recolherCard('resultsPanel');
     expandirCard('formPanel');
     irParaCard('formPanel');
@@ -677,7 +700,7 @@ function renderizarOpcoesOSM(opcoes, end) {
 }
 
 // ============================================
-// ADICIONAR AO SURVEY — mantém foco no card 3
+// ADICIONAR AO SURVEY (memória) / SALVAR EDIÇÃO
 // ============================================
 document.getElementById('addBtn').addEventListener('click', async () => {
     if (!enderecoBaseSelecionado || !enderecoBaseSelecionado._registro_id) {
@@ -707,6 +730,30 @@ document.getElementById('addBtn').addEventListener('click', async () => {
     if (comp2Tipo || comp2Valor) complementos.push({ tipo: comp2Tipo || '', valor: comp2Valor || '' });
     if (comp3Tipo || comp3Valor) complementos.push({ tipo: comp3Tipo || '', valor: comp3Valor || '' });
 
+    // ===== CASO 1: SALVAR EDIÇÃO =====
+    if (_surveyEditandoIdx != null && surveysMemoria[_surveyEditandoIdx]) {
+        const s = surveysMemoria[_surveyEditandoIdx];
+        s.logradouro = { ...enderecoBaseSelecionado };
+        s.numero = numero;
+        s.pisos = pisos || null;
+        s.complementos = complementos;
+        s.latitude = lat;
+        s.longitude = lng;
+        s._ia = false;
+
+        showToast('Edição salva', 'Survey atualizado.', 'success', 2500);
+
+        ['numeroInput','pisosInput','comp1Tipo','comp1Valor','comp2Tipo','comp2Valor','comp3Tipo','comp3Valor'].forEach(id => {
+            const el = document.getElementById(id);
+            if (el) el.value = '';
+        });
+
+        cancelarEdicaoSurvey();
+        renderizarSurveys();
+        return;
+    }
+
+    // ===== CASO 2: ADICIONAR NOVO =====
     _surveyIdSeq += 1;
     surveysMemoria.push({
         _id: 'mem_' + _surveyIdSeq,
@@ -724,7 +771,7 @@ document.getElementById('addBtn').addEventListener('click', async () => {
 
     const limpar = (id, manterId) => {
         const manter = manterId ? document.getElementById(manterId) : null;
-                if (manter && manter.checked) return;
+        if (manter && manter.checked) return;
         const el = document.getElementById(id);
         if (el) el.value = '';
     };
@@ -738,11 +785,113 @@ document.getElementById('addBtn').addEventListener('click', async () => {
     limpar('comp3Tipo', 'comp3Recorrente');
     limpar('comp3Valor', 'comp3Recorrente');
 
-    // Atualiza a lista embaixo, mas MANTÉM o foco no card 3 (Survey)
     renderizarSurveys();
-    // NÃO rola para o card 4 — apenas garante que o card 3 continue visível
-    // (o card 4 aparece abaixo, mas o scroll não muda)
+    verificarIAAutomatica();
 });
+
+// ============================================
+// EDITAR SURVEY EXISTENTE
+// ============================================
+function abrirEdicaoSurvey(idx) {
+    const s = surveysMemoria[idx];
+    if (!s) return;
+
+    _surveyEditandoIdx = idx;
+    const l = s.logradouro || {};
+
+    const setH = (id, val) => { const el = document.getElementById(id); if (el) el.value = val || ''; };
+    setH('surveyTipo', l.tipo || 'Rua');
+    setH('surveyLogradouro', l.rua || '');
+    setH('surveyBairro', l.bairro || '');
+    setH('surveyMunicipio', l.cidade || '');
+    setH('surveyUf', l.estado || '');
+    setH('surveyCep', l.cep || '');
+
+    setH('numeroInput', s.numero || '');
+    setH('pisosInput', s.pisos || '');
+
+    const comps = Array.isArray(s.complementos) ? s.complementos : [];
+    setH('comp1Tipo', comps[0] ? comps[0].tipo : '');
+    setH('comp1Valor', comps[0] ? comps[0].valor : '');
+    setH('comp2Tipo', comps[1] ? comps[1].tipo : '');
+    setH('comp2Valor', comps[1] ? comps[1].valor : '');
+    setH('comp3Tipo', comps[2] ? comps[2].tipo : '');
+    setH('comp3Valor', comps[2] ? comps[2].valor : '');
+
+    setH('surveyLatitude', s.latitude != null ? Number(s.latitude).toFixed(8) : '');
+    setH('surveyLongitude', s.longitude != null ? Number(s.longitude).toFixed(8) : '');
+
+    const infoBox = document.getElementById('enderecoBaseInfo');
+    if (infoBox) {
+        const linha1 = [l.tipo, l.rua].filter(Boolean).join(' ') || '—';
+        const linha2 = [
+            l.bairro,
+            [l.cidade, l.estado].filter(Boolean).join('/')
+        ].filter(Boolean).join(' • ');
+        infoBox.innerHTML = `
+            <div class="endereco-base-card" style="border-left:3px solid var(--warning);">
+                <span class="fonte-badge" style="background:var(--warning);">✏️ Editando</span>
+                <p class="endereco-base-linha1">${escapeHtml(linha1)}</p>
+                <p class="endereco-base-linha2">${escapeHtml(linha2)}</p>
+            </div>
+        `;
+    }
+
+    enderecoBaseSelecionado = { ...l, _registro_id: l._registro_id };
+
+    const addBtn = document.getElementById('addBtn');
+    if (addBtn) {
+        addBtn.innerHTML = `
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"></path>
+                <polyline points="17 21 17 13 7 13 7 21"></polyline>
+                <polyline points="7 3 7 8 15 8"></polyline>
+            </svg>
+            Salvar edição
+        `;
+        addBtn.style.background = 'var(--warning)';
+    }
+
+    // Botão Cancelar (só aparece no modo edição)
+    let cancelBtn = document.getElementById('cancelarEdicaoBtn');
+    if (!cancelBtn) {
+        cancelBtn = document.createElement('button');
+        cancelBtn.id = 'cancelarEdicaoBtn';
+        cancelBtn.type = 'button';
+        cancelBtn.textContent = 'Cancelar edição';
+        cancelBtn.style.cssText = 'margin-top:8px;padding:10px;background:transparent;color:var(--text-secondary);border:1px solid var(--border-medium);border-radius:8px;cursor:pointer;font-family:inherit;font-weight:500;width:100%;';
+        cancelBtn.addEventListener('click', cancelarEdicaoSurvey);
+        addBtn.parentNode.insertBefore(cancelBtn, addBtn.nextSibling);
+    }
+    cancelBtn.style.display = '';
+
+    expandirCard('formPanel');
+    irParaCard('formPanel');
+    showToast('Modo edição', 'Ajuste os dados e clique em "Salvar edição".', 'info', 3000);
+}
+
+function cancelarEdicaoSurvey() {
+    _surveyEditandoIdx = null;
+    const addBtn = document.getElementById('addBtn');
+    if (addBtn) {
+        addBtn.innerHTML = `
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <line x1="12" y1="5" x2="12" y2="19"></line>
+                <line x1="5" y1="12" x2="19" y2="12"></line>
+            </svg>
+            Adicionar ao Survey
+        `;
+        addBtn.style.background = '';
+    }
+    const cancelBtn = document.getElementById('cancelarEdicaoBtn');
+    if (cancelBtn) cancelBtn.style.display = 'none';
+
+    const infoBox = document.getElementById('enderecoBaseInfo');
+    if (infoBox) {
+        infoBox.innerHTML = '<p class="empty-state-sm">Selecione uma fonte em "Endereços Encontrados".</p>';
+    }
+    enderecoBaseSelecionado = null;
+}
 
 // ============================================
 // RENDERIZAR SURVEYS SALVOS
@@ -753,6 +902,9 @@ function renderizarSurveys() {
     if (!panel || !tbody) return;
 
     tbody.innerHTML = '';
+
+    const exportHeader = document.getElementById('exportHeaderBtn');
+    if (exportHeader) exportHeader.style.display = surveysMemoria.length > 0 ? '' : 'none';
 
     if (surveysMemoria.length === 0) {
         panel.style.display = 'none';
@@ -777,11 +929,18 @@ function renderizarSurveys() {
             <td>${escapeHtml([l.cidade, l.estado].filter(Boolean).join('/') || '')}</td>
             <td class="mono">${escapeHtml(formatarCEP(l.cep || ''))}</td>
             <td class="acoes-cell">
+                <button class="btn-editar" data-idx="${idx}" title="Editar" type="button">✏️</button>
                 <button class="btn-ir" data-idx="${idx}" title="Centralizar no mapa" type="button">🗺️</button>
                 <button class="btn-remover" data-id="${s._id}" title="Remover" type="button">🗑️</button>
             </td>
         `;
         tbody.appendChild(tr);
+    });
+
+    tbody.querySelectorAll('.btn-editar').forEach(btn => {
+        btn.addEventListener('click', () => {
+            abrirEdicaoSurvey(parseInt(btn.dataset.idx, 10));
+        });
     });
 
     tbody.querySelectorAll('.btn-ir').forEach(btn => {
@@ -1306,11 +1465,9 @@ function escreverMensagemUser(texto) {
 // IA — VERIFICAR SE DEVE DISPARAR APÓS 5 SURVEYS
 // ============================================
 function verificarIAAutomatica() {
-    // Só dispara uma vez por "batch" (até o usuário limpar ou gerar IA)
     if (_iaJaDisparou) return;
     if (surveysMemoria.length < 5) return;
 
-    // Verifica se há pelo menos 5 no MESMO logradouro
     const grupos = {};
     surveysMemoria.forEach(s => {
         const key = (s.logradouro && s.logradouro.rua) ? s.logradouro.rua.toUpperCase() : '—';
@@ -1326,7 +1483,6 @@ function verificarIAAutomatica() {
 
     _iaJaDisparou = true;
     abrirChatIA();
-    // Pequeno atraso para a IA "pensar"
     setTimeout(() => detectarPadroes(false), 800);
 }
 
@@ -1351,7 +1507,6 @@ function detectarPadroes(manual) {
     const padrao = encontrarPadrao(lista);
 
     if (!padrao) {
-        // Fallback: se tem 5+ no mesmo logradouro, sugere mesmo sem progressão perfeita
         const grupos = {};
         lista.forEach(s => {
             const key = (s.logradouro && s.logradouro.rua) ? s.logradouro.rua.toUpperCase() : '—';
@@ -1458,7 +1613,7 @@ function detectarPadroes(manual) {
 }
 
 // ============================================
-// IA — PERGUNTAR QUAL CAMPO INCREMENTAR (fallback genérico)
+// IA — PERGUNTAR QUAL CAMPO INCREMENTAR
 // ============================================
 function perguntarTipoIncremento() {
     if (!iaPendencia) return;
@@ -1485,7 +1640,6 @@ function perguntarTipoIncremento() {
             escreverMensagemUser(btn.textContent);
             div.remove();
 
-            // Configura o padrão pra gerar
             const ultimos = iaPendencia.ultimos;
             const ultimo = ultimos[ultimos.length - 1];
 

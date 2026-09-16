@@ -49,12 +49,23 @@
             </nav>
         </div>
         <div class="app-header-right">
+            <!-- BOTÃO EXPORTAR ZIP (aparece só quando há surveys) -->
+            <button class="icon-btn icon-btn-export" id="exportHeaderBtn" type="button" title="Exportar XMLs (ZIP)" aria-label="Exportar XMLs (ZIP)" style="display:none;">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                    <polyline points="7 10 12 15 17 10"></polyline>
+                    <line x1="12" y1="15" x2="12" y2="3"></line>
+                </svg>
+            </button>
+
+            <!-- BOTÃO DETECTAR PADRÕES IA -->
             <button class="icon-btn" id="detectarPadroesBtn" type="button" title="Detectar Padrões (IA)" aria-label="Detectar Padrões IA">
                 <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                     <circle cx="11" cy="11" r="8"></circle>
                     <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
                 </svg>
             </button>
+
             <button class="icon-btn" id="themeToggle" type="button" title="Alternar tema" aria-label="Alternar tema">
                 <span aria-hidden="true">🌙</span>
             </button>
@@ -171,7 +182,6 @@
                             <p class="empty-state-sm">Selecione uma fonte em "Endereços Encontrados".</p>
                         </div>
 
-                        <!-- Endereço (hidden) -->
                         <input type="hidden" id="surveyTipo" value="">
                         <input type="hidden" id="surveyLogradouro" value="">
                         <input type="hidden" id="surveyBairro" value="">
@@ -395,11 +405,8 @@
 
     <div class="toast-container" id="toastContainer" aria-live="polite" aria-atomic="true"></div>
 
-    <!-- ============================================ -->
-    <!-- CHAT DA IA (estilo Messenger, flutuante à direita) -->
-    <!-- ============================================ -->
+    <!-- CHAT DA IA -->
     <div class="ia-chat" id="iaChat" data-state="closed">
-        <!-- Cabeçalho -->
         <div class="ia-chat-header" id="iaChatHeader">
             <div class="ia-chat-avatar">
                 <span aria-hidden="true">🤖</span>
@@ -423,12 +430,8 @@
             </div>
         </div>
 
-        <!-- Corpo (mensagens) -->
-        <div class="ia-chat-body" id="iaChatBody">
-            <!-- Mensagens são injetadas pelo JS -->
-        </div>
+        <div class="ia-chat-body" id="iaChatBody"></div>
 
-        <!-- Footer (input rápido, opcional) -->
         <div class="ia-chat-footer" id="iaChatFooter" style="display:none;">
             <input type="text" id="iaChatInput" placeholder="Digite uma resposta..." autocomplete="off">
             <button id="iaChatSendBtn" type="button" title="Enviar" aria-label="Enviar">
@@ -440,7 +443,6 @@
         </div>
     </div>
 
-    <!-- BOTÃO FLUTUANTE DO CHAT (aparece quando minimizado) -->
     <button class="ia-fab" id="iaFab" type="button" title="Abrir IA Logictel" aria-label="Abrir IA Logictel" style="display:none;">
         <span aria-hidden="true">🤖</span>
         <span class="ia-fab-badge" id="iaFabBadge" style="display:none;">1</span>
