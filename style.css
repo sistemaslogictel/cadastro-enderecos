@@ -933,3 +933,59 @@ table tr:hover td { background: var(--bg-hover); }
         transition-duration: 0.01ms !important;
     }
 }
+
+/* ============================================
+   HEADER NAV (botões fixos no topo)
+   ============================================ */
+.header-nav {
+    display: flex;
+    gap: 4px;
+    margin-left: 16px;
+    background: rgba(255, 255, 255, 0.08);
+    padding: 4px;
+    border-radius: 8px;
+    flex-shrink: 0;
+}
+
+.header-nav button {
+    background: transparent;
+    border: none;
+    color: rgba(255, 255, 255, 0.85);
+    width: 30px;
+    height: 30px;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 0.82rem;
+    font-weight: 600;
+    font-family: inherit;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all var(--transition);
+    padding: 0;
+}
+
+.header-nav button:hover {
+    background: rgba(255, 255, 255, 0.15);
+    color: #fff;
+}
+
+.header-nav button.active {
+    background: #fff;
+    color: var(--blue);
+}
+
+/* Botão "Adicionar ao Survey" — dentro do card, sem margem externa */
+.btn-add-survey {
+    margin-top: 6px;
+}
+
+/* Em telas muito pequenas, esconde a nav do header */
+@media (max-width: 900px) {
+    .header-nav { display: none !important; }
+}
+
+/* Ajuste: card precisa ter padding ao redor do mapa */
+.card-body-map {
+    padding: 0 !important;
+}
