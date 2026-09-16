@@ -57,9 +57,19 @@
                 <button class="toggle-btn" data-target="panel1-body" type="button" aria-expanded="true" aria-controls="panel1-body" aria-label="Expandir ou recolher seção">&#9660;</button>
             </h2>
             <div class="panel-body" id="panel1-body">
-                <div class="search-box">
+                                <div class="search-box">
+                    <select id="ufFilter" class="uf-filter" aria-label="Filtrar por UF">
+                        <option value="">Todas</option>
+                        <option>AC</option><option>AL</option><option>AP</option><option>AM</option>
+                        <option>BA</option><option>CE</option><option>DF</option><option>ES</option>
+                        <option>GO</option><option>MA</option><option>MT</option><option>MS</option>
+                        <option>MG</option><option>PA</option><option>PB</option><option>PR</option>
+                        <option>PE</option><option>PI</option><option selected>RJ</option><option>RN</option>
+                        <option>RS</option><option>RO</option><option>RR</option><option>SC</option>
+                        <option>SP</option><option>SE</option><option>TO</option>
+                    </select>
                     <div class="search-wrapper">
-                        <input type="text" id="searchInput" placeholder="Digite o nome do logradouro do roteiro..." autocomplete="off" aria-label="Buscar logradouro">
+                        <input type="text" id="searchInput" placeholder="Digite o logradouro, parte dele, ou o CEP..." autocomplete="off" aria-label="Buscar logradouro ou CEP">
                         <div id="suggestions" class="suggestions" role="listbox" aria-label="Sugestões de logradouro"></div>
                     </div>
                     <button id="searchBtn" type="button">Buscar</button>

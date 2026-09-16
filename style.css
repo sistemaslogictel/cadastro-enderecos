@@ -1332,3 +1332,38 @@ table button:hover {
     border: 2px solid var(--bg-tertiary);
 }
 ::-webkit-scrollbar-thumb:hover { background: var(--text-tertiary); }
+
+/* ============================================
+   FILTRO DE UF NA BUSCA
+   ============================================ */
+.search-box {
+    display: flex;
+    gap: var(--space-2);
+    align-items: center;
+}
+
+.uf-filter {
+    padding: 11px 8px;
+    border: 1px solid var(--border-medium);
+    border-radius: var(--radius-md);
+    font-size: var(--text-sm);
+    font-family: inherit;
+    background: var(--bg-secondary);
+    color: var(--text-primary);
+    cursor: pointer;
+    font-weight: 600;
+    letter-spacing: 0.02em;
+    width: 90px;
+    flex-shrink: 0;
+}
+
+.uf-filter:focus {
+    outline: none;
+    border-color: var(--brand-primary);
+    box-shadow: 0 0 0 3px var(--brand-soft);
+}
+
+@media (max-width: 600px) {
+    .search-box { flex-wrap: wrap; }
+    .uf-filter { width: 100%; }
+}

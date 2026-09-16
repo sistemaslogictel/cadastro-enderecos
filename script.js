@@ -255,6 +255,9 @@ document.addEventListener('click', (e) => {
     if (!e.target.closest('.search-box')) suggestionsBox.style.display = 'none';
 });
 
+// ============================================
+// MOTOR DE BUSCA — ROTEIRO (logradouro + CEP + UF)
+// ============================================
 async function buscarSugestoes(query) {
     if (query === ultimoQuery) return;
     ultimoQuery = query;
@@ -263,68 +266,92 @@ async function buscarSugestoes(query) {
     suggestionsBox.style.display = 'block';
 
     try {
+        const ufFiltro = (document.getElementById('ufFilter')?.value || '').trim().toUpperCase();
+        const cepDigitos = query.replace(/\D/g, '');
+
+        // === CASO 1: CEP (8 dígitos) ===
+        if (cepDigitos.length === 8) {
+            let q = supabaseClient
+                .from('logradouros')
+                .select('*')
+                .eq('origem', 'Roteiro XML')
+                .ilike('cep', `%${cepDigitos}%`)
+                .limit(30);
+            if (ufFiltro) q = q.eq('uf', ufFiltro);
+
+            const { data, error } = await q;
+            if (error) throw error;
+            renderizarSugestoes(data || [], query);
+            return;
+        }
+
+        // === CASO 2: LOGRAADOURO (texto) ===
         const normalizar = (s) => (s || '')
             .toLowerCase()
             .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
             .replace(/\s+/g, ' ')
             .trim();
 
-        const queryNorm = normalizar(query);
-        const semTipo = queryNorm
+        // Remove prefixos tipo "rua", "av", etc.
+        const queryNorm = normalizar(query)
             .replace(/^(rua|r\.?|avenida|av\.?|travessa|tv\.?|estrada|est\.?|alameda|al\.?|praca|praça|pc\.?|largo|beco|caminho)\s+/i, '')
             .trim();
 
-        const palavras = semTipo.split(/\s+/).filter(p => p.length >= 2);
-        const cepDigitos = query.replace(/\D/g, '');
-
-        let q = supabaseClient.from('logradouros').select('*').eq('origem', 'Roteiro XML');
-
-        if (cepDigitos.length === 8) {
-            q = q.ilike('cep', `%${cepDigitos}%`);
-        } else if (palavras.length > 0) {
-            const orParts = palavras.map(p =>
-                `logradouro.ilike.%${p}%,bairro.ilike.%${p}%,municipio.ilike.%${p}%`
-            );
-            q = q.or(orParts.join(','));
-        } else {
-            q = q.ilike('logradouro', `%${queryNorm}%`);
-        }
-
-        const { data, error } = await q.limit(50);
-        if (error) throw error;
-
-        const filtrados = (data || []).filter(r => {
-            if (palavras.length === 0) return true;
-            const blob = normalizar([r.tipo, r.logradouro, r.bairro, r.municipio, r.uf].filter(Boolean).join(' '));
-            return palavras.every(p => blob.includes(p));
-        });
-
-        suggestionsBox.innerHTML = '';
-        if (filtrados.length === 0) {
-            suggestionsBox.innerHTML = `
-                <div class="suggestion-item empty">
-                    Nenhum logradouro encontrado no roteiro.<br>
-                    <small>Para incluir, envie e-mail para
-                    <a href="mailto:pp-logradouro@correios.com.br?subject=Inclus%C3%A3o%20de%20logradouro&body=Logradouro%3A%20${encodeURIComponent(query)}">PP-Logradouro</a>.</small>
-                </div>`;
-            suggestionsBox.style.display = 'block';
+        // Palavras-chave (cada uma com 3+ letras para evitar ruído)
+        const palavras = queryNorm.split(/\s+/).filter(p => p.length >= 3);
+        if (palavras.length === 0) {
+            suggestionsBox.innerHTML = '<div class="suggestion-item empty">Digite ao menos 3 letras.</div>';
             return;
         }
 
-        filtrados.forEach(r => {
-            const div = document.createElement('div');
-            div.className = 'suggestion-item';
-            const texto = formatarTextoLogradouro(r);
-            div.innerHTML = `<span class="suggestion-icon">&#128220;</span>
-                <span class="suggestion-text"><strong>Roteiro:</strong> ${escapeHtml(texto)}</span>`;
-            div.addEventListener('click', () => {
-                searchInput.value = texto;
-                suggestionsBox.style.display = 'none';
-                selecionarParaSurvey(r);
+        // Estratégia: busca o termo MAIS SELETIVO (mais longo) no banco,
+        // depois filtra no cliente aceitando as outras palavras por similaridade.
+        const palavraChave = [...palavras].sort((a, b) => b.length - a.length)[0];
+
+        let q = supabaseClient
+            .from('logradouros')
+            .select('*')
+            .eq('origem', 'Roteiro XML')
+            .or(`logradouro.ilike.%${palavraChave}%,bairro.ilike.%${palavraChave}%,municipio.ilike.%${palavraChave}%`)
+            .limit(100);
+
+        if (ufFiltro) q = q.eq('uf', ufFiltro);
+
+        const { data, error } = await q;
+        if (error) throw error;
+
+        // Filtro no cliente: TODAS as palavras devem estar contidas em algum campo
+        // (com tolerância: aceita se a palavra digitada está contida OU contém a do banco)
+        const passaFiltro = (r) => {
+            const blob = normalizar([r.tipo, r.logradouro, r.bairro, r.municipio, r.uf].filter(Boolean).join(' '));
+            return palavras.every(p => {
+                if (blob.includes(p)) return true;
+                // Fallback: similaridade por substring (ex: "martin" x "martins")
+                const palavrasBlob = blob.split(/\s+/);
+                return palavrasBlob.some(pb =>
+                    pb.length >= 3 && (pb.includes(p) || p.includes(pb))
+                );
             });
-            suggestionsBox.appendChild(div);
-        });
-        suggestionsBox.style.display = 'block';
+        };
+
+        let filtrados = (data || []).filter(passaFiltro);
+
+        // Se nada passou com a palavra-chave mais longa,
+        // tenta com a SEGUNDA mais longa (pode ser que "lage" tenha match melhor que "martins")
+        if (filtrados.length === 0 && palavras.length > 1) {
+            const segunda = [...palavras].sort((a, b) => b.length - a.length)[1];
+            let q2 = supabaseClient
+                .from('logradouros')
+                .select('*')
+                .eq('origem', 'Roteiro XML')
+                .or(`logradouro.ilike.%${segunda}%,bairro.ilike.%${segunda}%,municipio.ilike.%${segunda}%`)
+                .limit(100);
+            if (ufFiltro) q2 = q2.eq('uf', ufFiltro);
+            const { data: data2 } = await q2;
+            filtrados = (data2 || []).filter(passaFiltro);
+        }
+
+        renderizarSugestoes(filtrados, query);
     } catch (err) {
         console.error('Busca falhou:', err);
         suggestionsBox.innerHTML = `<div class="suggestion-item empty">Erro ao buscar: ${escapeHtml(err.message)}</div>`;
@@ -332,15 +359,34 @@ async function buscarSugestoes(query) {
     }
 }
 
-function formatarTextoLogradouro(r) {
-    const partes = [
-        [r.tipo, r.logradouro].filter(Boolean).join(' '),
-        r.bairro,
-        r.municipio,
-        r.uf
-    ].filter(Boolean);
-    const texto = partes.join(', ');
-    return r.cep ? `${texto}, ${formatarCEP(r.cep)}` : texto;
+// Renderiza sugestões
+function renderizarSugestoes(lista, query) {
+    suggestionsBox.innerHTML = '';
+    if (!lista || lista.length === 0) {
+        suggestionsBox.innerHTML = `
+            <div class="suggestion-item empty">
+                Nenhum logradouro encontrado no roteiro.<br>
+                <small>Para incluir, envie e-mail para
+                <a href="mailto:pp-logradouro@correios.com.br?subject=Inclus%C3%A3o%20de%20logradouro&body=Logradouro%3A%20${encodeURIComponent(query)}">PP-Logradouro</a>.</small>
+            </div>`;
+        suggestionsBox.style.display = 'block';
+        return;
+    }
+
+    lista.forEach(r => {
+        const div = document.createElement('div');
+        div.className = 'suggestion-item';
+        const texto = formatarTextoLogradouro(r);
+        div.innerHTML = `<span class="suggestion-icon">&#128220;</span>
+            <span class="suggestion-text"><strong>Roteiro:</strong> ${escapeHtml(texto)}</span>`;
+        div.addEventListener('click', () => {
+            searchInput.value = texto;
+            suggestionsBox.style.display = 'none';
+            selecionarParaSurvey(r);
+        });
+        suggestionsBox.appendChild(div);
+    });
+    suggestionsBox.style.display = 'block';
 }
 
 document.getElementById('searchBtn').addEventListener('click', () => {
