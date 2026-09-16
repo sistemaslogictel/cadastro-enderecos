@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Cadastro de Endereços</title>
+    <title>Cadastro de Roteiro</title>
 
     <script>
         (function () {
@@ -16,7 +16,7 @@
 
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
 
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
     <link rel="stylesheet" href="style.css">
@@ -24,320 +24,361 @@
 <body>
     <a href="#main-content" class="skip-link">Pular para o conteúdo principal</a>
 
-    <header class="sticky-header" role="banner">
-        <h1>Cadastro de Endereços</h1>
-        <div class="header-user">
-            <span id="userLabel" aria-live="polite">-</span>
-            <button id="themeToggle" class="theme-toggle" type="button" title="Alternar tema" aria-label="Alternar entre modo claro e escuro">
+    <!-- HEADER AZUL -->
+    <header class="app-header" role="banner">
+        <div class="app-header-left">
+            <div class="brand">
+                <div class="brand-logo">
+                    <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                        <path d="M12 2L2 7L12 12L22 7L12 2Z" fill="#fff"/>
+                        <path d="M2 17L12 22L22 17M2 12L12 17L22 12" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                    </svg>
+                </div>
+                <span class="brand-name">LOGICTEL</span>
+            </div>
+            <span class="brand-divider"></span>
+            <h1 class="app-title">Cadastro de Roteiro</h1>
+        </div>
+        <div class="app-header-right">
+            <button class="icon-btn" id="themeToggle" type="button" title="Alternar tema" aria-label="Alternar tema">
                 <span aria-hidden="true">🌙</span>
             </button>
-            <button id="logoutBtn" class="btn-logout" type="button">Sair</button>
+            <button class="icon-btn" type="button" title="Notificações" aria-label="Notificações">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"></path>
+                    <path d="M13.73 21a2 2 0 0 1-3.46 0"></path>
+                </svg>
+            </button>
+            <div class="user-chip" title="Usuário">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path>
+                    <circle cx="12" cy="7" r="4"></circle>
+                </svg>
+                <span id="userLabel">-</span>
+            </div>
+            <button id="logoutBtn" class="icon-btn-logout" type="button" title="Sair">Sair</button>
         </div>
     </header>
 
-    <nav class="side-nav" id="sideNav" aria-label="Navegação rápida entre seções">
-        <button data-goto="panel1" title="1. Buscar Localização" type="button">1</button>
-        <button data-goto="panel2" title="2. Mapa" type="button">2</button>
-        <button data-goto="resultsPanel" title="3. Endereços Encontrados" type="button">3</button>
-        <button data-goto="formPanel" title="4. Survey" type="button">4</button>
-        <button data-goto="uploadPanel" title="5. Carregar Roteiro" type="button">5</button>
-        <button data-goto="listPanel" title="6. Surveys Salvos" type="button">6</button>
-    </nav>
+    <!-- CONTAINER -->
+    <main class="app-main" id="main-content" role="main">
+        <div class="layout-2col">
+            <!-- COLUNA ESQUERDA -->
+            <div class="col-left">
 
-    <main class="container" id="main-content" role="main">
-        <div class="top-action">
-            <button id="novaAreaBtn" class="btn-nova-area" type="button">Limpar lista</button>
-            <span id="areaLabel" class="area-label"></span>
+                <!-- 1. Buscar Localização -->
+                <section class="card" id="panel1">
+                    <header class="card-header">
+                        <span class="card-badge">1</span>
+                        <svg class="card-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"></path>
+                            <circle cx="12" cy="10" r="3"></circle>
+                        </svg>
+                        <h2 class="card-title">Buscar Localização</h2>
+                        <button class="toggle-btn" data-target="panel1-body" type="button" aria-expanded="true">&#9660;</button>
+                    </header>
+                    <div class="card-body" id="panel1-body">
+                        <label class="field-label-sm">Endereço ou CEP</label>
+                        <div class="search-box">
+                            <div class="search-wrapper">
+                                <input type="text" id="searchInput" placeholder="Rua Exemplo, 123 - Bairro, Cidade - UF ou CEP" autocomplete="off" aria-label="Buscar logradouro ou CEP">
+                                <button id="searchClearBtn" class="search-clear" type="button" title="Limpar" aria-label="Limpar campo">
+                                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                        <line x1="18" y1="6" x2="6" y2="18"></line>
+                                        <line x1="6" y1="6" x2="18" y2="18"></line>
+                                    </svg>
+                                </button>
+                                <div id="suggestions" class="suggestions" role="listbox" aria-label="Sugestões de logradouro"></div>
+                            </div>
+                            <button id="searchBtn" class="btn-primary" type="button">
+                                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                    <circle cx="11" cy="11" r="8"></circle>
+                                    <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+                                </svg>
+                                Buscar
+                            </button>
+                        </div>
+                        <div class="info-box">
+                            <span class="info-icon">i</span>
+                            <span>Só é possível salvar logradouros que estejam no <strong>Roteiro</strong>. Não achou o seu? Envie um e-mail para <a href="mailto:pp-logradouro@correios.com.br">PP-Logradouro</a>.</span>
+                        </div>
+                    </div>
+                </section>
+
+                <!-- 3. Endereços Encontrados -->
+                <section class="card" id="resultsPanel">
+                    <header class="card-header">
+                        <span class="card-badge">3</span>
+                        <svg class="card-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"></path>
+                            <circle cx="12" cy="10" r="3"></circle>
+                        </svg>
+                        <h2 class="card-title">Endereços Encontrados</h2>
+                        <button class="toggle-btn" data-target="resultsBody" type="button" aria-expanded="true">&#9660;</button>
+                    </header>
+                    <div class="card-body" id="resultsBody">
+                        <div class="info-line">
+                            <svg class="info-line-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"></circle>
+                                <circle cx="12" cy="10" r="3"></circle>
+                            </svg>
+                            <span class="info-line-label">Coordenadas:</span>
+                            <span id="coordsDisplay" class="info-line-value">-</span>
+                        </div>
+                        <div class="info-line">
+                            <svg class="info-line-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                <circle cx="12" cy="12" r="10"></circle>
+                                <polyline points="12 6 12 12 16 14"></polyline>
+                            </svg>
+                            <span class="info-line-label">Origem:</span>
+                            <span id="origemDisplay" class="info-line-value">-</span>
+                        </div>
+                        <div id="enderecosList" role="list">
+                            <p class="empty-state">Nenhum endereço consultado ainda. Busque um logradouro acima.</p>
+                        </div>
+                    </div>
+                </section>
+
+                <!-- 4. Survey -->
+                <section class="card" id="formPanel">
+                    <header class="card-header">
+                        <span class="card-badge">4</span>
+                        <svg class="card-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <line x1="18" y1="20" x2="18" y2="10"></line>
+                            <line x1="12" y1="20" x2="12" y2="4"></line>
+                            <line x1="6" y1="20" x2="6" y2="14"></line>
+                        </svg>
+                        <h2 class="card-title">Survey</h2>
+                        <button class="toggle-btn" data-target="formBody" type="button" aria-expanded="true">&#9660;</button>
+                    </header>
+                    <div class="card-body" id="formBody">
+                        <div id="enderecoBaseInfo" class="endereco-base-info">
+                            <p class="empty-state-sm">Selecione uma fonte em "Endereços Encontrados".</p>
+                        </div>
+
+                        <!-- Endereço (oculto visualmente, mas presentes para o JS) -->
+                        <input type="hidden" id="surveyTipo" value="">
+                        <input type="hidden" id="surveyLogradouro" value="">
+                        <input type="hidden" id="surveyBairro" value="">
+                        <input type="hidden" id="surveyMunicipio" value="">
+                        <input type="hidden" id="surveyUf" value="">
+                        <input type="hidden" id="surveyCep" value="">
+
+                        <!-- Nº Fachada + Recorrência | Pisos + Recorrência -->
+                        <div class="grid-2col">
+                            <div class="field-group">
+                                <div class="field-header">
+                                    <label for="numeroInput">Nº Fachada</label>
+                                    <label class="check-inline">
+                                        <input type="checkbox" id="numeroRecorrente">
+                                        <span>Recorrência</span>
+                                    </label>
+                                </div>
+                                <input type="text" id="numeroInput" placeholder="Ex.: 71" inputmode="numeric">
+                            </div>
+                            <div class="field-group">
+                                <div class="field-header">
+                                    <label for="pisosInput">Pisos</label>
+                                    <label class="check-inline">
+                                        <input type="checkbox" id="pisosRecorrente">
+                                        <span>Recorrência</span>
+                                    </label>
+                                </div>
+                                <input type="text" id="pisosInput" placeholder="Ex.: 1" inputmode="numeric">
+                            </div>
+                        </div>
+
+                        <!-- Complemento 1 -->
+                        <div class="field-group field-comp">
+                            <div class="comp-grid">
+                                <div>
+                                    <label for="comp1Valor" class="field-label-sm">Complemento 1</label>
+                                    <input type="text" id="comp1Valor" placeholder="Ex.: Casa, Bloco, Apto...">
+                                </div>
+                                <div>
+                                    <label for="comp1Tipo" class="field-label-sm">Tipo</label>
+                                    <select id="comp1Tipo">
+                                        <option value="">Selecione</option>
+                                        <option>Lote</option><option>Quadra</option><option>Casa</option>
+                                        <option>Apartamento</option><option>Bloco</option><option>Loja</option>
+                                        <option>Sala</option><option>Fundos</option><option>Outro</option>
+                                    </select>
+                                </div>
+                                <label class="check-inline check-inline-right">
+                                    <input type="checkbox" id="comp1Recorrente">
+                                    <span>Complemento</span>
+                                </label>
+                            </div>
+                        </div>
+
+                        <!-- Complemento 2 -->
+                        <div class="field-group field-comp">
+                            <div class="comp-grid">
+                                <div>
+                                    <label for="comp2Valor" class="field-label-sm">Complemento 2</label>
+                                    <input type="text" id="comp2Valor" placeholder="Ex.: Torre, Loja, Sala...">
+                                </div>
+                                <div>
+                                    <label for="comp2Tipo" class="field-label-sm">Tipo</label>
+                                    <select id="comp2Tipo">
+                                        <option value="">Selecione</option>
+                                        <option>Lote</option><option>Quadra</option><option>Casa</option>
+                                        <option>Apartamento</option><option>Bloco</option><option>Loja</option>
+                                        <option>Sala</option><option>Fundos</option><option>Outro</option>
+                                    </select>
+                                </div>
+                                <label class="check-inline check-inline-right">
+                                    <input type="checkbox" id="comp2Recorrente">
+                                    <span>Complemento</span>
+                                </label>
+                            </div>
+                        </div>
+
+                        <!-- Complemento 3 -->
+                        <div class="field-group field-comp">
+                            <div class="comp-grid">
+                                <div>
+                                    <label for="comp3Valor" class="field-label-sm">Complemento 3</label>
+                                    <input type="text" id="comp3Valor" placeholder="Ex.: Condomínio, Edifício, Galpão...">
+                                </div>
+                                <div>
+                                    <label for="comp3Tipo" class="field-label-sm">Tipo</label>
+                                    <select id="comp3Tipo">
+                                        <option value="">Selecione</option>
+                                        <option>Lote</option><option>Quadra</option><option>Casa</option>
+                                        <option>Apartamento</option><option>Bloco</option><option>Loja</option>
+                                        <option>Sala</option><option>Fundos</option><option>Outro</option>
+                                    </select>
+                                </div>
+                                <label class="check-inline check-inline-right">
+                                    <input type="checkbox" id="comp3Recorrente">
+                                    <span>Complemento</span>
+                                </label>
+                            </div>
+                        </div>
+
+                        <input type="hidden" id="surveyLatitude">
+                        <input type="hidden" id="surveyLongitude">
+                    </div>
+                </section>
+
+                <!-- 5. Carregar Roteiro -->
+                <section class="card" id="uploadPanel">
+                    <header class="card-header">
+                        <span class="card-badge">5</span>
+                        <svg class="card-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                            <polyline points="17 8 12 3 7 8"></polyline>
+                            <line x1="12" y1="3" x2="12" y2="15"></line>
+                        </svg>
+                        <h2 class="card-title">Carregar Roteiro</h2>
+                        <button class="toggle-btn" data-target="uploadBody" type="button" aria-expanded="true">&#9660;</button>
+                    </header>
+                    <div class="card-body" id="uploadBody">
+                        <div class="info-box">
+                            <span class="info-icon">i</span>
+                            <span>Selecione o arquivo <strong>roteiro.xml</strong> (padrão dos Correios). Os logradouros serão salvos e ficarão disponíveis no motor de busca.</span>
+                        </div>
+                        <div class="upload-row">
+                            <input type="file" id="roteiroFile" accept=".xml,.csv,.txt" aria-label="Selecionar arquivo de roteiro">
+                            <button id="uploadBtn" class="btn-primary" type="button">
+                                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                                    <polyline points="17 8 12 3 7 8"></polyline>
+                                    <line x1="12" y1="3" x2="12" y2="15"></line>
+                                </svg>
+                                Importar Roteiro
+                            </button>
+                        </div>
+                        <div id="uploadStatus" class="upload-status" role="status" aria-live="polite"></div>
+                    </div>
+                </section>
+
+                <!-- Surveys Salvos -->
+                <section class="card" id="listPanel" style="display:none;">
+                    <header class="card-header">
+                        <span class="card-badge">6</span>
+                        <svg class="card-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <line x1="8" y1="6" x2="21" y2="6"></line>
+                            <line x1="8" y1="12" x2="21" y2="12"></line>
+                            <line x1="8" y1="18" x2="21" y2="18"></line>
+                            <line x1="3" y1="6" x2="3.01" y2="6"></line>
+                            <line x1="3" y1="12" x2="3.01" y2="12"></line>
+                            <line x1="3" y1="18" x2="3.01" y2="18"></line>
+                        </svg>
+                        <h2 class="card-title">Surveys Salvos</h2>
+                        <button class="toggle-btn" data-target="listBody" type="button" aria-expanded="true">&#9660;</button>
+                    </header>
+                    <div class="card-body" id="listBody">
+                        <div class="table-wrapper">
+                            <table id="surveysTable">
+                                <thead>
+                                    <tr>
+                                        <th>Logradouro</th><th>Nº</th><th>Complementos</th>
+                                        <th>Bairro</th><th>Município/UF</th><th>CEP</th>
+                                        <th>Ações</th>
+                                    </tr>
+                                </thead>
+                                <tbody></tbody>
+                            </table>
+                        </div>
+                        <div class="actions">
+                            <button id="exportBtn" class="btn-success" type="button">
+                                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                                    <polyline points="7 10 12 15 17 10"></polyline>
+                                    <line x1="12" y1="15" x2="12" y2="3"></line>
+                                </svg>
+                                Exportar XMLs (ZIP)
+                            </button>
+                            <button id="clearBtn" class="btn-danger" type="button">
+                                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                    <polyline points="3 6 5 6 21 6"></polyline>
+                                    <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
+                                </svg>
+                                Limpar Tudo
+                            </button>
+                        </div>
+                    </div>
+                </section>
+
+                <!-- Botão principal abaixo da lista -->
+                <button id="addBtn" class="btn-add-survey" type="button">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <line x1="12" y1="5" x2="12" y2="19"></line>
+                        <line x1="5" y1="12" x2="19" y2="12"></line>
+                    </svg>
+                    Adicionar ao Survey
+                </button>
+            </div>
+
+            <!-- COLUNA DIREITA — MAPA -->
+            <div class="col-right">
+                <section class="card card-map" id="panel2">
+                    <header class="card-header card-header-map">
+                        <svg class="card-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <polygon points="1 6 1 22 8 18 16 22 23 18 23 2 16 6 8 2 1 6"></polygon>
+                            <line x1="8" y1="2" x2="8" y2="18"></line>
+                            <line x1="16" y1="6" x2="16" y2="22"></line>
+                        </svg>
+                        <h2 class="card-title">Mapa</h2>
+                        <div class="map-tabs">
+                            <button class="map-tab" data-layer="satellite" type="button">Satélite</button>
+                            <button class="map-tab active" data-layer="map" type="button">Mapa</button>
+                        </div>
+                        <button class="icon-btn-sm" id="fullscreenBtn" type="button" title="Tela cheia">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                <path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3"></path>
+                            </svg>
+                        </button>
+                    </header>
+                    <div class="card-body card-body-map">
+                        <div id="map" role="application" aria-label="Mapa interativo"></div>
+                    </div>
+                </section>
+            </div>
         </div>
-
-        <!-- 1. Busca -->
-        <section class="panel" id="panel1" aria-labelledby="panel1-title">
-            <h2 id="panel1-title">
-                <span>1. Buscar Localização</span>
-                <button class="toggle-btn" data-target="panel1-body" type="button" aria-expanded="true" aria-controls="panel1-body" aria-label="Expandir ou recolher seção">&#9660;</button>
-            </h2>
-            <div class="panel-body" id="panel1-body">
-                                <div class="search-box">
-                    <select id="ufFilter" class="uf-filter" aria-label="Filtrar por UF">
-                        <option value="">Todas</option>
-                        <option>AC</option><option>AL</option><option>AP</option><option>AM</option>
-                        <option>BA</option><option>CE</option><option>DF</option><option>ES</option>
-                        <option>GO</option><option>MA</option><option>MT</option><option>MS</option>
-                        <option>MG</option><option>PA</option><option>PB</option><option>PR</option>
-                        <option>PE</option><option>PI</option><option selected>RJ</option><option>RN</option>
-                        <option>RS</option><option>RO</option><option>RR</option><option>SC</option>
-                        <option>SP</option><option>SE</option><option>TO</option>
-                    </select>
-                    <div class="search-wrapper">
-                        <input type="text" id="searchInput" placeholder="Digite o logradouro, parte dele, ou o CEP..." autocomplete="off" aria-label="Buscar logradouro ou CEP">
-                        <div id="suggestions" class="suggestions" role="listbox" aria-label="Sugestões de logradouro"></div>
-                    </div>
-                    <button id="searchBtn" type="button">Buscar</button>
-                </div>
-                <p class="hint">
-                    Só é possível salvar logradouros que estejam no <strong>Roteiro</strong>.
-                    Não achou o seu? Envie um e-mail para
-                    <a href="mailto:pp-logradouro@correios.com.br?subject=Inclus%C3%A3o%20de%20logradouro%20no%20roteiro">PP-Logradouro</a>.
-                </p>
-            </div>
-        </section>
-
-        <!-- 2. Mapa -->
-        <section class="panel" id="panel2" aria-labelledby="panel2-title">
-            <h2 id="panel2-title">
-                <span>2. Mapa</span>
-                <button class="toggle-btn" data-target="panel2-body" type="button" aria-expanded="true" aria-controls="panel2-body" aria-label="Expandir ou recolher seção">&#9660;</button>
-            </h2>
-            <div class="panel-body" id="panel2-body">
-                <p class="hint"><strong>Ctrl + B</strong> trava/destrava o zoom. O mapa já inicia com o zoom <strong>travado</strong>.</p>
-                <div id="map" role="application" aria-label="Mapa interativo"></div>
-            </div>
-        </section>
-
-        <!-- 3. Endereços Encontrados -->
-        <section class="panel" id="resultsPanel" aria-labelledby="resultsPanel-title">
-            <h2 id="resultsPanel-title">
-                <span>3. Endereços Encontrados</span>
-                <button class="toggle-btn" data-target="resultsBody" type="button" aria-expanded="true" aria-controls="resultsBody" aria-label="Expandir ou recolher seção">&#9660;</button>
-            </h2>
-            <div class="panel-body" id="resultsBody">
-                <p class="coords">Coordenadas: <span id="coordsDisplay">-</span></p>
-                <p class="origem">Origem: <span id="origemDisplay">-</span></p>
-                <div id="enderecosList" role="list">
-                    <p class="empty-state">Nenhum endereço consultado ainda. Busque um logradouro acima.</p>
-                </div>
-            </div>
-        </section>
-
-        <!-- 4. Survey -->
-        <section class="panel" id="formPanel" aria-labelledby="formPanel-title">
-            <h2 id="formPanel-title">
-                <span>4. Survey</span>
-                <button class="toggle-btn" data-target="formBody" type="button" aria-expanded="true" aria-controls="formBody" aria-label="Expandir ou recolher seção">&#9660;</button>
-            </h2>
-            <div class="panel-body" id="formBody">
-                <div id="enderecoBaseInfo" class="endereco-base-info">
-                    <p class="empty-state">Selecione uma fonte em "3. Endereços Encontrados".</p>
-                </div>
-
-                <!-- Endereço (do roteiro, editável) -->
-                <div class="form-section">
-                    <h3 class="form-subtitle">Endereço</h3>
-                    <div class="form-grid compact">
-                        <label>Tipo:
-                            <select id="surveyTipo">
-                                <option value="">-- Selecione --</option>
-                                <option>Rua</option>
-                                <option>Avenida</option>
-                                <option>Travessa</option>
-                                <option>Estrada</option>
-                                <option>Alameda</option>
-                                <option>Praça</option>
-                                <option>Caminho</option>
-                                <option>Beco</option>
-                                <option>Largo</option>
-                            </select>
-                        </label>
-                        <label>Logradouro:
-                            <input type="text" id="surveyLogradouro" placeholder="Ex: Martins Lage">
-                        </label>
-                        <label>Bairro:
-                            <input type="text" id="surveyBairro" placeholder="Ex: Engenho Novo">
-                        </label>
-                        <label>Município:
-                            <input type="text" id="surveyMunicipio" placeholder="Ex: Rio de Janeiro">
-                        </label>
-                        <label>UF:
-                            <select id="surveyUf">
-                                <option value="">--</option>
-                                <option>AC</option><option>AL</option><option>AP</option><option>AM</option>
-                                <option>BA</option><option>CE</option><option>DF</option><option>ES</option>
-                                <option>GO</option><option>MA</option><option>MT</option><option>MS</option>
-                                <option>MG</option><option>PA</option><option>PB</option><option>PR</option>
-                                <option>PE</option><option>PI</option><option>RJ</option><option>RN</option>
-                                <option>RS</option><option>RO</option><option>RR</option><option>SC</option>
-                                <option>SP</option><option>SE</option><option>TO</option>
-                            </select>
-                        </label>
-                        <label>CEP:
-                            <input type="text" id="surveyCep" placeholder="00000-000" maxlength="9">
-                        </label>
-                    </div>
-                </div>
-
-                <!-- Coordenadas -->
-                <div class="form-section">
-                    <h3 class="form-subtitle">Coordenadas</h3>
-                    <div class="form-grid compact">
-                        <label>Latitude:
-                            <input type="text" id="surveyLatitude" placeholder="-22.90200282">
-                        </label>
-                        <label>Longitude:
-                            <input type="text" id="surveyLongitude" placeholder="-43.27065822">
-                        </label>
-                    </div>
-                </div>
-
-                <!-- Número -->
-                <div class="form-section">
-                    <h3 class="form-subtitle">Nº:</h3>
-                    <div class="form-grid compact">
-                        <label class="field-with-check">
-                            <span>Número:
-                                <span class="check-inline">
-                                    <input type="checkbox" id="numeroRecorrente" title="Manter este número para o próximo survey">
-                                    <small>manter</small>
-                                </span>
-                            </span>
-                            <input type="text" id="numeroInput" placeholder="Ex: 98" inputmode="numeric">
-                        </label>
-                    </div>
-                </div>
-
-                <!-- Complemento 1 -->
-                <div class="form-section complemento-bloco">
-                    <h3 class="form-subtitle">
-                        Complemento 1
-                        <span class="check-inline">
-                            <input type="checkbox" id="comp1Recorrente" title="Manter este complemento para o próximo survey">
-                            <small>manter</small>
-                        </span>
-                    </h3>
-                    <div class="form-grid compact">
-                        <label>Tipo:
-                            <select id="comp1Tipo">
-                                <option value="">-- Selecione --</option>
-                                <option>Lote</option>
-                                <option>Quadra</option>
-                                <option>Casa</option>
-                                <option>Apartamento</option>
-                                <option>Bloco</option>
-                                <option>Loja</option>
-                                <option>Sala</option>
-                                <option>Fundos</option>
-                                <option>Outro</option>
-                            </select>
-                        </label>
-                        <label>Comp 1:
-                            <input type="text" id="comp1Valor" placeholder="Ex: 3">
-                        </label>
-                    </div>
-                </div>
-
-                <!-- Complemento 2 -->
-                <div class="form-section complemento-bloco">
-                    <h3 class="form-subtitle">
-                        Complemento 2
-                        <span class="check-inline">
-                            <input type="checkbox" id="comp2Recorrente" title="Manter este complemento para o próximo survey">
-                            <small>manter</small>
-                        </span>
-                    </h3>
-                    <div class="form-grid compact">
-                        <label>Tipo:
-                            <select id="comp2Tipo">
-                                <option value="">-- Selecione --</option>
-                                <option>Lote</option>
-                                <option>Quadra</option>
-                                <option>Casa</option>
-                                <option>Apartamento</option>
-                                <option>Bloco</option>
-                                <option>Loja</option>
-                                <option>Sala</option>
-                                <option>Fundos</option>
-                                <option>Outro</option>
-                            </select>
-                        </label>
-                        <label>Comp 1:
-                            <input type="text" id="comp2Valor" placeholder="Ex: 4">
-                        </label>
-                    </div>
-                </div>
-
-                <!-- Complemento 3 -->
-                <div class="form-section complemento-bloco">
-                    <h3 class="form-subtitle">
-                        Complemento 3
-                        <span class="check-inline">
-                            <input type="checkbox" id="comp3Recorrente" title="Manter este complemento para o próximo survey">
-                            <small>manter</small>
-                        </span>
-                    </h3>
-                    <div class="form-grid compact">
-                        <label>Tipo:
-                            <select id="comp3Tipo">
-                                <option value="">-- Selecione --</option>
-                                <option>Lote</option>
-                                <option>Quadra</option>
-                                <option>Casa</option>
-                                <option>Apartamento</option>
-                                <option>Bloco</option>
-                                <option>Loja</option>
-                                <option>Sala</option>
-                                <option>Fundos</option>
-                                <option>Outro</option>
-                            </select>
-                        </label>
-                        <label>Comp 1:
-                            <input type="text" id="comp3Valor" placeholder="Ex: 3">
-                        </label>
-                    </div>
-                </div>
-
-                <button id="addBtn" class="btn-primary btn-block" type="button">💾 Adicionar ao Survey</button>
-            </div>
-        </section>
-
-        <!-- 5. Upload de Roteiro -->
-        <section class="panel" id="uploadPanel" aria-labelledby="uploadPanel-title">
-            <h2 id="uploadPanel-title">
-                <span>5. Carregar Roteiro</span>
-                <button class="toggle-btn" data-target="uploadBody" type="button" aria-expanded="true" aria-controls="uploadBody" aria-label="Expandir ou recolher seção">&#9660;</button>
-            </h2>
-            <div class="panel-body" id="uploadBody">
-                <p class="hint">Selecione o arquivo <strong>roteiro.xml</strong> (padrão dos Correios). Os logradouros serão salvos e ficarão disponíveis no motor de busca.</p>
-                <div class="form-grid compact">
-                    <label>Arquivo do roteiro:
-                        <input type="file" id="roteiroFile" accept=".xml,.csv,.txt" aria-label="Selecionar arquivo de roteiro">
-                    </label>
-                </div>
-                <div class="actions">
-                    <button id="uploadBtn" class="btn-primary" type="button">Importar Roteiro</button>
-                </div>
-                <div id="uploadStatus" style="margin-top:15px; font-size:0.9rem; color:var(--text-secondary);" role="status" aria-live="polite"></div>
-            </div>
-        </section>
-
-        <!-- 6. Surveys Salvos -->
-        <section class="panel" id="listPanel" aria-labelledby="listPanel-title">
-            <h2 id="listPanel-title">
-                <span>6. Surveys Salvos</span>
-                <button class="toggle-btn" data-target="listBody" type="button" aria-expanded="true" aria-controls="listBody" aria-label="Expandir ou recolher seção">&#9660;</button>
-            </h2>
-            <div class="panel-body" id="listBody">
-                <div class="table-wrapper">
-                    <table id="surveysTable">
-                        <thead>
-                            <tr>
-                                <th>Logradouro</th><th>Nº</th><th>Complementos</th>
-                                <th>Bairro</th><th>Município/UF</th><th>CEP</th>
-                                <th>Ações</th>
-                            </tr>
-                        </thead>
-                        <tbody></tbody>
-                    </table>
-                </div>
-                <div class="actions">
-                    <button id="exportBtn" class="btn-success" type="button">Exportar XMLs (ZIP)</button>
-                    <button id="clearBtn" class="btn-danger" type="button">Limpar Tudo</button>
-                </div>
-            </div>
-        </section>
     </main>
-
-    <footer class="site-footer" role="contentinfo">
-        <p>&copy; 2026 <strong>Nelson Martins</strong>. Todos os direitos reservados. Desenvolvido por <strong>Nelson Martins</strong>.</p>
-    </footer>
 
     <div class="toast-container" id="toastContainer" aria-live="polite" aria-atomic="true"></div>
 

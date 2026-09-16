@@ -62,8 +62,6 @@ function showToast(titulo, mensagem = '', tipo = 'info', duracao = 4000) {
 
 // ============================================
 // VERIFICAR SE USUÁRIO É "ADM" (prefixo A)
-// Ex: ATR757584, ATT123456, ADD999 → TRUE
-// Ex: TR757584, TT123, admin → FALSE
 // ============================================
 function usuarioEhAdm() {
     const login = (sessionStorage.getItem('usuarioLogado') || '').trim().toUpperCase();
@@ -73,14 +71,12 @@ function usuarioEhAdm() {
 }
 
 // ============================================
-// APLICAR PERMISSÕES POR TIPO DE USUÁRIO
+// APLICAR PERMISSÕES
 // ============================================
 function aplicarPermissoes() {
     const adm = usuarioEhAdm();
     const panel5 = document.getElementById('uploadPanel');
-    const btn5 = document.querySelector('.side-nav button[data-goto="uploadPanel"]');
     if (panel5) panel5.style.display = adm ? '' : 'none';
-    if (btn5) btn5.style.display = adm ? '' : 'none';
     console.log('[PERMISSÃO] adm?', adm, '| login:', sessionStorage.getItem('usuarioLogado'));
 }
 
@@ -120,7 +116,20 @@ document.getElementById('logoutBtn').addEventListener('click', async () => {
 // MAPA
 // ============================================
 const map = L.map('map', { maxZoom: 22, minZoom: 3, zoomControl: false }).setView([-22.90200282, -43.27065822], 15);
-L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/{z}/{y}/{x}', { attribution: 'Tiles © Esri', maxZoom: 22, maxNativeZoom: 19 }).addTo(map);
+
+const camadas = {
+    map: L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/{z}/{y}/{x}', {
+        attribution: 'Tiles © Esri', maxZoom: 22, maxNativeZoom: 19
+    }),
+    satellite: L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
+        attribution: 'Tiles © Esri', maxZoom: 22, maxNativeZoom: 19
+    })
+};
+camadas.map.addTo(map);
+let camadaAtual = 'map';
+
+// Botão de zoom no canto inferior direito
+L.control.zoom({ position: 'bottomright' }).addTo(map);
 
 let marcadorAtual = null;
 let marcadoresSurveys = [];
@@ -150,90 +159,44 @@ document.querySelectorAll('.toggle-btn').forEach(btn => {
     });
 });
 
-document.querySelectorAll('.panel h2').forEach(h2 => {
-    h2.addEventListener('click', (e) => {
-        if (e.target.closest('.toggle-btn')) return;
-        const btn = h2.querySelector('.toggle-btn');
+document.querySelectorAll('.card-header').forEach(h => {
+    h.addEventListener('click', (e) => {
+        if (e.target.closest('.toggle-btn') || e.target.closest('.map-tab') || e.target.closest('.icon-btn-sm')) return;
+        const btn = h.querySelector('.toggle-btn');
         if (btn) btn.click();
     });
 });
 
 // ============================================
-// SIDE NAV
+// ABAS DO MAPA (Mapa / Satélite)
 // ============================================
-document.querySelectorAll('.side-nav button').forEach(btn => {
-    btn.addEventListener('click', () => {
-        const target = document.getElementById(btn.dataset.goto);
-        if (!target) return;
-        const body = target.querySelector('.panel-body');
-        const toggle = target.querySelector('.toggle-btn');
-        if (body && body.classList.contains('collapsed')) {
-            body.classList.remove('collapsed');
-            if (toggle) {
-                toggle.classList.remove('collapsed');
-                toggle.setAttribute('aria-expanded', 'true');
-            }
-        }
-        target.scrollIntoView({ behavior: 'smooth', block: 'start' });
-        target.classList.add('highlight');
-        setTimeout(() => target.classList.remove('highlight'), 1000);
-        document.querySelectorAll('.side-nav button').forEach(b => b.classList.remove('active'));
-        btn.classList.add('active');
+document.querySelectorAll('.map-tab').forEach(tab => {
+    tab.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const alvo = tab.dataset.layer;
+        if (alvo === camadaAtual) return;
+
+        map.removeLayer(camadas[camadaAtual]);
+        camadas[alvo].addTo(map);
+        camadaAtual = alvo;
+
+        document.querySelectorAll('.map-tab').forEach(t => t.classList.remove('active'));
+        tab.classList.add('active');
     });
 });
 
 // ============================================
-// TRAVAR ZOOM
+// BOTÃO TELA CHEIA DO MAPA
 // ============================================
-let zoomTravado = true;
-
-const zoomLockControl = L.Control.extend({
-    options: { position: 'topright' },
-    onAdd: function () {
-        const btn = L.DomUtil.create('button', 'zoom-lock-btn');
-        btn.innerHTML = '🔓';
-        btn.title = 'Travar zoom (Ctrl + B)';
-        btn.type = 'button';
-        L.DomEvent.disableClickPropagation(btn);
-        L.DomEvent.disableScrollPropagation(btn);
-        btn.addEventListener('click', (e) => { e.preventDefault(); e.stopPropagation(); toggleZoomLock(); });
-        zoomLockControl._btn = btn;
-        return btn;
+document.getElementById('fullscreenBtn')?.addEventListener('click', (e) => {
+    e.stopPropagation();
+    const el = document.getElementById('map').parentElement;
+    if (!document.fullscreenElement) {
+        el.requestFullscreen?.();
+    } else {
+        document.exitFullscreen?.();
     }
 });
-const zoomLockControlInstance = new zoomLockControl();
-map.addControl(zoomLockControlInstance);
-
-function mostrarToastZoom(msg) { showToast('Zoom', msg, 'info', 1800); }
-
-function aplicarTravamento() {
-    map.scrollWheelZoom.disable(); map.doubleClickZoom.disable();
-    map.touchZoom.disable(); map.boxZoom.disable(); map.keyboard.disable();
-    if (map.zoomControl) map.zoomControl.remove();
-    const btn = zoomLockControl._btn;
-    btn.innerHTML = '🔒'; btn.title = 'Destravar zoom (Ctrl + B)';
-    btn.classList.add('locked');
-}
-
-function aplicarDestravamento() {
-    map.scrollWheelZoom.enable(); map.doubleClickZoom.enable();
-    map.touchZoom.enable(); map.boxZoom.enable(); map.keyboard.enable();
-    if (!map.zoomControl) map.zoomControl = L.control.zoom({ position: 'topleft' }).addTo(map);
-    const btn = zoomLockControl._btn;
-    btn.innerHTML = '🔓'; btn.title = 'Travar zoom (Ctrl + B)';
-    btn.classList.remove('locked');
-}
-
-function toggleZoomLock() {
-    zoomTravado = !zoomTravado;
-    if (zoomTravado) { aplicarTravamento(); mostrarToastZoom('Zoom travado'); }
-    else { aplicarDestravamento(); mostrarToastZoom('Zoom destravado'); }
-}
-
-document.addEventListener('keydown', (e) => {
-    if (e.ctrlKey && (e.key === 'b' || e.key === 'B')) { e.preventDefault(); toggleZoomLock(); }
-});
-aplicarTravamento();
 
 // ============================================
 // PARSER DE COORDENADAS
@@ -281,6 +244,13 @@ document.addEventListener('click', (e) => {
     if (!e.target.closest('.search-box')) suggestionsBox.style.display = 'none';
 });
 
+document.getElementById('searchClearBtn')?.addEventListener('click', () => {
+    searchInput.value = '';
+    suggestionsBox.innerHTML = '';
+    suggestionsBox.style.display = 'none';
+    searchInput.focus();
+});
+
 async function buscarSugestoes(query) {
     if (query === ultimoQuery) return;
     ultimoQuery = query;
@@ -289,20 +259,16 @@ async function buscarSugestoes(query) {
     suggestionsBox.style.display = 'block';
 
     try {
-        const ufFiltro = (document.getElementById('ufFilter')?.value || '').trim().toUpperCase();
         const cepDigitos = query.replace(/\D/g, '');
 
         // === CASO 1: CEP (8 dígitos) ===
         if (cepDigitos.length === 8) {
-            let q = supabaseClient
+            const { data, error } = await supabaseClient
                 .from('logradouros')
                 .select('*')
                 .eq('origem', 'Roteiro XML')
                 .ilike('cep', `%${cepDigitos}%`)
                 .limit(30);
-            if (ufFiltro) q = q.eq('uf', ufFiltro);
-
-            const { data, error } = await q;
             if (error) throw error;
             renderizarSugestoes(data || [], query);
             return;
@@ -325,22 +291,16 @@ async function buscarSugestoes(query) {
             return;
         }
 
-        // Puxa lote pela palavra mais longa (mais seletiva)
         const palavraChave = [...palavras].sort((a, b) => b.length - a.length)[0];
 
-        let q = supabaseClient
+        const { data, error } = await supabaseClient
             .from('logradouros')
             .select('*')
             .eq('origem', 'Roteiro XML')
             .or(`logradouro.ilike.%${palavraChave}%,bairro.ilike.%${palavraChave}%,municipio.ilike.%${palavraChave}%,cep.ilike.%${palavraChave}%`)
             .limit(200);
-
-        if (ufFiltro) q = q.eq('uf', ufFiltro);
-
-        const { data, error } = await q;
         if (error) throw error;
 
-        // Concatena todas as colunas relevantes em uma string pra fazer o LIKE "junto"
         const concatenarRegistro = (r) => normalizar([
             r.tipo,
             r.logradouro,
@@ -363,21 +323,17 @@ async function buscarSugestoes(query) {
 
         let filtrados = (data || []).filter(passaFiltro);
 
-        // Fallback: tenta com a segunda palavra mais longa
         if (filtrados.length === 0 && palavras.length > 1) {
             const segunda = [...palavras].sort((a, b) => b.length - a.length)[1];
-            let q2 = supabaseClient
+            const { data: data2 } = await supabaseClient
                 .from('logradouros')
                 .select('*')
                 .eq('origem', 'Roteiro XML')
                 .or(`logradouro.ilike.%${segunda}%,bairro.ilike.%${segunda}%,municipio.ilike.%${segunda}%,cep.ilike.%${segunda}%`)
                 .limit(200);
-            if (ufFiltro) q2 = q2.eq('uf', ufFiltro);
-            const { data: data2 } = await q2;
             filtrados = (data2 || []).filter(passaFiltro);
         }
 
-        // Fallback final: se ainda vazio, mostra o que o banco trouxe
         if (filtrados.length === 0 && data && data.length > 0) {
             filtrados = data;
         }
@@ -390,9 +346,6 @@ async function buscarSugestoes(query) {
     }
 }
 
-// ============================================
-// RENDERIZA AS SUGESTÕES
-// ============================================
 function renderizarSugestoes(lista, query) {
     suggestionsBox.innerHTML = '';
     if (!lista || lista.length === 0) {
@@ -422,9 +375,6 @@ function renderizarSugestoes(lista, query) {
     suggestionsBox.style.display = 'block';
 }
 
-// ============================================
-// TEXTO FORMATADO DO LOGRADOURO
-// ============================================
 function formatarTextoLogradouro(r) {
     const partes = [
         [r.tipo, r.logradouro].filter(Boolean).join(' '),
@@ -517,12 +467,14 @@ async function selecionarParaSurvey(r) {
         localidade_abrev: r.localidade_abrev || ''
     };
 
-    document.getElementById('surveyTipo').value = enderecoBaseSelecionado.tipo || 'Rua';
-    document.getElementById('surveyLogradouro').value = enderecoBaseSelecionado.rua || '';
-    document.getElementById('surveyBairro').value = enderecoBaseSelecionado.bairro || '';
-    document.getElementById('surveyMunicipio').value = enderecoBaseSelecionado.cidade || '';
-    document.getElementById('surveyUf').value = enderecoBaseSelecionado.estado || '';
-    document.getElementById('surveyCep').value = formatarCEP(enderecoBaseSelecionado.cep || '');
+    // Atualiza os campos hidden do Survey
+    const setHidden = (id, val) => { const el = document.getElementById(id); if (el) el.value = val || ''; };
+    setHidden('surveyTipo', enderecoBaseSelecionado.tipo);
+    setHidden('surveyLogradouro', enderecoBaseSelecionado.rua);
+    setHidden('surveyBairro', enderecoBaseSelecionado.bairro);
+    setHidden('surveyMunicipio', enderecoBaseSelecionado.cidade);
+    setHidden('surveyUf', enderecoBaseSelecionado.estado);
+    setHidden('surveyCep', enderecoBaseSelecionado.cep);
 
     const temCoordsRoteiro =
         enderecoBaseSelecionado.lat != null &&
@@ -531,8 +483,8 @@ async function selecionarParaSurvey(r) {
         enderecoBaseSelecionado.lng !== 0;
 
     if (temCoordsRoteiro) {
-        document.getElementById('surveyLatitude').value = enderecoBaseSelecionado.lat.toFixed(8);
-        document.getElementById('surveyLongitude').value = enderecoBaseSelecionado.lng.toFixed(8);
+        setHidden('surveyLatitude', enderecoBaseSelecionado.lat.toFixed(8));
+        setHidden('surveyLongitude', enderecoBaseSelecionado.lng.toFixed(8));
         irParaLocal(
             enderecoBaseSelecionado.lat,
             enderecoBaseSelecionado.lng,
@@ -540,22 +492,18 @@ async function selecionarParaSurvey(r) {
             'Roteiro'
         );
     } else {
-        document.getElementById('surveyLatitude').value = '';
-        document.getElementById('surveyLongitude').value = '';
+        setHidden('surveyLatitude', '');
+        setHidden('surveyLongitude', '');
         showToast('Buscando no OpenStreetMap', 'Consultando o logradouro...', 'info', 3000);
 
         const opcoes = await buscarOpcoesOSM(enderecoBaseSelecionado);
-
         if (opcoes && opcoes.length > 0) {
             renderizarOpcoesOSM(opcoes, enderecoBaseSelecionado);
             showToast('Encontramos opções no OSM', 'Clique em uma opção para marcar no mapa.', 'success', 3500);
         } else {
-            showToast(
-                'Sem coordenadas',
+            showToast('Sem coordenadas',
                 'Não encontramos esse logradouro no OpenStreetMap. Marque manualmente com o botão direito no mapa.',
-                'warning',
-                6000
-            );
+                'warning', 6000);
         }
     }
 
@@ -591,7 +539,7 @@ function montarTextoLogradouro(end) {
 }
 
 // ============================================
-// BUSCA NO OSM — só o básico
+// BUSCA NO OSM
 // ============================================
 async function buscarOpcoesOSM(end) {
     const partes = [end.rua, end.bairro, end.cidade, end.estado].filter(Boolean);
@@ -668,8 +616,9 @@ function renderizarOpcoesOSM(opcoes, end) {
             if (!o) return;
             enderecoBaseSelecionado.lat = o.lat;
             enderecoBaseSelecionado.lng = o.lng;
-            document.getElementById('surveyLatitude').value = o.lat.toFixed(8);
-            document.getElementById('surveyLongitude').value = o.lng.toFixed(8);
+            const setHidden = (id, val) => { const el = document.getElementById(id); if (el) el.value = val; };
+            setHidden('surveyLatitude', o.lat.toFixed(8));
+            setHidden('surveyLongitude', o.lng.toFixed(8));
             irParaLocal(o.lat, o.lng, o.display_name || montarTextoLogradouro(end), 'Roteiro + OSM');
             showToast('Coordenadas aplicadas', 'Localização marcada no mapa.', 'success', 2500);
         });
@@ -677,7 +626,7 @@ function renderizarOpcoesOSM(opcoes, end) {
 }
 
 // ============================================
-// ADICIONAR AO SURVEY (survey_detalhes)
+// ADICIONAR AO SURVEY
 // ============================================
 document.getElementById('addBtn').addEventListener('click', async () => {
     if (!enderecoBaseSelecionado || !enderecoBaseSelecionado._registro_id) {
@@ -686,7 +635,9 @@ document.getElementById('addBtn').addEventListener('click', async () => {
     }
 
     const numero = document.getElementById('numeroInput').value.trim();
-    if (!numero) { showToast('Número obrigatório', 'Informe o Nº do imóvel.', 'warning'); return; }
+    if (!numero) { showToast('Número obrigatório', 'Informe o Nº da fachada.', 'warning'); return; }
+
+    const pisos = (document.getElementById('pisosInput')?.value || '').trim();
 
     const comp1Tipo = document.getElementById('comp1Tipo').value;
     const comp1Valor = document.getElementById('comp1Valor').value.trim();
@@ -695,8 +646,8 @@ document.getElementById('addBtn').addEventListener('click', async () => {
     const comp3Tipo = document.getElementById('comp3Tipo').value;
     const comp3Valor = document.getElementById('comp3Valor').value.trim();
 
-    const latStr = document.getElementById('surveyLatitude').value.trim();
-    const lngStr = document.getElementById('surveyLongitude').value.trim();
+    const latStr = (document.getElementById('surveyLatitude')?.value || '').trim();
+    const lngStr = (document.getElementById('surveyLongitude')?.value || '').trim();
     const lat = latStr && !isNaN(parseFloat(latStr)) ? parseFloat(latStr) : null;
     const lng = lngStr && !isNaN(parseFloat(lngStr)) ? parseFloat(lngStr) : null;
 
@@ -708,6 +659,7 @@ document.getElementById('addBtn').addEventListener('click', async () => {
     const registro = {
         logradouro_id: enderecoBaseSelecionado._registro_id,
         numero: numero,
+        pisos: pisos || null,
         complementos: complementos,
         latitude: lat,
         longitude: lng,
@@ -728,6 +680,7 @@ document.getElementById('addBtn').addEventListener('click', async () => {
         };
 
         limpar('numeroInput', 'numeroRecorrente');
+        limpar('pisosInput', 'pisosRecorrente');
         limpar('comp1Tipo',   'comp1Recorrente');
         limpar('comp1Valor',  'comp1Recorrente');
         limpar('comp2Tipo',   'comp2Recorrente');
@@ -750,7 +703,7 @@ async function carregarSurveys() {
         const { data: detalhes, error: errDet } = await supabaseClient
             .from('survey_detalhes')
             .select('*')
-                        .order('created_at', { ascending: true });
+            .order('created_at', { ascending: true });
         if (errDet) throw errDet;
 
         if (!detalhes || detalhes.length === 0) {
@@ -800,7 +753,7 @@ async function carregarSurveys() {
         }));
 
         tbody.querySelectorAll('.btn-ir').forEach(btn => {
-            btn.addEventListener('click', () => {
+                        btn.addEventListener('click', () => {
                 const s = window._surveysCache[parseInt(btn.dataset.idx, 10)];
                 if (!s) return;
                 const lat = s.latitude != null ? Number(s.latitude) : (s._logradouro && s._logradouro.latitude);
@@ -853,9 +806,9 @@ async function carregarSurveys() {
 }
 
 // ============================================
-// LIMPAR LISTA (botão do topo)
+// LIMPAR LISTA (botão do topo — se existir)
 // ============================================
-document.getElementById('novaAreaBtn').addEventListener('click', async () => {
+document.getElementById('novaAreaBtn')?.addEventListener('click', async () => {
     if (!confirm('Apagar TODOS os surveys salvos? (o roteiro será mantido)')) return;
     try {
         const { error } = await supabaseClient
@@ -876,7 +829,7 @@ document.getElementById('novaAreaBtn').addEventListener('click', async () => {
 // ============================================
 // LIMPAR TUDO (botão dentro da seção 6)
 // ============================================
-document.getElementById('clearBtn').addEventListener('click', async () => {
+document.getElementById('clearBtn')?.addEventListener('click', async () => {
     if (!confirm('Apagar TODOS os surveys salvos? (o roteiro será mantido)')) return;
     try {
         const { error } = await supabaseClient
@@ -897,7 +850,7 @@ document.getElementById('clearBtn').addEventListener('click', async () => {
 // ============================================
 // EXPORTAR XMLs (ZIP) — e limpa depois
 // ============================================
-document.getElementById('exportBtn').addEventListener('click', async () => {
+document.getElementById('exportBtn')?.addEventListener('click', async () => {
     if (!window._surveysCache || window._surveysCache.length === 0) {
         showToast('Nada para exportar', 'Salve ao menos um survey.', 'warning');
         return;
@@ -1009,7 +962,7 @@ function gerarXMLEdificio(survey, logradouro, numero) {
     const empresaId = '6';
     const empresaNome = 'LOGICTEL';
 
-    const numPisos = '1';
+    const numPisos = survey.pisos && !isNaN(parseInt(survey.pisos, 10)) ? String(parseInt(survey.pisos, 10)) : '1';
 
     return `<?xml version="1.0" encoding="UTF-8"?><edificio tipo="M" versao="7.9.2">
   <gravado>false</gravado>
@@ -1051,7 +1004,7 @@ function gerarXMLEdificio(survey, logradouro, numero) {
 // ============================================
 // UPLOAD DE ROTEIRO (só ADM)
 // ============================================
-document.getElementById('uploadBtn').addEventListener('click', async () => {
+document.getElementById('uploadBtn')?.addEventListener('click', async () => {
     if (!usuarioEhAdm()) {
         showToast('Sem permissão', 'Apenas usuários ATR/ATT/ADD podem importar roteiros.', 'error', 5000);
         return;
