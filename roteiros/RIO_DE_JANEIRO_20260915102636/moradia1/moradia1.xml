@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="UTF-8"?><edificio tipo="M" versao="7.9.2">
+  <gravado>false</gravado>
+  <nEdificio>R1848087</nEdificio>
+  <coordX>-43.440909</coordX>
+  <coordY>-22.865685</coordY>
+  <codigoZona>RJ-RJO-BGU-001</codigoZona>
+  <nomeZona>RJ-RJO-BGU-001</nomeZona>
+  <localidade>RIO DE JANEIRO</localidade>
+  <enderecoEdificio>
+    <id>60714739</id>
+    <logradouro>RUA NURETAMA, REALENGO, RIO DE JANEIRO, RIO DE JANEIRO - RJ (9718)</logradouro>
+    <numero_fachada>300</numero_fachada>
+    <cep>21720030</cep>
+    <cod_bairro>2226</cod_bairro>
+    <bairro>REALENGO</bairro>
+    <id_roteiro>50530</id_roteiro>
+    <id_localidade>1867541</id_localidade>
+    <cod_lograd>9718</cod_lograd>
+  </enderecoEdificio>
+  <tecnico>
+    <id>145826109</id>
+    <nome>FELIPE DANGREMON LOUREIRO</nome>
+  </tecnico>
+  <empresa>
+    <id>6</id>
+    <nome>LOGICTEL</nome>
+  </empresa>
+  <data>20210118134524</data>
+  <observacoes>DUPLICIDADE OK CARTA 2I BGU STREET</observacoes>
+  <totalUCs>1</totalUCs>
+  <ocupacao>EDIFICACAOCOMPLETA</ocupacao>
+  <numPisos>1</numPisos>
+  <destinacao>RESIDENCIA</destinacao>
+</edificio>

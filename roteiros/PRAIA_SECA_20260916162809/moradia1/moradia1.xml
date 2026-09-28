@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="UTF-8"?><edificio tipo="M" versao="7.9.2">
+  <gravado>false</gravado>
+  <nEdificio>R2396880</nEdificio>
+  <coordX>-42.360462</coordX>
+  <coordY>-22.8922151</coordY>
+  <codigoZona>RJ-AMA-AMA-001</codigoZona>
+  <nomeZona>RJ-AMA-AMA-001</nomeZona>
+  <localidade>ARARUAMA</localidade>
+  <enderecoEdificio>
+    <id>95071457</id>
+    <logradouro>RUA PEDRO LESSA, AREAL, ARARUAMA, ARARUAMA - RJ (2156)</logradouro>
+    <numero_fachada>SN</numero_fachada>
+    <id_complemento1>60</id_complemento1>
+    <argumento1>5</argumento1>
+    <id_complemento2>82</id_complemento2>
+    <argumento2>Casa Creche 52</argumento2>
+    <id_complemento3>34</id_complemento3>
+    <argumento3>B2B</argumento3>
+    <cep>28976390</cep>
+    <bairro>AREAL</bairro>
+    <id_roteiro>54273248</id_roteiro>
+    <id_localidade>1889506</id_localidade>
+    <cod_lograd>2156</cod_lograd>
+  </enderecoEdificio>
+  <tecnico>
+    <id>1368684093</id>
+    <nome>JOÃO GABRIEL REIS VILAS BOAS</nome>
+  </tecnico>
+  <empresa>
+    <id>6</id>
+    <nome>LOGICTEL</nome>
+  </empresa>
+  <data>20260108152609</data>
+  <totalUCs>1</totalUCs>
+  <ocupacao>EDIFICACAOCOMPLETA</ocupacao>
+  <numPisos>1</numPisos>
+  <destinacao>RESIDENCIA</destinacao>
+</edificio>

@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="UTF-8"?><edificio tipo="M" versao="7.9.2">
+  <gravado>false</gravado>
+  <nEdificio></nEdificio>
+  <coordX>-43.355782</coordX>
+  <coordY>-22.899024</coordY>
+  <codigoZona></codigoZona>
+  <nomeZona></nomeZona>
+  <localidade>RIO DE JANEIRO</localidade>
+  <enderecoEdificio>
+    <id>165505</id>
+    <logradouro>RUA FLORIANOPOLIS, PRACA SECA, RIO DE JANEIRO, RIO DE JANEIRO - RJ (2275)</logradouro>
+    <numero_fachada>748</numero_fachada>
+    <cep>21321050</cep>
+    <cod_bairro>2224</cod_bairro>
+    <bairro>PRACA SECA</bairro>
+    <id_roteiro>165505</id_roteiro>
+    <id_localidade>1867541</id_localidade>
+    <cod_lograd>2275</cod_lograd>
+  </enderecoEdificio>
+  <tecnico>
+    <id>3b569224-110c-4e12-86c0-1dcacc56e816</id>
+    <nome>Nelson</nome>
+  </tecnico>
+  <empresa>
+    <id>6</id>
+    <nome>LOGICTEL</nome>
+  </empresa>
+  <data>20260916161602</data>
+  <observacoes></observacoes>
+  <totalUCs>1</totalUCs>
+  <ocupacao>EDIFICACAOCOMPLETA</ocupacao>
+  <numPisos>1</numPisos>
+  <destinacao>RESIDENCIA</destinacao>
+</edificio>

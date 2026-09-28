@@ -18,8 +18,8 @@ const COORD_DEFAULT_FALLBACK = {
 // ============================================
 // TÉCNICO FIXO (padrão do XML)
 // ============================================
-const TECNICO_FIXO_ID = '1368684093';
-const TECNICO_FIXO_NOME = 'JOÃO GABRIEL REIS VILAS BOAS';
+const TECNICO_FIXO_ID = '';
+const TECNICO_FIXO_NOME = 'Osvaldo Miguel Magalhães';
 
 // ============================================
 // TABELA DE IDS DE COMPLEMENTO
@@ -1145,17 +1145,20 @@ document.getElementById('exportBtn')?.addEventListener('click', async () => {
 
 // ============================================
 // GERAR XML NO FORMATO "edificio"
-// - Tags vazias SEMPRE com forma longa: <tag></tag>
-// - Complementos vazios são OMITIDOS
-// - <id> do endereço sempre vazio
+// - Tags vazias SEMPRE com forma longa: <tag></tag> (nunca <tag/>)
+// - Complementos vazios são OMITIDOS (renumerados em sequência)
+// - <id> do endereço e <id> do técnico sempre vazios
 // - <codigoZona> e <nomeZona> sempre "Neutra"
-// - <tecnico> hardcoded
+// - <tecnico> hardcoded (TECNICO_FIXO_ID / TECNICO_FIXO_NOME)
 // ============================================
 function gerarXMLEdificio(survey, logradouro, numero) {
     const l = logradouro || {};
+
+    // --- escape de caracteres especiais ---
     const xmlEscape = (v) => {
         if (v == null) return '';
         return String(v)
+            .replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F]/g, '') // caracteres de controle inválidos
             .replace(/&/g, '&amp;')
             .replace(/</g, '&lt;')
             .replace(/>/g, '&gt;')
@@ -1163,15 +1166,23 @@ function gerarXMLEdificio(survey, logradouro, numero) {
             .replace(/'/g, '&apos;');
     };
 
+    // --- tag SEMPRE na forma longa: <nome></nome> quando vazia ---
     const tag = (nome, valor) => {
-        const v = (valor == null ? '' : String(valor));
+        const v = (valor === null || valor === undefined) ? '' : String(valor);
         return '<' + nome + '>' + xmlEscape(v) + '</' + nome + '>';
     };
 
+    // --- rede de segurança: converte qualquer <tag/> que escape para <tag></tag> ---
+    const expandirAutoFechadas = (str) =>
+        str.replace(/<([A-Za-z_][\w.\-]*)((?:\s[^<>]*?)?)\s*\/>/g, '<$1$2></$1>');
+
+    // --- data/hora atual: aaaammddhhmmss ---
     const agora = new Date();
     const pad = (n) => String(n).padStart(2, '0');
-    const dataFormatada = `${agora.getFullYear()}${pad(agora.getMonth()+1)}${pad(agora.getDate())}${pad(agora.getHours())}${pad(agora.getMinutes())}${pad(agora.getSeconds())}`;
+    const dataFormatada = `${agora.getFullYear()}${pad(agora.getMonth() + 1)}${pad(agora.getDate())}` +
+                          `${pad(agora.getHours())}${pad(agora.getMinutes())}${pad(agora.getSeconds())}`;
 
+    // --- logradouro completo (formato já validado) ---
     const tipo = (l.tipo || 'Rua').toString().toUpperCase();
     const nomeLograd = (l.rua || '').toString().toUpperCase();
     const bairro = (l.bairro || '').toString().toUpperCase();
@@ -1181,29 +1192,42 @@ function gerarXMLEdificio(survey, logradouro, numero) {
 
     const logradouroCompleto = `${tipo} ${nomeLograd}, ${bairro}, ${municipio}, ${municipio} - ${uf} (${codLograd})`;
 
-    const lat = survey.latitude != null ? Number(survey.latitude) : (l.lat != null ? Number(l.lat) : null);
-    const lng = survey.longitude != null ? Number(survey.longitude) : (l.lng != null ? Number(l.lng) : null);
+    // --- coordenadas: mantém a precisão original, sem arredondar ---
+    const fmtCoord = (v) => {
+        if (v === null || v === undefined || v === '' || isNaN(Number(v))) return '';
+        return String(Number(v)); // ex.: -22.8922151  /  -42.360462
+    };
 
-    const coordX = lng != null ? lng.toFixed(6) : '';
-    const coordY = lat != null ? lat.toFixed(6) : '';
+    const lat = survey.latitude != null ? survey.latitude : (l.lat != null ? l.lat : null);
+    const lng = survey.longitude != null ? survey.longitude : (l.lng != null ? l.lng : null);
 
-    const nEdificio = '';
+    const coordX = fmtCoord(lng); // longitude
+    const coordY = fmtCoord(lat); // latitude
+
+    // --- valores fixos / do roteiro ---
+    const nEdificio = '';                 // SEMPRE vazio
+    const idEdificio = '';                // SEMPRE vazio
     const codigoZona = 'Neutra';
     const nomeZona = 'Neutra';
-    const localidade = l.localidade || l.cidade || '';
-    const idEdificio = '';
-    const numeroFachada = survey.numero || 'SN';
+    const localidade = (l.localidade || l.cidade || '').toString().toUpperCase();
+    const numeroFachada = (survey.numero || 'SN').toString().toUpperCase();
+    const cep = (l.cep || '').toString().replace(/\D/g, '');
+    const idRoteiro = l.id_roteiro || l._registro_id || '';
+    const idLocalidade = l.id_localidade || '';
+    const numPisos = survey.pisos && !isNaN(parseInt(survey.pisos, 10))
+        ? String(parseInt(survey.pisos, 10))
+        : '1';
 
-    // ===== COMPLEMENTOS: só os que têm tipo E valor =====
+    // --- complementos: emite o par (id_complementoN / argumentoN)
+    //     para cada complemento preenchido, renumerando em sequência ---
     const comps = Array.isArray(survey.complementos) ? survey.complementos : [];
     const compsValidos = comps
         .map(c => ({
-            tipo: (c.tipo || '').trim(),
-            valor: (c.valor || '').trim()
+            tipo: (c && c.tipo ? String(c.tipo) : '').trim(),
+            valor: (c && c.valor ? String(c.valor) : '').trim()
         }))
-        .filter(c => c.tipo && c.valor);
+        .filter(c => c.tipo || c.valor);
 
-    // Bloco de complementos (só emite as linhas dos que existem)
     let blocoComplementos = '';
     compsValidos.forEach((c, i) => {
         const n = i + 1;
@@ -1211,12 +1235,7 @@ function gerarXMLEdificio(survey, logradouro, numero) {
         blocoComplementos += '    ' + tag('argumento' + n, c.valor) + '\n';
     });
 
-    const cep = (l.cep || '').toString().replace(/\D/g, '');
-    const idRoteiro = l.id_roteiro || l._registro_id || '';
-    const idLocalidade = l.id_localidade || '';
-    const numPisos = survey.pisos && !isNaN(parseInt(survey.pisos, 10)) ? String(parseInt(survey.pisos, 10)) : '1';
-
-    // ===== MONTA A STRING FINAL =====
+    // --- monta o XML ---
     let xml = '';
     xml += '<?xml version="1.0" encoding="UTF-8"?>\n';
     xml += '<edificio tipo="M" versao="7.9.2">\n';
@@ -1253,7 +1272,8 @@ function gerarXMLEdificio(survey, logradouro, numero) {
     xml += '  ' + tag('destinacao', 'RESIDENCIA') + '\n';
     xml += '</edificio>\n';
 
-    return xml;
+    // passada final de segurança contra qualquer <tag/>
+    return expandirAutoFechadas(xml);
 }
 
 // ============================================

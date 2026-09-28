@@ -1,0 +1,65 @@
+<?xml version="1.0" encoding="UTF-8"?><edificio tipo="E" versao="7.9.2">
+  <gravado>false</gravado>
+  <nEdificio>R1848090</nEdificio>
+  <coordX>-43.44088</coordX>
+  <coordY>-22.865786</coordY>
+  <codigoZona>RJ-RJO-BGU-001</codigoZona>
+  <nomeZona>RJ-RJO-BGU-001</nomeZona>
+  <localidade>RIO DE JANEIRO</localidade>
+  <enderecoEdificio>
+    <id>60714741</id>
+    <logradouro>RUA NURETAMA, REALENGO, RIO DE JANEIRO, RIO DE JANEIRO - RJ (9718)</logradouro>
+    <numero_fachada>286</numero_fachada>
+    <cep>21720030</cep>
+    <cod_bairro>2226</cod_bairro>
+    <bairro>REALENGO</bairro>
+    <id_roteiro>50530</id_roteiro>
+    <id_localidade>1867541</id_localidade>
+    <cod_lograd>9718</cod_lograd>
+  </enderecoEdificio>
+  <tecnico>
+    <id>145826109</id>
+    <nome>FELIPE DANGREMON LOUREIRO</nome>
+  </tecnico>
+  <empresa>
+    <id>6</id>
+    <nome>LOGICTEL</nome>
+  </empresa>
+  <data>20210118134524</data>
+  <totalUCs>3</totalUCs>
+  <ocupacao>EDIFICACAOCOMPLETA</ocupacao>
+  <redeInterna>N</redeInterna>
+  <infoFotos>
+    <fotoExteriorEdificio>PROIBIDO FOTO.JPG</fotoExteriorEdificio>
+    <fotoFachadaEdificio>proibido foto_1.JPG</fotoFachadaEdificio>
+  </infoFotos>
+  <ucs>
+    <uc>
+      <id>1767521180</id>
+      <destinacao>RESIDENCIA</destinacao>
+      <id_complemento3>22</id_complemento3>
+      <argumento3>1</argumento3>
+      <id_complemento4>107</id_complemento4>
+      <argumento4_logico>0</argumento4_logico>
+      <argumento4_real>T</argumento4_real>
+    </uc>
+    <uc>
+      <id>1767521181</id>
+      <destinacao>RESIDENCIA</destinacao>
+      <id_complemento3>22</id_complemento3>
+      <argumento3>2</argumento3>
+      <id_complemento4>107</id_complemento4>
+      <argumento4_logico>0</argumento4_logico>
+      <argumento4_real>T</argumento4_real>
+    </uc>
+    <uc>
+      <id>1767521182</id>
+      <destinacao>RESIDENCIA</destinacao>
+      <id_complemento3>22</id_complemento3>
+      <argumento3>3</argumento3>
+      <id_complemento4>7</id_complemento4>
+      <argumento4_logico>1</argumento4_logico>
+      <argumento4_real>2</argumento4_real>
+    </uc>
+  </ucs>
+</edificio>
