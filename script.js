@@ -1237,8 +1237,7 @@ function gerarXMLEdificio(survey, logradouro, numero) {
 
     // --- monta o XML ---
     let xml = '';
-    xml += '<?xml version="1.0" encoding="UTF-8"?>\n';
-    xml += '<edificio tipo="M" versao="7.9.2">\n';
+    xml += '<?xml version="1.0" encoding="UTF-8"?><edificio tipo="M" versao="7.9.2">\n';
     xml += '  ' + tag('gravado', 'false') + '\n';
     xml += '  ' + tag('nEdificio', nEdificio) + '\n';
     xml += '  ' + tag('coordX', coordX) + '\n';
