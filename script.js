@@ -684,7 +684,6 @@ async function selecionarParaSurvey(r) {
         `;
     }
 
-    recolherCard('resultsPanel');
     expandirCard('formPanel');
     irParaCard('formPanel');
 }
@@ -775,7 +774,6 @@ function renderizarOpcoesOSM(opcoes, end) {
             setH('surveyLongitude', o.lng.toFixed(8));
             irParaLocal(o.lat, o.lng, o.display_name || montarTextoLogradouro(end), 'Roteiro + OSM');
             showToast('Coordenadas aplicadas', 'Localização marcada no mapa.', 'success', 2500);
-            recolherCard('resultsPanel');
             expandirCard('formPanel');
             irParaCard('formPanel');
         });
