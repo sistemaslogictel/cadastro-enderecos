@@ -1485,12 +1485,13 @@ tr.linha-ia .btn-ir {
 #surveysTable {
     table-layout: fixed;
     width: 100%;
-    font-size: 0.78rem;
+    min-width: 760px; /* evita que as colunas fiquem espremidas; o .table-wrapper rola na horizontal se precisar */
+    font-size: 0.72rem;
 }
 
 #surveysTable th,
 #surveysTable td {
-    padding: 8px 8px;
+    padding: 6px 6px;
     vertical-align: middle;
     overflow: hidden;
     text-overflow: ellipsis;
@@ -1498,31 +1499,32 @@ tr.linha-ia .btn-ir {
 }
 
 #surveysTable th {
-    font-size: 0.66rem;
-    letter-spacing: 0.03em;
+    font-size: 0.6rem;
+    letter-spacing: 0.02em;
 }
 
 #surveysTable td.mono {
     font-family: var(--font-mono);
-    font-size: 0.72rem;
+    font-size: 0.68rem;
 }
 
-/* Coluna de ações — botões compactos */
+/* Coluna de ações — botões com espaço suficiente para os ícones */
 #surveysTable .acoes-cell {
     display: flex;
-    gap: 3px;
+    gap: 6px;
     justify-content: center;
     align-items: center;
     white-space: nowrap;
+    overflow: visible;
 }
 
 #surveysTable .acoes-cell button {
-    padding: 4px 6px !important;
-    font-size: 0.72rem !important;
+    padding: 4px !important;
+    font-size: 1rem !important;
     line-height: 1;
-    border-radius: 5px !important;
-    min-width: 26px;
-    height: 26px;
+    border-radius: 6px !important;
+    min-width: 32px;
+    height: 32px;
     display: inline-flex;
     align-items: center;
     justify-content: center;

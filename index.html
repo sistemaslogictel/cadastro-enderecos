@@ -414,13 +414,13 @@
                         <div class="table-wrapper">
                             <table id="surveysTable">
                                 <colgroup>
-                                    <col style="width: 22%;">
-                                    <col style="width: 8%;">
-                                    <col style="width: 26%;">
+                                    <col style="width: 24%;">
+                                    <col style="width: 6%;">
+                                    <col style="width: 20%;">
+                                    <col style="width: 13%;">
+                                    <col style="width: 13%;">
+                                    <col style="width: 10%;">
                                     <col style="width: 14%;">
-                                    <col style="width: 14%;">
-                                    <col style="width: 8%;">
-                                    <col style="width: 8%;">
                                 </colgroup>
                                 <thead>
                                     <tr>
@@ -564,7 +564,13 @@
 
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-    <script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
+    <script src="vendor/jszip.min.js"></script>
+    <script>
+        // Fallback: se o arquivo local não carregar por algum motivo, tenta o CDN
+        if (typeof JSZip === 'undefined') {
+            document.write('<script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"><\/script>');
+        }
+    </script>
     <script src="supabase-config.js"></script>
     <script src="script.js"></script>
 </body>
