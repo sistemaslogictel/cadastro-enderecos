@@ -1210,6 +1210,7 @@ function gerarXMLEdificio(survey, logradouro, numero) {
     const localidade = (l.localidade || l.cidade || '').toString().toUpperCase();
     const numeroFachada = (survey.numero || 'SN').toString().toUpperCase();
     const cep = (l.cep || '').toString().replace(/\D/g, '');
+    const codBairro = (l.cod_bairro || '').toString().trim();
     const idRoteiro = l.id_roteiro || l._registro_id || '';
     const idLocalidade = l.id_localidade || '';
     const numPisos = survey.pisos && !isNaN(parseInt(survey.pisos, 10))
@@ -1249,6 +1250,7 @@ function gerarXMLEdificio(survey, logradouro, numero) {
     xml += '    ' + tag('numero_fachada', numeroFachada) + '\n';
     xml += blocoComplementos;
     xml += '    ' + tag('cep', cep) + '\n';
+    xml += '    ' + tag('cod_bairro', codBairro) + '\n';
     xml += '    ' + tag('bairro', bairro) + '\n';
     xml += '    ' + tag('id_roteiro', idRoteiro) + '\n';
     xml += '    ' + tag('id_localidade', idLocalidade) + '\n';
