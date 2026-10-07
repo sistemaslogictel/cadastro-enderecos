@@ -18,8 +18,12 @@ const COORD_DEFAULT_FALLBACK = {
 // ============================================
 // TÉCNICO FIXO (padrão do XML)
 // ============================================
-const TECNICO_FIXO_ID = '';
-const TECNICO_FIXO_NOME = 'Osvaldo Miguel Magalhães';
+const TECNICO_FIXO_ID = '183330161';
+const TECNICO_FIXO_NOME = 'Samuel da Silva Guimaraes';
+
+// Atributo fixo exigido pelo site de destino na tag raiz <edificio>.
+// Se precisar trocar no futuro, mude só aqui.
+const AUTORIZACAO_FIXA = '5590eeaed0604e85ba7a72fe5dc92e1e';
 
 // ============================================
 // TABELA DE IDS DE COMPLEMENTO
@@ -781,6 +785,55 @@ function renderizarOpcoesOSM(opcoes, end) {
 }
 
 // ============================================
+// ZONA — AUTOCOMPLETE (sugere zonas já usadas) + GRAVAÇÃO NO BANCO
+// ============================================
+let _zonaBuscaTimer = null;
+
+async function buscarZonasSugeridas(prefixo) {
+    if (!window.supabaseClient || !prefixo) return;
+    try {
+        const { data, error } = await supabaseClient
+            .from('zonas')
+            .select('codigo')
+            .ilike('codigo', prefixo + '%')
+            .order('codigo', { ascending: true })
+            .limit(10);
+
+        if (error) { console.error('[ZONA] erro ao buscar sugestões:', error); return; }
+
+        const datalist = document.getElementById('zonaDatalist');
+        if (!datalist) return;
+        datalist.innerHTML = '';
+        (data || []).forEach(row => {
+            const opt = document.createElement('option');
+            opt.value = row.codigo;
+            datalist.appendChild(opt);
+        });
+    } catch (err) {
+        console.error('[ZONA] erro inesperado ao buscar sugestões:', err);
+    }
+}
+
+async function salvarZonaNoBanco(codigo) {
+    if (!window.supabaseClient || !codigo) return;
+    try {
+        const { error } = await supabaseClient
+            .from('zonas')
+            .upsert({ codigo: codigo }, { onConflict: 'codigo', ignoreDuplicates: true });
+        if (error) console.error('[ZONA] erro ao salvar no banco:', error);
+    } catch (err) {
+        console.error('[ZONA] erro inesperado ao salvar no banco:', err);
+    }
+}
+
+document.getElementById('zonaInput')?.addEventListener('input', (e) => {
+    const valor = e.target.value.trim().toUpperCase();
+    clearTimeout(_zonaBuscaTimer);
+    if (valor.length < 2) return;
+    _zonaBuscaTimer = setTimeout(() => buscarZonasSugeridas(valor), 250);
+});
+
+// ============================================
 // ADICIONAR AO SURVEY / SALVAR EDIÇÃO
 // ============================================
 document.getElementById('addBtn').addEventListener('click', async () => {
@@ -793,6 +846,8 @@ document.getElementById('addBtn').addEventListener('click', async () => {
     if (!numero) { showToast('Número obrigatório', 'Informe o Nº da fachada.', 'warning'); return; }
 
     const pisos = (document.getElementById('pisosInput')?.value || '').trim();
+    const zona = (document.getElementById('zonaInput')?.value || '').trim().toUpperCase();
+    if (zona) salvarZonaNoBanco(zona); // grava/atualiza no histórico de zonas (não bloqueia o salvamento)
 
     const comp1Tipo = document.getElementById('comp1Tipo').value;
     const comp1Valor = document.getElementById('comp1Valor').value.trim();
@@ -817,6 +872,7 @@ document.getElementById('addBtn').addEventListener('click', async () => {
         s.logradouro = { ...enderecoBaseSelecionado };
         s.numero = numero;
         s.pisos = pisos || null;
+        s.zona = zona || null;
         s.complementos = complementos;
         s.latitude = lat;
         s.longitude = lng;
@@ -824,7 +880,7 @@ document.getElementById('addBtn').addEventListener('click', async () => {
 
         showToast('Edição salva', 'Survey atualizado.', 'success', 2500);
 
-        ['numeroInput','pisosInput','comp1Tipo','comp1Valor','comp2Tipo','comp2Valor','comp3Tipo','comp3Valor'].forEach(id => {
+        ['numeroInput','pisosInput','zonaInput','comp1Tipo','comp1Valor','comp2Tipo','comp2Valor','comp3Tipo','comp3Valor'].forEach(id => {
             const el = document.getElementById(id);
             if (el) el.value = '';
         });
@@ -842,6 +898,7 @@ document.getElementById('addBtn').addEventListener('click', async () => {
         logradouro: { ...enderecoBaseSelecionado },
         numero: numero,
         pisos: pisos || null,
+        zona: zona || null,
         complementos: complementos,
         latitude: lat,
         longitude: lng,
@@ -859,6 +916,7 @@ document.getElementById('addBtn').addEventListener('click', async () => {
 
     limpar('numeroInput', 'numeroRecorrente');
     limpar('pisosInput', 'pisosRecorrente');
+    limpar('zonaInput', 'zonaRecorrente');
     limpar('comp1Tipo', 'comp1Recorrente');
     limpar('comp1Valor', 'comp1Recorrente');
     limpar('comp2Tipo', 'comp2Recorrente');
@@ -890,6 +948,7 @@ function abrirEdicaoSurvey(idx) {
 
     setH('numeroInput', s.numero || '');
     setH('pisosInput', s.pisos || '');
+    setH('zonaInput', s.zona || '');
 
     const comps = Array.isArray(s.complementos) ? s.complementos : [];
     setH('comp1Tipo', comps[0] ? comps[0].tipo : '');
@@ -1142,12 +1201,16 @@ document.getElementById('exportBtn')?.addEventListener('click', async () => {
 });
 
 // ============================================
-// GERAR XML NO FORMATO "edificio"
-// - Tags vazias SEMPRE com forma longa: <tag></tag> (nunca <tag/>)
-// - Complementos vazios são OMITIDOS (renumerados em sequência)
-// - <id> do endereço e <id> do técnico sempre vazios
-// - <codigoZona> e <nomeZona> sempre "Neutra"
+// GERAR XML NO FORMATO "edificio" (padrão CE Mobile, o que o site aceita)
+// - <?xml ...?> com aspas simples, standalone='yes', em linha própria
+// - Quebras de linha CRLF, sem linha em branco no final do arquivo
+// - Tag raiz <edificio> leva xmlns + autorizacao fixos (AUTORIZACAO_FIXA)
+// - <idCEMobile> = número sequencial da moradia (pasta moradiaN -> N)
+// - <logradouro> é só "TIPO NOME", sem concatenar bairro/cidade/UF
+// - Não existe <id> vazio em lugar nenhum (nem endereco, nem técnico)
+// - <codigoZona>/<nomeZona> vêm do campo "Zona" digitado no formulário
 // - <tecnico> hardcoded (TECNICO_FIXO_ID / TECNICO_FIXO_NOME)
+// - Complementos vazios são OMITIDOS (renumerados em sequência)
 // ============================================
 function gerarXMLEdificio(survey, logradouro, numero) {
     const l = logradouro || {};
@@ -1180,20 +1243,18 @@ function gerarXMLEdificio(survey, logradouro, numero) {
     const dataFormatada = `${agora.getFullYear()}${pad(agora.getMonth() + 1)}${pad(agora.getDate())}` +
                           `${pad(agora.getHours())}${pad(agora.getMinutes())}${pad(agora.getSeconds())}`;
 
-    // --- logradouro completo (formato já validado) ---
+    // --- logradouro: só tipo + nome da rua, sem concatenar bairro/cidade/UF ---
     const tipo = (l.tipo || 'Rua').toString().toUpperCase();
     const nomeLograd = (l.rua || '').toString().toUpperCase();
     const bairro = (l.bairro || '').toString().toUpperCase();
-    const municipio = (l.cidade || l.localidade || '').toString().toUpperCase();
-    const uf = (l.estado || '').toString().toUpperCase();
+    const localidade = (l.localidade || l.cidade || '').toString().toUpperCase();
     const codLograd = l.cod_lograd || l.id_roteiro || '0';
+    const logradouroSimples = `${tipo} ${nomeLograd}`.trim();
 
-    const logradouroCompleto = `${tipo} ${nomeLograd}, ${bairro}, ${municipio}, ${municipio} - ${uf} (${codLograd})`;
-
-    // --- coordenadas: mantém a precisão original, sem arredondar ---
+    // --- coordenadas: sempre com 6 casas decimais, como no app oficial ---
     const fmtCoord = (v) => {
         if (v === null || v === undefined || v === '' || isNaN(Number(v))) return '';
-        return String(Number(v)); // ex.: -22.8922151  /  -42.360462
+        return Number(v).toFixed(6);
     };
 
     const lat = survey.latitude != null ? survey.latitude : (l.lat != null ? l.lat : null);
@@ -1202,15 +1263,13 @@ function gerarXMLEdificio(survey, logradouro, numero) {
     const coordX = fmtCoord(lng); // longitude
     const coordY = fmtCoord(lat); // latitude
 
-    // --- valores fixos / do roteiro ---
-    const nEdificio = '';                 // SEMPRE vazio
-    const idEdificio = '';                // SEMPRE vazio
-    const codigoZona = 'Neutra';
-    const nomeZona = 'Neutra';
-    const localidade = (l.localidade || l.cidade || '').toString().toUpperCase();
+    // --- zona: vem do que foi digitado no formulário (campo "Zona") ---
+    const zona = (survey.zona || '').toString().trim();
+
+    // --- demais valores do roteiro ---
+    const idCEMobile = numero != null ? String(numero) : '';
     const numeroFachada = (survey.numero || 'SN').toString().toUpperCase();
     const cep = (l.cep || '').toString().replace(/\D/g, '');
-    const codBairro = (l.cod_bairro || '').toString().trim();
     const idRoteiro = l.id_roteiro || l._registro_id || '';
     const idLocalidade = l.id_localidade || '';
     const numPisos = survey.pisos && !isNaN(parseInt(survey.pisos, 10))
@@ -1230,46 +1289,45 @@ function gerarXMLEdificio(survey, logradouro, numero) {
     let blocoComplementos = '';
     compsValidos.forEach((c, i) => {
         const n = i + 1;
-        blocoComplementos += '    ' + tag('id_complemento' + n, getIdComplemento(c.tipo)) + '\n';
-        blocoComplementos += '    ' + tag('argumento' + n, c.valor) + '\n';
+        blocoComplementos += '    ' + tag('id_complemento' + n, getIdComplemento(c.tipo)) + '\r\n';
+        blocoComplementos += '    ' + tag('argumento' + n, c.valor) + '\r\n';
     });
 
-    // --- monta o XML ---
+    // --- monta o XML (CRLF, igual ao arquivo que o site aceita) ---
     let xml = '';
-    xml += '<?xml version="1.0" encoding="UTF-8"?><edificio tipo="M" versao="7.9.2">\n';
-    xml += '  ' + tag('gravado', 'false') + '\n';
-    xml += '  ' + tag('nEdificio', nEdificio) + '\n';
-    xml += '  ' + tag('coordX', coordX) + '\n';
-    xml += '  ' + tag('coordY', coordY) + '\n';
-    xml += '  ' + tag('codigoZona', codigoZona) + '\n';
-    xml += '  ' + tag('nomeZona', nomeZona) + '\n';
-    xml += '  ' + tag('localidade', localidade) + '\n';
-    xml += '  <enderecoEdificio>\n';
-    xml += '    ' + tag('id', idEdificio) + '\n';
-    xml += '    ' + tag('logradouro', logradouroCompleto) + '\n';
-    xml += '    ' + tag('numero_fachada', numeroFachada) + '\n';
+    xml += "<?xml version='1.0' encoding='UTF-8' standalone='yes' ?>\r\n";
+    xml += `<edificio xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:xsd="http://www.w3.org/2001/XMLSchema" versao="7.9.2" autorizacao="${AUTORIZACAO_FIXA}" tipo="M">\r\n`;
+    xml += '  ' + tag('gravado', 'false') + '\r\n';
+    xml += '  ' + tag('idCEMobile', idCEMobile) + '\r\n';
+    xml += '  ' + tag('coordX', coordX) + '\r\n';
+    xml += '  ' + tag('coordY', coordY) + '\r\n';
+    xml += '  ' + tag('codigoZona', zona) + '\r\n';
+    xml += '  ' + tag('nomeZona', zona) + '\r\n';
+    xml += '  ' + tag('localidade', localidade) + '\r\n';
+    xml += '  <enderecoEdificio>\r\n';
+    xml += '    ' + tag('logradouro', logradouroSimples) + '\r\n';
+    xml += '    ' + tag('numero_fachada', numeroFachada) + '\r\n';
     xml += blocoComplementos;
-    xml += '    ' + tag('cep', cep) + '\n';
-    xml += '    ' + tag('cod_bairro', codBairro) + '\n';
-    xml += '    ' + tag('bairro', bairro) + '\n';
-    xml += '    ' + tag('id_roteiro', idRoteiro) + '\n';
-    xml += '    ' + tag('id_localidade', idLocalidade) + '\n';
-    xml += '    ' + tag('cod_lograd', codLograd) + '\n';
-    xml += '  </enderecoEdificio>\n';
-    xml += '  <tecnico>\n';
-    xml += '    ' + tag('id', TECNICO_FIXO_ID) + '\n';
-    xml += '    ' + tag('nome', TECNICO_FIXO_NOME) + '\n';
-    xml += '  </tecnico>\n';
-    xml += '  <empresa>\n';
-    xml += '    ' + tag('id', '6') + '\n';
-    xml += '    ' + tag('nome', 'LOGICTEL') + '\n';
-    xml += '  </empresa>\n';
-    xml += '  ' + tag('data', dataFormatada) + '\n';
-    xml += '  ' + tag('totalUCs', '1') + '\n';
-    xml += '  ' + tag('ocupacao', 'EDIFICACAOCOMPLETA') + '\n';
-    xml += '  ' + tag('numPisos', numPisos) + '\n';
-    xml += '  ' + tag('destinacao', 'RESIDENCIA') + '\n';
-    xml += '</edificio>\n';
+    xml += '    ' + tag('cep', cep) + '\r\n';
+    xml += '    ' + tag('bairro', bairro) + '\r\n';
+    xml += '    ' + tag('id_roteiro', idRoteiro) + '\r\n';
+    xml += '    ' + tag('id_localidade', idLocalidade) + '\r\n';
+    xml += '    ' + tag('cod_lograd', codLograd) + '\r\n';
+    xml += '  </enderecoEdificio>\r\n';
+    xml += '  <tecnico>\r\n';
+    xml += '    ' + tag('id', TECNICO_FIXO_ID) + '\r\n';
+    xml += '    ' + tag('nome', TECNICO_FIXO_NOME) + '\r\n';
+    xml += '  </tecnico>\r\n';
+    xml += '  <empresa>\r\n';
+    xml += '    ' + tag('id', '6') + '\r\n';
+    xml += '    ' + tag('nome', 'LOGICTEL') + '\r\n';
+    xml += '  </empresa>\r\n';
+    xml += '  ' + tag('data', dataFormatada) + '\r\n';
+    xml += '  ' + tag('totalUCs', '1') + '\r\n';
+    xml += '  ' + tag('ocupacao', 'EDIFICACAOCOMPLETA') + '\r\n';
+    xml += '  ' + tag('numPisos', numPisos) + '\r\n';
+    xml += '  ' + tag('destinacao', 'RESIDENCIA') + '\r\n';
+    xml += '</edificio>'; // sem quebra de linha no final, igual ao arquivo original
 
     // passada final de segurança contra qualquer <tag/>
     return expandirAutoFechadas(xml);

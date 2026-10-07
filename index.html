@@ -208,6 +208,18 @@
                             </div>
                         </div>
 
+                        <div class="field-group">
+                            <div class="field-header">
+                                <label for="zonaInput">Zona</label>
+                                <label class="check-inline">
+                                    <input type="checkbox" id="zonaRecorrente">
+                                    <span>Recorrência</span>
+                                </label>
+                            </div>
+                            <input type="text" id="zonaInput" list="zonaDatalist" placeholder="Ex.: PR_FZR_FZAB_001" autocomplete="off">
+                            <datalist id="zonaDatalist"></datalist>
+                        </div>
+
                         <!-- Complemento 1 -->
                         <div class="field-group field-comp">
                             <div class="comp-grid">
@@ -414,12 +426,12 @@
                         <div class="table-wrapper">
                             <table id="surveysTable">
                                 <colgroup>
-                                    <col style="width: 24%;">
+                                    <col style="width: 25%;">
                                     <col style="width: 6%;">
-                                    <col style="width: 20%;">
                                     <col style="width: 13%;">
                                     <col style="width: 13%;">
-                                    <col style="width: 10%;">
+                                    <col style="width: 13%;">
+                                    <col style="width: 16%;">
                                     <col style="width: 14%;">
                                 </colgroup>
                                 <thead>
