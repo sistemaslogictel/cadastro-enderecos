@@ -958,22 +958,6 @@ document.getElementById('addBtn').addEventListener('click', async () => {
 
     renderizarSurveys();
 
-    // Fachada SN com recorrência e nenhum outro campo variável (pisos/complementos) recorrente:
-    // pergunta a quantidade e cadastra tudo como SN
-    const chk = (id) => document.getElementById(id)?.checked;
-    const soSN = chk('numeroRecorrente') && numero.toUpperCase() === 'SN' &&
-        !chk('pisosRecorrente') && !chk('comp1Recorrente') && !chk('comp2Recorrente') && !chk('comp3Recorrente');
-    if (soSN) {
-        _iaJaDisparou = true;
-        iaPendencia = { tipo: 'sn', quantidade: 1, descricao: 'SN', campo: null, ultimoValor: null, delta: null,
-                        ultimos: [surveysMemoria[surveysMemoria.length - 1]] };
-        abrirChatIA();
-        setTimeout(() => {
-            escreverMensagemIA('Fachada <strong>SN</strong> com recorrência. Informe quantas residências <strong>SN</strong> devo cadastrar.');
-            perguntarQuantidade();
-        }, 600);
-        return;
-    }
     verificarIAAutomatica();
 });
 
@@ -2001,6 +1985,25 @@ function encontrarPadrao(lista) {
                 ultimos: ultimos
             };
         }
+    }
+
+    // 5 últimos só com fachada SN (sem pisos/complementos): cria tudo como SN
+    const soSN = ultimos.every(s =>
+        String(s.numero || '').trim().toUpperCase() === 'SN' &&
+        !s.pisos &&
+        !(s.complementos || []).some(c => c && (c.tipo || c.valor))
+    );
+    if (soSN) {
+        return {
+            tipo: 'sn',
+            quantidade: 5,
+            descricao: 'fachadas SN',
+            enderecoResumo: `${l0.tipo || ''} ${l0.rua}, ${l0.bairro || ''}`.trim(),
+            campo: 'numero',
+            ultimoValor: null,
+            delta: null,
+            ultimos: ultimos
+        };
     }
 
     const numComps = Math.max(...ultimos.map(s => (s.complementos || []).length));
