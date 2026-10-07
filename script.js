@@ -217,6 +217,25 @@ const houseIconIA = L.divIcon({
     iconSize: [14, 18], iconAnchor: [7, 18], popupAnchor: [0, -18]
 });
 
+// Casinha VERMELHA = posição ainda não cadastrada (pendente)
+const houseIconPendente = L.divIcon({
+    className: 'house-marker',
+    html: houseSVG.replace(/#2a4fd6/g, '#dc2626').replace(/#1e3c72/g, '#991b1b'),
+    iconSize: [14, 18], iconAnchor: [7, 18], popupAnchor: [0, -18]
+});
+
+// Remove a casinha vermelha; a azul fixa vem de renderizarMarcadoresSurveys()
+function fixarMarcadorPendente() {
+    if (marcadorAtual) { map.removeLayer(marcadorAtual); marcadorAtual = null; }
+}
+
+// Linha com os IDs do roteiro (cod_lograd / id_roteiro / id_localidade)
+function idsRoteiroHtml(o) {
+    o = o || {};
+    const v = (x) => (x === null || x === undefined || x === '') ? '—' : escapeHtml(String(x));
+    return `<small style="display:block;color:var(--text-tertiary);">cod_lograd: ${v(o.cod_lograd)} • id_roteiro: ${v(o.id_roteiro)} • id_localidade: ${v(o.id_localidade)}</small>`;
+}
+
 // ============================================
 // HELPERS DE CARD
 // ============================================
@@ -488,7 +507,7 @@ function renderizarSugestoes(lista, query) {
         div.className = 'suggestion-item';
         const texto = formatarTextoLogradouro(r);
         div.innerHTML = `<span class="suggestion-icon">&#128220;</span>
-            <span class="suggestion-text"><strong>Roteiro:</strong> ${escapeHtml(texto)}</span>`;
+            <span class="suggestion-text"><strong>Roteiro:</strong> ${escapeHtml(texto)}${idsRoteiroHtml(r)}</span>`;
         div.addEventListener('click', () => {
             searchInput.value = texto;
             suggestionsBox.style.display = 'none';
@@ -527,7 +546,7 @@ document.getElementById('searchBtn').addEventListener('click', () => {
 function irParaLocal(lat, lng, nome, origem) {
     map.setView([lat, lng], 17);
     if (marcadorAtual) map.removeLayer(marcadorAtual);
-    marcadorAtual = L.marker([lat, lng], { icon: houseIcon, draggable: false }).addTo(map);
+    marcadorAtual = L.marker([lat, lng], { icon: houseIconPendente, draggable: false }).addTo(map);
     marcadorAtual.bindPopup(`<strong>${escapeHtml(nome)}</strong>`).openPopup();
     document.getElementById('coordsDisplay').textContent = `${lat.toFixed(8)}, ${lng.toFixed(8)}`;
     document.getElementById('origemDisplay').textContent = `Roteiro (${origem || 'logradouro'})`;
@@ -575,7 +594,7 @@ map.on('contextmenu', (e) => {
     e.originalEvent.preventDefault();
     const { lat, lng } = e.latlng;
     if (marcadorAtual) map.removeLayer(marcadorAtual);
-    marcadorAtual = L.marker([lat, lng], { icon: houseIcon }).addTo(map);
+    marcadorAtual = L.marker([lat, lng], { icon: houseIconPendente }).addTo(map);
     marcadorAtual.bindPopup(`Ponto marcado<br>${lat.toFixed(8)}, ${lng.toFixed(8)}`).openPopup();
     document.getElementById('coordsDisplay').textContent = `${lat.toFixed(8)}, ${lng.toFixed(8)}`;
     document.getElementById('origemDisplay').textContent = 'Clique no mapa (botão direito)';
@@ -684,6 +703,7 @@ async function selecionarParaSurvey(r) {
                 <p class="endereco-base-linha1">${escapeHtml(linha1)}</p>
                 <p class="endereco-base-linha2">${escapeHtml(linha2)}</p>
                 ${linha3 ? `<p class="endereco-base-linha3">${escapeHtml(linha3)}</p>` : ''}
+                ${idsRoteiroHtml(enderecoBaseSelecionado)}
             </div>
         `;
     }
@@ -755,7 +775,7 @@ function renderizarOpcoesOSM(opcoes, end) {
         const tr = document.createElement('tr');
         tr.innerHTML = `
             <td><span class="fonte-badge">OSM</span></td>
-            <td>${escapeHtml(o.rua || '—')}</td>
+            <td>${escapeHtml(o.rua || '—')}${idsRoteiroHtml(end)}</td>
             <td>${escapeHtml(o.bairro || '—')}</td>
             <td>${escapeHtml([o.cidade, o.estado].filter(Boolean).join('/') || '—')}</td>
             <td><button class="btn-usar-fonte" data-idx="${idx}" type="button">Usar esta</button></td>
@@ -847,7 +867,13 @@ document.getElementById('addBtn').addEventListener('click', async () => {
 
     const pisos = (document.getElementById('pisosInput')?.value || '').trim();
     const zona = (document.getElementById('zonaInput')?.value || '').trim().toUpperCase();
-    if (zona) salvarZonaNoBanco(zona); // grava/atualiza no histórico de zonas (não bloqueia o salvamento)
+    if (!zona) {
+        showToast('Zona obrigatória', 'Preencha o campo Zona para cadastrar o survey.', 'warning', 4000);
+        document.getElementById('zonaInput')?.focus();
+        return;
+    }
+    salvarZonaNoBanco(zona); // grava/atualiza no histórico de zonas
+    const obs = (document.getElementById('obsInput')?.value || '').trim();
 
     const comp1Tipo = document.getElementById('comp1Tipo').value;
     const comp1Valor = document.getElementById('comp1Valor').value.trim();
@@ -873,6 +899,7 @@ document.getElementById('addBtn').addEventListener('click', async () => {
         s.numero = numero;
         s.pisos = pisos || null;
         s.zona = zona || null;
+        s.observacoes = obs || null;
         s.complementos = complementos;
         s.latitude = lat;
         s.longitude = lng;
@@ -880,12 +907,13 @@ document.getElementById('addBtn').addEventListener('click', async () => {
 
         showToast('Edição salva', 'Survey atualizado.', 'success', 2500);
 
-        ['numeroInput','pisosInput','zonaInput','comp1Tipo','comp1Valor','comp2Tipo','comp2Valor','comp3Tipo','comp3Valor'].forEach(id => {
+        ['numeroInput','pisosInput','zonaInput','obsInput','comp1Tipo','comp1Valor','comp2Tipo','comp2Valor','comp3Tipo','comp3Valor'].forEach(id => {
             const el = document.getElementById(id);
             if (el) el.value = '';
         });
 
         cancelarEdicaoSurvey();
+        fixarMarcadorPendente();
         renderizarSurveys();
         return;
     }
@@ -899,6 +927,7 @@ document.getElementById('addBtn').addEventListener('click', async () => {
         numero: numero,
         pisos: pisos || null,
         zona: zona || null,
+        observacoes: obs || null,
         complementos: complementos,
         latitude: lat,
         longitude: lng,
@@ -917,6 +946,7 @@ document.getElementById('addBtn').addEventListener('click', async () => {
     limpar('numeroInput', 'numeroRecorrente');
     limpar('pisosInput', 'pisosRecorrente');
     limpar('zonaInput', 'zonaRecorrente');
+    limpar('obsInput', 'obsRecorrente');
     limpar('comp1Tipo', 'comp1Recorrente');
     limpar('comp1Valor', 'comp1Recorrente');
     limpar('comp2Tipo', 'comp2Recorrente');
@@ -924,7 +954,26 @@ document.getElementById('addBtn').addEventListener('click', async () => {
     limpar('comp3Tipo', 'comp3Recorrente');
     limpar('comp3Valor', 'comp3Recorrente');
 
+    fixarMarcadorPendente(); // casinha vermelha vira azul fixa
+
     renderizarSurveys();
+
+    // Fachada SN com recorrência e nenhum outro campo variável (pisos/complementos) recorrente:
+    // pergunta a quantidade e cadastra tudo como SN
+    const chk = (id) => document.getElementById(id)?.checked;
+    const soSN = chk('numeroRecorrente') && numero.toUpperCase() === 'SN' &&
+        !chk('pisosRecorrente') && !chk('comp1Recorrente') && !chk('comp2Recorrente') && !chk('comp3Recorrente');
+    if (soSN) {
+        _iaJaDisparou = true;
+        iaPendencia = { tipo: 'sn', quantidade: 1, descricao: 'SN', campo: null, ultimoValor: null, delta: null,
+                        ultimos: [surveysMemoria[surveysMemoria.length - 1]] };
+        abrirChatIA();
+        setTimeout(() => {
+            escreverMensagemIA('Fachada <strong>SN</strong> com recorrência. Informe quantas residências <strong>SN</strong> devo cadastrar.');
+            perguntarQuantidade();
+        }, 600);
+        return;
+    }
     verificarIAAutomatica();
 });
 
@@ -949,6 +998,7 @@ function abrirEdicaoSurvey(idx) {
     setH('numeroInput', s.numero || '');
     setH('pisosInput', s.pisos || '');
     setH('zonaInput', s.zona || '');
+    setH('obsInput', s.observacoes || '');
 
     const comps = Array.isArray(s.complementos) ? s.complementos : [];
     setH('comp1Tipo', comps[0] ? comps[0].tipo : '');
@@ -973,6 +1023,7 @@ function abrirEdicaoSurvey(idx) {
                 <span class="fonte-badge" style="background:var(--warning);">✏️ Editando</span>
                 <p class="endereco-base-linha1">${escapeHtml(linha1)}</p>
                 <p class="endereco-base-linha2">${escapeHtml(linha2)}</p>
+                ${idsRoteiroHtml(l)}
             </div>
         `;
     }
@@ -1323,6 +1374,8 @@ function gerarXMLEdificio(survey, logradouro, numero) {
     xml += '    ' + tag('nome', 'LOGICTEL') + '\r\n';
     xml += '  </empresa>\r\n';
     xml += '  ' + tag('data', dataFormatada) + '\r\n';
+    const obsTxt = (survey.observacoes || '').toString().trim();
+    if (obsTxt) xml += '  ' + tag('observacoes', obsTxt) + '\r\n';
     xml += '  ' + tag('totalUCs', '1') + '\r\n';
     xml += '  ' + tag('ocupacao', 'EDIFICACAOCOMPLETA') + '\r\n';
     xml += '  ' + tag('numPisos', numPisos) + '\r\n';
@@ -2058,7 +2111,7 @@ function gerarSequenciaIA(quantidade) {
     expandirCard('listPanel');
 
     escreverMensagemIA(
-        `✅ Pronto! Criei <strong>${criados} novos surveys</strong> continuando o padrão.<br><br>
+        `✅ Pronto! Criei <strong>${criados} novos surveys</strong>${pad.tipo === 'sn' ? ' como <strong>SN</strong>' : ' continuando o padrão'}.<br><br>
         Eles aparecem na lista com <strong>fundo verde</strong> e a etiqueta <strong>🤖 IA</strong> para você diferenciar.`
     );
 
