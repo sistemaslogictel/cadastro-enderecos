@@ -725,11 +725,33 @@ function montarTextoLogradouro(end) {
 // ============================================
 // OSM
 // ============================================
-async function buscarOpcoesOSM(end) {
-    const partes = [end.rua, end.bairro, end.cidade, end.estado].filter(Boolean);
-    const query = partes.join(', ');
-    if (!query) return [];
+const _ABREV_OSM = {
+    'N': 'Nossa', 'NS': 'Nossa Senhora', 'NSRA': 'Nossa Senhora', 'SRA': 'Senhora', 'SRA.': 'Senhora',
+    'SR': 'Senhor', 'STA': 'Santa', 'STO': 'Santo', 'S': 'São', 'SAO': 'São',
+    'DR': 'Doutor', 'DRA': 'Doutora', 'PROF': 'Professor', 'PROFA': 'Professora',
+    'CEL': 'Coronel', 'CAP': 'Capitão', 'TEN': 'Tenente', 'SGT': 'Sargento', 'GEN': 'General',
+    'MAL': 'Marechal', 'ALM': 'Almirante', 'PRES': 'Presidente', 'GOV': 'Governador',
+    'DEP': 'Deputado', 'VER': 'Vereador', 'ENG': 'Engenheiro', 'PE': 'Padre', 'PDE': 'Padre',
+    'DOM': 'Dom', 'FREI': 'Frei', 'CONS': 'Conselheiro', 'COM': 'Comendador', 'MON': 'Monsenhor', 'MONS': 'Monsenhor'
+};
 
+function _semAcento(t) {
+    return String(t || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+}
+
+function expandirAbreviacoesRua(rua) {
+    const toks = String(rua || '').replace(/\./g, ' ').split(/\s+/).filter(Boolean);
+    const out = toks.map((t, i) => {
+        const k = _semAcento(t).toUpperCase();
+        // "S" isolado só vira "São" quando não é a última palavra (evita "Rua S")
+        if (k === 'S' && i === toks.length - 1) return t;
+        return _ABREV_OSM[k] || t;
+    });
+    return out.join(' ');
+}
+
+async function _nominatim(query) {
+    if (!query) return [];
     try {
         const url = `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(query)}&addressdetails=1&limit=8&accept-language=pt-BR&countrycodes=br`;
         const res = await fetch(url, { headers: { 'Accept': 'application/json' } });
@@ -752,6 +774,42 @@ async function buscarOpcoesOSM(end) {
         console.warn('[OSM] erro:', err);
         return [];
     }
+}
+
+async function buscarOpcoesOSM(end) {
+    const ruaOrig = (end.rua || '').trim();
+    const ruaExp = expandirAbreviacoesRua(ruaOrig);
+    const tipo = (end.tipo || '').trim();
+    const cidadeUf = [end.cidade, end.estado].filter(Boolean);
+
+    // Tentativas em ordem; usa a primeira que traga uma via compatível com o nome
+    const tentativas = [
+        [ruaOrig, end.bairro, ...cidadeUf],                                   // comportamento original
+        [(tipo + ' ' + ruaExp).trim(), end.bairro, ...cidadeUf],              // abreviações expandidas
+        [ruaExp, ...cidadeUf],                                                // sem bairro
+        [(tipo + ' ' + ruaExp).trim(), ...cidadeUf]
+    ].map(p => p.filter(Boolean).join(', '))
+     .filter((q, i, arr) => q && arr.indexOf(q) === i);
+
+    if (!tentativas.length) return [];
+
+    const stop = new Set(['DE', 'DA', 'DO', 'DAS', 'DOS', 'E']);
+    const tokens = _semAcento(ruaExp).toUpperCase().split(/\s+/).filter(t => t && !stop.has(t));
+    const compativel = (o) => {
+        const road = _semAcento(o.rua).toUpperCase();
+        return road && tokens.every(t => road.includes(t));
+    };
+
+    let primeiraNaoVazia = null;
+    for (const q of tentativas) {
+        const r = await _nominatim(q);
+        if (r.length && !primeiraNaoVazia) primeiraNaoVazia = r;
+        if (r.some(compativel)) {
+            // coloca as vias compatíveis primeiro
+            return [...r.filter(compativel), ...r.filter(o => !compativel(o))];
+        }
+    }
+    return primeiraNaoVazia || [];
 }
 
 function renderizarOpcoesOSM(opcoes, end) {
@@ -1464,28 +1522,19 @@ document.getElementById('uploadBtn')?.addEventListener('click', async () => {
                 .join('|');
 
         const { data: existentes, error: errBusca } = await supabaseClient
-            .from('logradouros').select('logradouro, bairro, municipio, uf, cep')
+            .from('logradouros').select('id, logradouro, bairro, municipio, uf, cep')
             .eq('origem', 'Roteiro XML');
         if (errBusca) throw errBusca;
 
-        const chavesExistentes = new Set((existentes || []).map(chaveDe));
-        const chavesNovas = new Set();
-        const novos = normalizados.filter(r => {
-            const k = chaveDe(r);
-            if (chavesExistentes.has(k)) return false;
-            if (chavesNovas.has(k)) return false;
-            chavesNovas.add(k);
-            return true;
-        });
+        // Duplicados dentro do arquivo: vale a ÚLTIMA linha
+        const porChave = new Map();
+        normalizados.forEach(r => porChave.set(chaveDe(r), r));
+        const novos = Array.from(porChave.values());
 
-        const ignorados = normalizados.length - novos.length;
-
-        if (novos.length === 0) {
-            status.textContent = `Nada novo para importar (${ignorados} duplicado(s) ignorado(s)).`;
-            showToast('Sem novidades', `${ignorados} registro(s) já existiam.`, 'info', 3500);
-            fileInput.value = '';
-            return;
-        }
+        // Duplicados já no banco: as linhas antigas serão removidas após inserir as novas
+        const idsAntigos = (existentes || []).filter(e => porChave.has(chaveDe(e))).map(e => e.id);
+        const substituidos = idsAntigos.length;
+        const ignorados = normalizados.length - novos.length; // repetidos dentro do próprio arquivo
 
         const TAM = 500;
         let inseridos = 0;
@@ -1497,8 +1546,14 @@ document.getElementById('uploadBtn')?.addEventListener('click', async () => {
             status.textContent = `Importando... ${inseridos}/${novos.length}`;
         }
 
-        status.textContent = `${inseridos} novo(s) importado(s). ${ignorados} duplicado(s) ignorado(s).`;
-        showToast('Roteiro importado', `${inseridos} novo(s) | ${ignorados} duplicado(s) ignorado(s).`, 'success', 4000);
+        for (let i = 0; i < idsAntigos.length; i += 200) {
+            const { error } = await supabaseClient.from('logradouros').delete().in('id', idsAntigos.slice(i, i + 200));
+            if (error) throw error;
+            status.textContent = `Removendo linhas antigas... ${Math.min(i + 200, idsAntigos.length)}/${substituidos}`;
+        }
+
+        status.textContent = `${inseridos} importado(s) (${substituidos} substituído(s) por versão nova). ${ignorados} repetido(s) no arquivo ignorado(s).`;
+        showToast('Roteiro importado', `${inseridos} importado(s) | ${substituidos} substituído(s) | ${ignorados} repetido(s) no arquivo.`, 'success', 5000);
         fileInput.value = '';
     } catch (err) {
         console.error('[UPLOAD] Erro:', err);
