@@ -185,6 +185,12 @@
                         <input type="hidden" id="surveyUf" value="">
                         <input type="hidden" id="surveyCep" value="">
 
+                        <div style="display:flex;gap:6px;align-items:center;margin-bottom:8px;">
+                            <input type="text" id="surveyLatitude" placeholder="Latitude" title="Latitude" autocomplete="off" style="flex:1;min-width:0;padding:6px 8px;font-size:13px;">
+                            <input type="text" id="surveyLongitude" placeholder="Longitude" title="Longitude" autocomplete="off" style="flex:1;min-width:0;padding:6px 8px;font-size:13px;">
+                            <button type="button" id="coordsOkBtn" class="btn-add-survey" style="width:auto;margin:0;padding:6px 12px;font-size:13px;">OK</button>
+                        </div>
+
                         <div class="grid-2col">
                             <div class="field-group">
                                 <div class="field-header">
@@ -422,16 +428,7 @@
                             <input type="text" id="obsInput" placeholder="Ex.: Cadastrado conforme planilha" autocomplete="off">
                         </div>
 
-                        <div class="field-group">
-                            <div class="field-header">
-                                <label for="surveyLatitude">Coordenadas</label>
-                            </div>
-                            <div style="display:flex;gap:8px;align-items:center;">
-                                <input type="text" id="surveyLatitude" placeholder="Latitude" autocomplete="off" style="flex:1;min-width:0;">
-                                <input type="text" id="surveyLongitude" placeholder="Longitude" autocomplete="off" style="flex:1;min-width:0;">
-                                <button type="button" id="coordsOkBtn" class="btn-add-survey" style="width:auto;margin:0;padding:0 16px;">OK</button>
-                            </div>
-                        </div>
+                        
 
                         <button id="addBtn" class="btn-add-survey" type="button">
                             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
