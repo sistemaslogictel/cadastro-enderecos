@@ -28,46 +28,258 @@ const AUTORIZACAO_FIXA = '5590eeaed0604e85ba7a72fe5dc92e1e';
 // ============================================
 // TABELA DE IDS DE COMPLEMENTO
 // ============================================
-const COMPLEMENTO_IDS = {
-    'academia': 121, 'acampamento': 1, 'administração': 114, 'administracao': 114,
-    'ala': 2, 'almoxarifado': 3, 'alto': 4, 'altos': 5, 'ambulatório': 6, 'ambulatorio': 6,
-    'andar': 7, 'anexo': 8, 'apartamento': 9, 'armazém': 10, 'armazem': 10,
-    'ate': 11, 'baixos': 12, 'banca': 13, 'barrão': 14, 'barrao': 14, 'beco': 15,
-    'bloco': 16, 'box': 17, 'brigada de incêncio': 115, 'brigada de incendio': 115,
-    'cais': 18, 'carpintaria': 20, 'casa': 22, 'cela': 23, 'central': 24, 'chácara': 124, 'chacara': 124,
-    'cobertura': 25, 'colina': 26, 'condomínio': 27, 'condominio': 27,
-    'conjunto': 28, 'conjunto residencial': 29, 'corredor': 30,
-    'depósito': 31, 'deposito': 31, 'diretoria': 32, 'divisão': 34, 'divisao': 34,
-    'edifício': 35, 'edificio': 35, 'entrada': 36, 'escritório': 37, 'escritorio': 37,
-    'espaço de convivência': 38, 'espaco de convivencia': 38, 'estação': 39, 'estacao': 39,
-    'etapa': 40, 'frente': 43, 'fundos': 44, 'fórum': 42, 'forum': 42,
-    'galeria': 45, 'galpão': 46, 'galpao': 46, 'garagem': 47, 'gleba': 48, 'granja': 49,
-    'grupo': 50, 'guichê': 52, 'guiche': 52, 'hagar': 53, 'lado': 55, 'lanchonete': 56,
-    'letra': 57, 'loja': 58, 'lote': 59, 'loteamento': 60, 'lâmina': 56, 'lamina': 56,
-    'mansão': 62, 'mansao': 62, 'mart': 63, 'mercado': 64, 'mezanino': 65, 'módulo': 66, 'modulo': 66,
-    'não disponível': 119, 'nao disponivel': 119, 'não se aplica': 117, 'nao se aplica': 117,
-    'núcleo': 67, 'nucleo': 67, 'oficina mecânica': 68, 'oficina mecanica': 68,
-    'orgão': 69, 'orgao': 69, 'palácio': 70, 'palacio': 70, 'parada': 71,
-    'pavilhão': 73, 'pavilhao': 73, 'pavimento': 74, 'pilotis': 75, 'piso': 76, 'plataforma': 77,
-    'portão': 81, 'portao': 81, 'porão': 80, 'porao': 80, 'poço': 78, 'poco': 78,
-    'presidência': 83, 'presidencia': 83, 'prédio': 82, 'predio': 82, 'pátio': 72, 'patio': 72,
-    'quadra': 85, 'quarto': 86, 'quilômetro': 87, 'quilometro': 87,
-    'quinta': 88, 'quiosque': 89, 'ramal': 90, 'recepção': 91, 'recepcao': 91,
-    'refeitório': 92, 'refeitorio': 92, 'restaurante': 93, 'rótula': 95, 'rotula': 95,
-    'sala': 96, 'sala técnica': 116, 'sala tecnica': 116,
-    'salão de eventos': 120, 'salao de eventos': 120,
-    'sem complemento': 118, 'setor': 98, 'seção': 97, 'secao': 97,
-    'sobrado': 100, 'sobreloja': 101, 'stand': 102, 'sub número': 122, 'sub numero': 122,
-    'subestação': 103, 'subestacao': 103, 'subsolo': 104, 'super quadra': 105,
-    'terreno': 106, 'torre': 109, 'travessa': 110, 'trecho': 111, 'térreo': 107, 'terreo': 107,
-    'vila': 112, 'vizinho': 113, 'xx': 99
-};
+const _semAcentoId = (t) => String(t || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim().toLowerCase();
+
+// [nome, id] conforme a lista oficial do sistema
+const COMPLEMENTO_LISTA = [
+    ['Academia', 121],
+    ['Acampamento', 1],
+    ['Administração', 114],
+    ['Ala', 2],
+    ['Almoxarifado', 3],
+    ['Alto', 4],
+    ['Altos', 5],
+    ['Ambulatório', 6],
+    ['Andar', 7],
+    ['Anexo', 8],
+    ['Apartamento', 9],
+    ['Armazém', 10],
+    ['ATE', 11],
+    ['Baixos', 12],
+    ['Banca', 13],
+    ['Barracão', 14],
+    ['Beco', 15],
+    ['Bloco', 16],
+    ['Box', 17],
+    ['Brigada de incêndio', 115],
+    ['Cais', 18],
+    ['Caminho', 20],
+    ['Carpintaria', 21],
+    ['Casa', 22],
+    ['Cela', 23],
+    ['Central', 24],
+    ['Chácara', 124],
+    ['Cobertura', 25],
+    ['Colina', 26],
+    ['Condomínio', 27],
+    ['Conjunto', 28],
+    ['Conjunto residencial', 29],
+    ['Corredor', 30],
+    ['Depósito', 31],
+    ['Diretoria', 32],
+    ['Divisão', 34],
+    ['Edifício', 35],
+    ['Entrada', 36],
+    ['Escritório', 37],
+    ['Espaço de convivência', 38],
+    ['Estação', 39],
+    ['Etapa', 40],
+    ['Frente', 43],
+    ['Fundos', 44],
+    ['Fórum', 42],
+    ['Galeria', 45],
+    ['Galpão', 46],
+    ['Garagem', 47],
+    ['Gleba', 48],
+    ['Granja', 49],
+    ['Grupo', 50],
+    ['Guichê', 52],
+    ['Hagar', 53],
+    ['Lado', 55],
+    ['Lanchonete', 57],
+    ['Letra', 58],
+    ['Loja', 59],
+    ['Lote', 60],
+    ['Loteamento', 61],
+    ['Lâmina', 56],
+    ['Mansão', 62],
+    ['Mart', 63],
+    ['Mercado', 64],
+    ['Mezanino', 65],
+    ['Módulo', 66],
+    ['Não disponível', 119],
+    ['Não se aplica', 117],
+    ['Núcleo', 67],
+    ['Oficina mecânica', 68],
+    ['Orgão', 69],
+    ['Palácio', 70],
+    ['Parada', 71],
+    ['Pavilhão', 73],
+    ['Pavimento', 74],
+    ['Pilotis', 75],
+    ['Piso', 76],
+    ['Plataforma', 77],
+    ['Portão', 81],
+    ['Porão', 80],
+    ['Poço', 78],
+    ['Presidência', 83],
+    ['Prédio', 82],
+    ['Pátio', 72],
+    ['Quadra', 85],
+    ['Quarto', 86],
+    ['Quilômetro', 87],
+    ['Quinta', 88],
+    ['Quiosque', 89],
+    ['Ramal', 90],
+    ['Recepção', 91],
+    ['Refeitório', 92],
+    ['Restaurante', 93],
+    ['Rótula', 95],
+    ['Sala', 96],
+    ['Sala técnica', 116],
+    ['Salão de eventos', 120],
+    ['Sem complemento', 118],
+    ['Setor', 98],
+    ['Seção', 97],
+    ['Sobrado', 100],
+    ['Sobreloja', 101],
+    ['Stand', 102],
+    ['Sub número', 122],
+    ['Subestação', 103],
+    ['Subsolo', 104],
+    ['Super quadra', 105],
+    ['Terreno', 106],
+    ['Torre', 109],
+    ['Travessa', 110],
+    ['Trecho', 111],
+    ['Térreo', 107],
+    ['Vila', 112],
+    ['Vizinho', 113],
+    ['XX', -99]
+];
+const COMPLEMENTO_IDS = {};
+COMPLEMENTO_LISTA.forEach(([n, id]) => { COMPLEMENTO_IDS[_semAcentoId(n)] = id; });
 
 function getIdComplemento(tipo) {
     if (!tipo) return '';
-    const k = String(tipo).trim().toLowerCase();
-    return COMPLEMENTO_IDS[k] ?? '';
+    return COMPLEMENTO_IDS[_semAcentoId(tipo)] ?? '';
 }
+
+// ============================================
+// TIPOS DE IMÓVEL (id_tipo_imovel)
+// ============================================
+const TIPO_IMOVEL_LISTA = [
+    ['ACADEMIA', 53287342],
+    ['ADMINISTRACÃO', 3354214545],
+    ['AEROPORTO', 9],
+    ['AGENCIA', 42],
+    ['AGENCIA DOS CORREIOS', 19],
+    ['BANCO', 15],
+    ['BAR', 75303693],
+    ['BAT POLICIA MILITAR', 62],
+    ['BIBLIOTECA', 62775983],
+    ['BLOCO', 59],
+    ['BOULEVARD', 73],
+    ['CAMERA', 3354213982],
+    ['CAMPUS', 6],
+    ['CENTRO', 53287341],
+    ['CENTRO COMERCIAL', 22],
+    ['CENTRO EDUCACAO INF', 54],
+    ['CENTRO EMPRESARIAL', 50],
+    ['CENTRO MEDICO', 23],
+    ['CENTRO SOCIAL', 52],
+    ['CHACARA', 137793979],
+    ['CLINICA', 51],
+    ['CLINICA RADIOLOGICA', 38],
+    ['CLUBE', 21],
+    ['COLEGIO', 53],
+    ['COMERCIAL', 2340446005],
+    ['COMPANIA', 48],
+    ['CONDOMINIO', 3],
+    ['CONJUNTO', 7],
+    ['CONSTRUTORA', 46],
+    ['DELEGACIA', 26],
+    ['DEPOSITO', 60],
+    ['DISTRIBUIDORA', 66],
+    ['DROGARIA', 79],
+    ['ED', 64],
+    ['EDIFICIO', 10],
+    ['EMPRESARIAL', 53382819],
+    ['ENGENHO', 76],
+    ['ESCOLA', 31],
+    ['ESCRITORIO', 80],
+    ['ESTACAO', 13],
+    ['ESTACIONAMENTO', 52955711],
+    ['ESTADIO', 72],
+    ['ESTADIO DE FUTEBOL', 71],
+    ['ESTALEIRO', 61694049],
+    ['FABRICA', 16],
+    ['FACULDADE', 36],
+    ['FARMACIA', 29],
+    ['FAZENDA', 77],
+    ['FISEPE', 33],
+    ['FORUM', 39],
+    ['FUNDACAO', 55],
+    ['FUNDESA', 32],
+    ['GALERIA', 2],
+    ['GARAGEM', 291425241],
+    ['GRUPO', 81],
+    ['HIPERMERCADO', 11],
+    ['HOSPITAL', 12],
+    ['HOTEL', 34],
+    ['IGREJA', 25],
+    ['IMOBILIARIA', 65],
+    ['INDUSTRIA', 63],
+    ['INSTITUTO', 57],
+    ['LABORATORIO', 56],
+    ['LANCHONETE', 68],
+    ['LOJA', 35],
+    ['LOTEAMENTO', 44],
+    ['LOTERIA', 74],
+    ['MERCADO', 5],
+    ['MINISTERIO', 2431232477],
+    ['MOTEL', 58],
+    ['MUSEU', 75],
+    ['Nome não Informado', 2431232478],
+    ['OFICINA', 76087509],
+    ['PADARIA', 43],
+    ['PALACIO', 70],
+    ['PANIFICADORA', 40],
+    ['PARQUE', 49],
+    ['PATIO', 20],
+    ['PENITENCIARIA', 78],
+    ['PORTOMAR', 84],
+    ['POSTO DE GASOLINA', 17],
+    ['POSTO DE SAUDE', 30],
+    ['POUSADA', 80285322],
+    ['PREDIO', 1],
+    ['PREFEITURA', 41],
+    ['PUBLICO', 2340448009],
+    ['QUADRA', 18],
+    ['QUARTEL', 47],
+    ['QUIOSQUE', 88],
+    ['RAMAL', 61],
+    ['RESIDENCIAL', 27],
+    ['RESTAURANTE', 69],
+    ['RODOVIARIA', 14],
+    ['RUA', 306799724],
+    ['SALÃO DE BELEZA', 75303694],
+    ['SECRETARIA', 28],
+    ['SHOPPING', 4],
+    ['SUPERMERCADO', 24],
+    ['TELEFONE PÚBLICO', 51378260],
+    ['TRANSPORTADORA', 37],
+    ['TRIBU REGIONAL ELEIT', 82],
+    ['TRIBUNAL DE JUSTICA', 83],
+    ['TRIBUNAL S ELEITORAL', 45],
+    ['UNIVERSIDADE', 8],
+    ['USINA', 67],
+    ['VILA', 69722092]
+];
+const TIPO_IMOVEL_IDS = {};
+TIPO_IMOVEL_LISTA.forEach(([n, id]) => { TIPO_IMOVEL_IDS[_semAcentoId(n)] = id; });
+
+function getIdTipoImovel(tipo) {
+    if (!tipo) return '';
+    return TIPO_IMOVEL_IDS[_semAcentoId(tipo)] ?? '';
+}
+
+(function popularTiposImovel() {
+    const sel = document.getElementById('tipoImovelInput');
+    if (!sel) return;
+    sel.innerHTML = '<option value="">— Selecione —</option>' +
+        TIPO_IMOVEL_LISTA.map(([n]) => `<option value="${n}">${n}</option>`).join('');
+})();
 
 // ============================================
 // TEMA CLARO / ESCURO
@@ -958,6 +1170,7 @@ document.getElementById('addBtn').addEventListener('click', async () => {
     salvarZonaNoBanco(zona); // grava/atualiza no histórico de zonas
     const obs = (document.getElementById('obsInput')?.value || '').trim();
     const imovel = (document.getElementById('imovelInput')?.value || '').trim();
+    const tipoImovel = (document.getElementById('tipoImovelInput')?.value || '').trim();
 
     const comp1Tipo = document.getElementById('comp1Tipo').value;
     const comp1Valor = document.getElementById('comp1Valor').value.trim();
@@ -985,6 +1198,7 @@ document.getElementById('addBtn').addEventListener('click', async () => {
         s.zona = zona || null;
         s.observacoes = obs || null;
         s.imovel = imovel || null;
+        s.tipoImovel = tipoImovel || null;
         s.complementos = complementos;
         s.latitude = lat;
         s.longitude = lng;
@@ -992,7 +1206,7 @@ document.getElementById('addBtn').addEventListener('click', async () => {
 
         showToast('Edição salva', 'Survey atualizado.', 'success', 2500);
 
-        ['numeroInput','pisosInput','zonaInput','obsInput','imovelInput','comp1Tipo','comp1Valor','comp2Tipo','comp2Valor','comp3Tipo','comp3Valor'].forEach(id => {
+        ['numeroInput','pisosInput','zonaInput','obsInput','imovelInput','tipoImovelInput','comp1Tipo','comp1Valor','comp2Tipo','comp2Valor','comp3Tipo','comp3Valor'].forEach(id => {
             const el = document.getElementById(id);
             if (el) el.value = '';
         });
@@ -1014,6 +1228,7 @@ document.getElementById('addBtn').addEventListener('click', async () => {
         zona: zona || null,
         observacoes: obs || null,
         imovel: imovel || null,
+        tipoImovel: tipoImovel || null,
         complementos: complementos,
         latitude: lat,
         longitude: lng,
@@ -1034,6 +1249,7 @@ document.getElementById('addBtn').addEventListener('click', async () => {
     limpar('zonaInput', 'zonaRecorrente');
     limpar('obsInput', 'obsRecorrente');
     limpar('imovelInput');
+    limpar('tipoImovelInput');
     limpar('comp1Tipo', 'comp1Recorrente');
     limpar('comp1Valor', 'comp1Recorrente');
     limpar('comp2Tipo', 'comp2Recorrente');
@@ -1071,6 +1287,7 @@ function abrirEdicaoSurvey(idx) {
     setH('zonaInput', s.zona || '');
     setH('obsInput', s.observacoes || '');
     setH('imovelInput', s.imovel || '');
+    setH('tipoImovelInput', s.tipoImovel || '');
 
     const comps = Array.isArray(s.complementos) ? s.complementos : [];
     setH('comp1Tipo', comps[0] ? comps[0].tipo : '');
@@ -1432,6 +1649,8 @@ function gerarXMLEdificio(survey, logradouro, numero) {
     xml += '  <enderecoEdificio>\r\n';
     xml += '    ' + tag('logradouro', logradouroSimples) + '\r\n';
     xml += '    ' + tag('numero_fachada', numeroFachada) + '\r\n';
+    const idTipoImovel = getIdTipoImovel(survey.tipoImovel);
+    if (idTipoImovel !== '') xml += '    ' + tag('id_tipo_imovel', idTipoImovel) + '\r\n';
     const argImovel = (survey.imovel || '').toString().trim();
     if (argImovel) xml += '    ' + tag('arg_imovel', argImovel) + '\r\n';
     xml += blocoComplementos;
