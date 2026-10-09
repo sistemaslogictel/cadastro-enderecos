@@ -854,6 +854,31 @@ document.getElementById('zonaInput')?.addEventListener('input', (e) => {
 });
 
 // ============================================
+// EDITAR COORDENADAS MANUALMENTE (botão OK)
+// ============================================
+document.getElementById('coordsOkBtn').addEventListener('click', () => {
+    const num = (id) => parseFloat((document.getElementById(id)?.value || '').trim().replace(',', '.'));
+    const lat = num('surveyLatitude');
+    const lng = num('surveyLongitude');
+    if (isNaN(lat) || isNaN(lng) || Math.abs(lat) > 90 || Math.abs(lng) > 180) {
+        showToast('Coordenadas inválidas', 'Informe latitude e longitude válidas (ex.: -25.66 e -49.30).', 'warning', 4000);
+        return;
+    }
+    document.getElementById('surveyLatitude').value = lat.toFixed(8);
+    document.getElementById('surveyLongitude').value = lng.toFixed(8);
+
+    if (marcadorAtual) {
+        marcadorAtual.setLatLng([lat, lng]);
+    } else {
+        marcadorAtual = L.marker([lat, lng], { icon: houseIconPendente }).addTo(map);
+    }
+    marcadorAtual.bindPopup(`Ponto editado<br>${lat.toFixed(8)}, ${lng.toFixed(8)}`).openPopup();
+    map.setView([lat, lng], Math.max(map.getZoom(), 19));
+    document.getElementById('coordsDisplay').textContent = `${lat.toFixed(8)}, ${lng.toFixed(8)}`;
+    document.getElementById('origemDisplay').textContent = 'Editado manualmente';
+});
+
+// ============================================
 // ADICIONAR AO SURVEY / SALVAR EDIÇÃO
 // ============================================
 document.getElementById('addBtn').addEventListener('click', async () => {
@@ -874,6 +899,7 @@ document.getElementById('addBtn').addEventListener('click', async () => {
     }
     salvarZonaNoBanco(zona); // grava/atualiza no histórico de zonas
     const obs = (document.getElementById('obsInput')?.value || '').trim();
+    const imovel = (document.getElementById('imovelInput')?.value || '').trim();
 
     const comp1Tipo = document.getElementById('comp1Tipo').value;
     const comp1Valor = document.getElementById('comp1Valor').value.trim();
@@ -900,6 +926,7 @@ document.getElementById('addBtn').addEventListener('click', async () => {
         s.pisos = pisos || null;
         s.zona = zona || null;
         s.observacoes = obs || null;
+        s.imovel = imovel || null;
         s.complementos = complementos;
         s.latitude = lat;
         s.longitude = lng;
@@ -907,12 +934,12 @@ document.getElementById('addBtn').addEventListener('click', async () => {
 
         showToast('Edição salva', 'Survey atualizado.', 'success', 2500);
 
-        ['numeroInput','pisosInput','zonaInput','obsInput','comp1Tipo','comp1Valor','comp2Tipo','comp2Valor','comp3Tipo','comp3Valor'].forEach(id => {
+        ['numeroInput','pisosInput','zonaInput','obsInput','imovelInput','comp1Tipo','comp1Valor','comp2Tipo','comp2Valor','comp3Tipo','comp3Valor'].forEach(id => {
             const el = document.getElementById(id);
             if (el) el.value = '';
         });
 
-        cancelarEdicaoSurvey();
+        cancelarEdicaoSurvey(true);
         fixarMarcadorPendente();
         renderizarSurveys();
         return;
@@ -928,6 +955,7 @@ document.getElementById('addBtn').addEventListener('click', async () => {
         pisos: pisos || null,
         zona: zona || null,
         observacoes: obs || null,
+        imovel: imovel || null,
         complementos: complementos,
         latitude: lat,
         longitude: lng,
@@ -947,6 +975,7 @@ document.getElementById('addBtn').addEventListener('click', async () => {
     limpar('pisosInput', 'pisosRecorrente');
     limpar('zonaInput', 'zonaRecorrente');
     limpar('obsInput', 'obsRecorrente');
+    limpar('imovelInput');
     limpar('comp1Tipo', 'comp1Recorrente');
     limpar('comp1Valor', 'comp1Recorrente');
     limpar('comp2Tipo', 'comp2Recorrente');
@@ -983,6 +1012,7 @@ function abrirEdicaoSurvey(idx) {
     setH('pisosInput', s.pisos || '');
     setH('zonaInput', s.zona || '');
     setH('obsInput', s.observacoes || '');
+    setH('imovelInput', s.imovel || '');
 
     const comps = Array.isArray(s.complementos) ? s.complementos : [];
     setH('comp1Tipo', comps[0] ? comps[0].tipo : '');
@@ -1044,7 +1074,7 @@ function abrirEdicaoSurvey(idx) {
     showToast('Modo edição', 'Ajuste os dados e clique em "Salvar edição".', 'info', 3000);
 }
 
-function cancelarEdicaoSurvey() {
+function cancelarEdicaoSurvey(manterRoteiro) {
     _surveyEditandoIdx = null;
     const addBtn = document.getElementById('addBtn');
     if (addBtn) {
@@ -1059,6 +1089,8 @@ function cancelarEdicaoSurvey() {
     }
     const cancelBtn = document.getElementById('cancelarEdicaoBtn');
     if (cancelBtn) cancelBtn.style.display = 'none';
+
+    if (manterRoteiro) return; // após salvar edição, mantém o roteiro em uso
 
     const infoBox = document.getElementById('enderecoBaseInfo');
     if (infoBox) {
@@ -1342,6 +1374,8 @@ function gerarXMLEdificio(survey, logradouro, numero) {
     xml += '  <enderecoEdificio>\r\n';
     xml += '    ' + tag('logradouro', logradouroSimples) + '\r\n';
     xml += '    ' + tag('numero_fachada', numeroFachada) + '\r\n';
+    const argImovel = (survey.imovel || '').toString().trim();
+    if (argImovel) xml += '    ' + tag('arg_imovel', argImovel) + '\r\n';
     xml += blocoComplementos;
     xml += '    ' + tag('cep', cep) + '\r\n';
     xml += '    ' + tag('bairro', bairro) + '\r\n';

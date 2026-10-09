@@ -210,6 +210,13 @@
 
                         <div class="field-group">
                             <div class="field-header">
+                                <label for="imovelInput">Nome do Imóvel <small>(opcional)</small></label>
+                            </div>
+                            <input type="text" id="imovelInput" placeholder="Ex.: RESIDENCIAL CONDOMINIO" autocomplete="off">
+                        </div>
+
+                        <div class="field-group">
+                            <div class="field-header">
                                 <label for="zonaInput">Zona</label>
                                 <label class="check-inline">
                                     <input type="checkbox" id="zonaRecorrente">
@@ -405,8 +412,16 @@
                             <input type="text" id="obsInput" placeholder="Ex.: Cadastrado conforme planilha" autocomplete="off">
                         </div>
 
-                        <input type="hidden" id="surveyLatitude">
-                        <input type="hidden" id="surveyLongitude">
+                        <div class="field-group">
+                            <div class="field-header">
+                                <label for="surveyLatitude">Coordenadas</label>
+                            </div>
+                            <div style="display:flex;gap:8px;align-items:center;">
+                                <input type="text" id="surveyLatitude" placeholder="Latitude" autocomplete="off" style="flex:1;min-width:0;">
+                                <input type="text" id="surveyLongitude" placeholder="Longitude" autocomplete="off" style="flex:1;min-width:0;">
+                                <button type="button" id="coordsOkBtn" class="btn-add-survey" style="width:auto;margin:0;padding:0 16px;">OK</button>
+                            </div>
+                        </div>
 
                         <button id="addBtn" class="btn-add-survey" type="button">
                             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
