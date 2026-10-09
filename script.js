@@ -1248,8 +1248,8 @@ document.getElementById('addBtn').addEventListener('click', async () => {
     limpar('pisosInput', 'pisosRecorrente');
     limpar('zonaInput', 'zonaRecorrente');
     limpar('obsInput', 'obsRecorrente');
-    limpar('imovelInput');
-    limpar('tipoImovelInput');
+    limpar('imovelInput', 'imovelRecorrente');
+    limpar('tipoImovelInput', 'imovelRecorrente');
     limpar('comp1Tipo', 'comp1Recorrente');
     limpar('comp1Valor', 'comp1Recorrente');
     limpar('comp2Tipo', 'comp2Recorrente');
