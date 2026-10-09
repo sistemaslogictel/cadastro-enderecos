@@ -215,19 +215,18 @@
                         </div>
 
                         <div class="field-group field-comp">
-                            <div class="comp-grid">
+                            <div class="comp-grid" style="grid-template-columns: 1fr 1.4fr;">
                                 <div>
                                     <label for="tipoImovelInput" class="field-label-sm">Tipo do Imóvel</label>
                                     <select id="tipoImovelInput"></select>
                                 </div>
                                 <div>
-                                    <label for="imovelInput" class="field-label-sm">Nome do Imóvel</label>
+                                    <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;">
+                                        <label for="imovelInput" class="field-label-sm">Nome do Imóvel</label>
+                                        <label class="check-inline"><input type="checkbox" id="imovelRecorrente"><span>Recorrência</span></label>
+                                    </div>
                                     <input type="text" id="imovelInput" placeholder="Ex.: RESIDENCIAL GUAPORE" autocomplete="off">
                                 </div>
-                                <label class="check-inline check-inline-right">
-                                    <input type="checkbox" id="imovelRecorrente">
-                                    <span>Recorrência</span>
-                                </label>
                             </div>
                         </div>
 
@@ -245,7 +244,7 @@
 
                         <!-- Complemento 1 -->
                         <div class="field-group field-comp">
-                            <div class="comp-grid">
+                            <div class="comp-grid" style="grid-template-columns: 1fr 1.4fr;">
                                 <div>
                                     <label for="comp1Tipo" class="field-label-sm">Tipo</label>
                                     <select id="comp1Tipo">
@@ -291,19 +290,18 @@
                                     </select>
                                 </div>
                                 <div>
-                                    <label for="comp1Valor" class="field-label-sm">Complemento 1</label>
+                                    <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;">
+                                        <label for="comp1Valor" class="field-label-sm">Complemento 1</label>
+                                        <label class="check-inline"><input type="checkbox" id="comp1Recorrente"><span>Recorrência</span></label>
+                                    </div>
                                     <input type="text" id="comp1Valor" placeholder="Ex.: 5">
                                 </div>
-                                <label class="check-inline check-inline-right">
-                                    <input type="checkbox" id="comp1Recorrente">
-                                    <span>Recorrência</span>
-                                </label>
                             </div>
                         </div>
 
                         <!-- Complemento 2 -->
                         <div class="field-group field-comp">
-                            <div class="comp-grid">
+                            <div class="comp-grid" style="grid-template-columns: 1fr 1.4fr;">
                                 <div>
                                     <label for="comp2Tipo" class="field-label-sm">Tipo</label>
                                     <select id="comp2Tipo">
@@ -349,19 +347,18 @@
                                     </select>
                                 </div>
                                 <div>
-                                    <label for="comp2Valor" class="field-label-sm">Complemento 2</label>
+                                    <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;">
+                                        <label for="comp2Valor" class="field-label-sm">Complemento 2</label>
+                                        <label class="check-inline"><input type="checkbox" id="comp2Recorrente"><span>Recorrência</span></label>
+                                    </div>
                                     <input type="text" id="comp2Valor" placeholder="Ex.: Casa Creche 52">
                                 </div>
-                                <label class="check-inline check-inline-right">
-                                    <input type="checkbox" id="comp2Recorrente">
-                                    <span>Recorrência</span>
-                                </label>
                             </div>
                         </div>
 
                         <!-- Complemento 3 -->
                         <div class="field-group field-comp">
-                            <div class="comp-grid">
+                            <div class="comp-grid" style="grid-template-columns: 1fr 1.4fr;">
                                 <div>
                                     <label for="comp3Tipo" class="field-label-sm">Tipo</label>
                                     <select id="comp3Tipo">
@@ -407,13 +404,12 @@
                                     </select>
                                 </div>
                                 <div>
-                                    <label for="comp3Valor" class="field-label-sm">Complemento 3</label>
+                                    <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;">
+                                        <label for="comp3Valor" class="field-label-sm">Complemento 3</label>
+                                        <label class="check-inline"><input type="checkbox" id="comp3Recorrente"><span>Recorrência</span></label>
+                                    </div>
                                     <input type="text" id="comp3Valor" placeholder="Ex.: B2B">
                                 </div>
-                                <label class="check-inline check-inline-right">
-                                    <input type="checkbox" id="comp3Recorrente">
-                                    <span>Recorrência</span>
-                                </label>
                             </div>
                         </div>
 
