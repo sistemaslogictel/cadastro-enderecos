@@ -359,6 +359,8 @@ function aplicarPermissoes() {
 let surveysMemoria = [];
 let _surveyIdSeq = 0;
 let _iaJaDisparou = false;
+let _iaMeta = 0;     // qtde de surveys no endereço para verificar o padrão (0 = não expandido)
+let _iaJanela = 5;   // quantos surveys recentes a análise de padrão considera
 let _surveyEditandoIdx = null;
 
 // ============================================
@@ -1485,7 +1487,7 @@ document.getElementById('clearBtn')?.addEventListener('click', () => {
     surveysMemoria = [];
     marcadoresSurveys.forEach(m => map.removeLayer(m));
     marcadoresSurveys = [];
-    _iaJaDisparou = false;
+    _iaJaDisparou = false; _iaMeta = 0; _iaJanela = 5;
     showToast('Lista limpa', 'Todos os surveys foram removidos.', 'success', 2500);
     renderizarSurveys();
 });
@@ -1532,7 +1534,7 @@ document.getElementById('exportBtn')?.addEventListener('click', async () => {
         surveysMemoria = [];
         marcadoresSurveys.forEach(m => map.removeLayer(m));
         marcadoresSurveys = [];
-        _iaJaDisparou = false;
+        _iaJaDisparou = false; _iaMeta = 0; _iaJanela = 5;
 
         showToast('ZIP gerado', `${total} moradia(s) exportada(s). Lista limpa.`, 'success', 4000);
         renderizarSurveys();
@@ -2003,7 +2005,8 @@ function escreverMensagemUser(texto) {
 // ============================================
 function verificarIAAutomatica() {
     if (_iaJaDisparou) return;
-    if (surveysMemoria.length < 5) return;
+    const alvo = _iaMeta > 0 ? _iaMeta : 5;
+    if (surveysMemoria.length < alvo) return;
 
     const grupos = {};
     surveysMemoria.forEach(s => {
@@ -2014,19 +2017,92 @@ function verificarIAAutomatica() {
 
     let grupoValido = null;
     for (const key in grupos) {
-        if (grupos[key].length >= 5) { grupoValido = grupos[key]; break; }
+        if (grupos[key].length >= alvo) { grupoValido = grupos[key]; break; }
     }
     if (!grupoValido) return;
 
     _iaJaDisparou = true;
     abrirChatIA();
-    setTimeout(() => detectarPadroes(false), 800);
+
+    if (_iaMeta > 0) {
+        // Meta de verificação expandida atingida: analisa o padrão dos últimos N
+        _iaJanela = _iaMeta;
+        _iaMeta = 0;
+        setTimeout(() => detectarPadroes(false), 800);
+    } else {
+        setTimeout(perguntarExpandirVerificacao, 800);
+    }
+}
+
+// ============================================
+// IA — PERGUNTAR SE EXPANDE A VERIFICAÇÃO (10, 15, 20 ou outro valor)
+// ============================================
+function perguntarExpandirVerificacao() {
+    escreverMensagemIA(
+        `Olá! Eu sou a <strong>IA Logictel</strong>. Você já cadastrou <strong>5 surveys</strong> no mesmo endereço.<br><br>
+        Deseja <strong>expandir a verificação de padrão</strong>? Assim eu só analiso depois de você cadastrar mais surveys, usando todos eles para achar o padrão.`,
+        false
+    );
+
+    setTimeout(() => {
+        const wrapper = document.createElement('div');
+        wrapper.className = 'ia-msg ia-msg-ia';
+        wrapper.innerHTML = `
+            <div class="ia-msg-actions">
+                <button class="ia-btn ia-btn-success" data-meta="5" type="button">Analisar agora (5)</button>
+                <button class="ia-btn ia-btn-secondary" data-meta="10" type="button">10</button>
+                <button class="ia-btn ia-btn-secondary" data-meta="15" type="button">15</button>
+                <button class="ia-btn ia-btn-secondary" data-meta="20" type="button">20</button>
+            </div>
+            <div class="ia-msg-input-group">
+                <input type="number" id="iaMetaInput" min="6" max="500" placeholder="Outro valor">
+                <button class="ia-btn ia-btn-secondary" id="iaMetaBtn" type="button">Usar</button>
+            </div>
+        `;
+        iaChatBody.appendChild(wrapper);
+        iaChatBody.scrollTop = iaChatBody.scrollHeight;
+
+        const escolher = (n) => {
+            wrapper.remove();
+            if (n <= 5) {
+                escreverMensagemUser('Analisar agora');
+                detectarPadroes(false);
+                return;
+            }
+            escreverMensagemUser(String(n));
+            _iaMeta = n;
+            _iaJaDisparou = false; // volta a observar os cadastros
+            escreverMensagemIA(
+                `Combinado! Continue cadastrando. Quando você chegar a <strong>${n} surveys</strong> no mesmo endereço, 
+                eu analiso o padrão deles e pergunto se devo cadastrar conforme esse padrão.`
+            );
+        };
+
+        wrapper.querySelectorAll('[data-meta]').forEach(btn =>
+            btn.addEventListener('click', () => escolher(parseInt(btn.dataset.meta, 10))));
+
+        const usar = () => {
+            const n = parseInt(document.getElementById('iaMetaInput').value, 10);
+            if (isNaN(n) || n < 6 || n > 500) {
+                showToast('Valor inválido', 'Informe um número entre 6 e 500.', 'warning');
+                return;
+            }
+            escolher(n);
+        };
+        document.getElementById('iaMetaBtn').addEventListener('click', usar);
+        document.getElementById('iaMetaInput').addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') { e.preventDefault(); usar(); }
+        });
+    }, 500);
 }
 
 // ============================================
 // IA — DETECÇÃO DE PADRÕES
 // ============================================
 function detectarPadroes(manual) {
+    const janela = manual ? 5 : _iaJanela;
+    _iaJanela = 5;
+
     if (!surveysMemoria || surveysMemoria.length < 5) {
         escreverMensagemIA(
             `Olá! Eu sou a <strong>IA Logictel</strong>.<br><br>
@@ -2041,7 +2117,7 @@ function detectarPadroes(manual) {
         new Date(a.created_at) - new Date(b.created_at)
     );
 
-    const padrao = encontrarPadrao(lista);
+    const padrao = encontrarPadrao(lista, janela);
 
     if (!padrao) {
         const grupos = {};
@@ -2052,7 +2128,7 @@ function detectarPadroes(manual) {
         });
 
         let grupo = null;
-        for (const k in grupos) if (grupos[k].length >= 5) { grupo = grupos[k]; break; }
+        for (const k in grupos) if (grupos[k].length >= janela) { grupo = grupos[k]; break; }
 
         if (grupo) {
             iaPendencia = {
@@ -2063,7 +2139,7 @@ function detectarPadroes(manual) {
                 campo: null,
                 ultimoValor: null,
                 delta: null,
-                ultimos: grupo.slice(-5)
+                ultimos: grupo.slice(-janela)
             };
 
             escreverMensagemIA(
@@ -2105,10 +2181,10 @@ function detectarPadroes(manual) {
 
         escreverMensagemIA(
             `Analisei seus <strong>${lista.length}</strong> surveys e <strong>não encontrei um padrão claro</strong>.<br><br>
-            Para eu detectar, os 5 últimos precisam ter:
+            Para eu detectar, os ${janela} últimos precisam ter:
             <ul style="margin:8px 0 8px 16px;font-size:0.8rem;">
                 <li>Mesmo logradouro e mesma fachada; ou</li>
-                <li>Mesmo logradouro e mesma combinação de complementos fixos, com <strong>1 valor incrementando</strong> (1,2,3,4,5).</li>
+                <li>Mesmo logradouro e mesma combinação de complementos fixos, com <strong>1 valor incrementando</strong> (1,2,3,4,5...).</li>
             </ul>`
         );
         return;
@@ -2256,11 +2332,11 @@ function perguntarQuantidade() {
 // ============================================
 // IA — ENCONTRAR PADRÃO
 // ============================================
-function encontrarPadrao(lista) {
-    if (lista.length < 5) return null;
+function encontrarPadrao(lista, janela = 5) {
+    if (lista.length < janela) return null;
 
-    const ultimos = lista.slice(-5);
-    if (ultimos.length < 5) return null;
+    const ultimos = lista.slice(-janela);
+    if (ultimos.length < janela) return null;
 
     const logradouroRef = ultimos[0].logradouro && ultimos[0].logradouro.rua;
     if (!logradouroRef) return null;
@@ -2284,7 +2360,7 @@ function encontrarPadrao(lista) {
         if (mesmoDelta) {
             return {
                 tipo: 'fachada',
-                quantidade: 5,
+                quantidade: janela,
                 descricao: 'fachadas',
                 enderecoResumo: `${l0.tipo || ''} ${l0.rua}, ${l0.bairro || ''}`.trim(),
                 campo: 'numero',
@@ -2295,7 +2371,7 @@ function encontrarPadrao(lista) {
         }
     }
 
-    // 5 últimos só com fachada SN (sem pisos/complementos): cria tudo como SN
+    // últimos só com fachada SN (sem pisos/complementos): cria tudo como SN
     const soSN = ultimos.every(s =>
         String(s.numero || '').trim().toUpperCase() === 'SN' &&
         !s.pisos &&
@@ -2304,7 +2380,7 @@ function encontrarPadrao(lista) {
     if (soSN) {
         return {
             tipo: 'sn',
-            quantidade: 5,
+            quantidade: janela,
             descricao: 'fachadas SN',
             enderecoResumo: `${l0.tipo || ''} ${l0.rua}, ${l0.bairro || ''}`.trim(),
             campo: 'numero',
@@ -2345,7 +2421,7 @@ function encontrarPadrao(lista) {
         const tipoRef = (ultimos[0].complementos[c] || {}).tipo || 'complemento';
         return {
             tipo: 'complemento',
-            quantidade: 5,
+            quantidade: janela,
             descricao: tipoRef.toLowerCase(),
             enderecoResumo: `${l0.tipo || ''} ${l0.rua}, ${ultimos[0].numero}, ${l0.bairro || ''}`.trim(),
             campo: 'complemento_' + c,
