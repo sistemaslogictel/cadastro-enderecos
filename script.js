@@ -361,6 +361,7 @@ let _surveyIdSeq = 0;
 let _iaJaDisparou = false;
 let _iaMeta = 0;     // qtde de surveys no endereço para verificar o padrão (0 = não expandido)
 let _iaJanela = 5;   // quantos surveys recentes a análise de padrão considera
+let _iaCorte = 0;    // surveys antes deste índice (já tratados pela IA) não contam para um novo disparo
 let _iaSetor = null; // setor desenhado no mapa: { pts: [[lat,lng],...], layer }
 
 function limparSetorIA() {
@@ -1700,7 +1701,7 @@ document.getElementById('clearBtn')?.addEventListener('click', () => {
     surveysMemoria = [];
     marcadoresSurveys.forEach(m => map.removeLayer(m));
     marcadoresSurveys = [];
-    _iaJaDisparou = false; _iaMeta = 0; _iaJanela = 5; limparSetorIA();
+    _iaJaDisparou = false; _iaMeta = 0; _iaJanela = 5; _iaCorte = 0; limparSetorIA();
     showToast('Lista limpa', 'Todos os surveys foram removidos.', 'success', 2500);
     renderizarSurveys();
 });
@@ -1747,7 +1748,7 @@ document.getElementById('exportBtn')?.addEventListener('click', async () => {
         surveysMemoria = [];
         marcadoresSurveys.forEach(m => map.removeLayer(m));
         marcadoresSurveys = [];
-        _iaJaDisparou = false; _iaMeta = 0; _iaJanela = 5; limparSetorIA();
+        _iaJaDisparou = false; _iaMeta = 0; _iaJanela = 5; _iaCorte = 0; limparSetorIA();
 
         showToast('ZIP gerado', `${total} moradia(s) exportada(s). Lista limpa.`, 'success', 4000);
         renderizarSurveys();
@@ -2219,10 +2220,11 @@ function escreverMensagemUser(texto) {
 function verificarIAAutomatica() {
     if (_iaJaDisparou) return;
     const alvo = _iaMeta > 0 ? _iaMeta : 5;
-    if (surveysMemoria.length < alvo) return;
+    const recentes = surveysMemoria.slice(_iaCorte);
+    if (recentes.length < alvo) return;
 
     const grupos = {};
-    surveysMemoria.forEach(s => {
+    recentes.forEach(s => {
         const key = (s.logradouro && s.logradouro.rua) ? s.logradouro.rua.toUpperCase() : '—';
         if (!grupos[key]) grupos[key] = [];
         grupos[key].push(s);
@@ -3140,6 +3142,11 @@ function gerarSequenciaIA(quantidade, posicoes) {
 
     iaPendencia = null;
     limparSetorIA();
+
+    // libera a IA para um novo ciclo: os próximos 5 surveys cadastrados voltam a acioná-la
+    _iaCorte = surveysMemoria.length;
+    _iaJaDisparou = false;
+    _iaMeta = 0;
 }
 
 // ============================================
