@@ -2287,7 +2287,78 @@ function perguntarTipoIncremento() {
 // ============================================
 // IA — PERGUNTAR QUANTIDADE
 // ============================================
+// Escolha do layout quando a verificação foi expandida (mais de 5 surveys analisados)
 function perguntarQuantidade() {
+    if (!iaPendencia) return;
+    const g = (iaPendencia.ultimos || []).length > 5 ? analisarGeometriaIA(iaPendencia.ultimos) : null;
+    if (!g) { perguntarQuantidadeLinha(); return; }
+
+    const div = document.createElement('div');
+    div.className = 'ia-msg ia-msg-ia';
+    div.innerHTML = `
+        Como devo distribuir os novos surveys no mapa?
+        <div class="ia-msg-actions">
+            <button class="ia-btn ia-btn-secondary" id="iaLayoutLinha" type="button">Em linha</button>
+            <button class="ia-btn ia-btn-success" id="iaLayoutFileiras" type="button">Em fileiras (condomínio)</button>
+        </div>`;
+    iaChatBody.appendChild(div);
+    iaChatBody.scrollTop = iaChatBody.scrollHeight;
+
+    document.getElementById('iaLayoutLinha').addEventListener('click', () => {
+        div.remove(); escreverMensagemUser('Em linha'); perguntarQuantidadeLinha();
+    });
+    document.getElementById('iaLayoutFileiras').addEventListener('click', () => {
+        div.remove(); escreverMensagemUser('Em fileiras'); perguntarFileiras(g);
+    });
+}
+
+function perguntarFileiras(g) {
+    const passo = Math.hypot(g.stepX, g.stepY);
+    const div = document.createElement('div');
+    div.className = 'ia-msg ia-msg-ia';
+    div.innerHTML = `
+        Detectei uma fileira de <strong>${g.k} casas</strong> com ~<strong>${passo.toFixed(1)} m</strong> entre elas.<br>
+        <small style="color:var(--text-tertiary)">As fileiras novas seguem o mesmo sentido e espaçamento.</small>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-top:8px;font-size:0.8rem;">
+            <label>Casas por fileira<input type="number" id="iaFilPor" min="${g.k}" value="${Math.max(g.k, 20)}" style="width:100%"></label>
+            <label>Fileiras novas<input type="number" id="iaFilQtd" min="0" value="1" style="width:100%"></label>
+            <label>Distância entre fileiras (m)<input type="number" id="iaFilDist" min="1" step="0.5" value="${(passo * 2).toFixed(1)}" style="width:100%"></label>
+            <label>Lado das novas fileiras<select id="iaFilLado" style="width:100%"><option value="esq">Esquerda</option><option value="dir">Direita</option></select></label>
+        </div>
+        <div class="ia-msg-actions" style="margin-top:8px;"><button class="ia-btn ia-btn-success" id="iaFilCriar" type="button">Criar</button></div>`;
+    iaChatBody.appendChild(div);
+    iaChatBody.scrollTop = iaChatBody.scrollHeight;
+
+    document.getElementById('iaFilCriar').addEventListener('click', () => {
+        const por = parseInt(document.getElementById('iaFilPor').value, 10);
+        const qtd = parseInt(document.getElementById('iaFilQtd').value, 10);
+        const dist = parseFloat(document.getElementById('iaFilDist').value);
+        const lado = document.getElementById('iaFilLado').value;
+        if (isNaN(por) || por < g.k || isNaN(qtd) || qtd < 0 || isNaN(dist) || dist <= 0) {
+            showToast('Valores inválidos', `Casas por fileira deve ser ≥ ${g.k}, fileiras ≥ 0 e distância > 0.`, 'warning');
+            return;
+        }
+        const posicoes = [];
+        const u = { x: g.stepX, y: g.stepY };
+        const s = Math.hypot(u.x, u.y);
+        const uh = { x: u.x / s, y: u.y / s };
+        const vh = lado === 'esq' ? { x: -uh.y, y: uh.x } : { x: uh.y, y: -uh.x };
+        const pt = (dx, dy) => ({ lat: g.origemLat + dy / g.my, lng: g.origemLng + dx / g.mx });
+        for (let j = g.k; j < por; j++) posicoes.push(pt(j * u.x, j * u.y));            // completa a fileira atual
+        for (let r = 1; r <= qtd; r++) {
+            for (let j = 0; j < por; j++) {
+                posicoes.push(pt(r * dist * vh.x + j * u.x, r * dist * vh.y + j * u.y));
+            }
+        }
+        if (!posicoes.length) { showToast('Nada a criar', 'Aumente as casas por fileira ou as fileiras.', 'warning'); return; }
+        if (posicoes.length > 2000) { showToast('Limite excedido', 'O máximo é 2000 casas por vez.', 'warning'); return; }
+        div.remove();
+        escreverMensagemUser(`${por} por fileira, ${qtd} fileira(s) nova(s), ${dist} m, lado ${lado === 'esq' ? 'esquerdo' : 'direito'}`);
+        gerarSequenciaIA(posicoes.length, posicoes);
+    });
+}
+
+function perguntarQuantidadeLinha() {
     if (!iaPendencia) return;
 
     const div = document.createElement('div');
@@ -2438,7 +2509,44 @@ function encontrarPadrao(lista, janela = 5) {
 // ============================================
 // IA — GERAR SEQUÊNCIA
 // ============================================
-function gerarSequenciaIA(quantidade) {
+// Lê a geometria dos surveys analisados: passo mediano e fileira atual (trecho final alinhado)
+function analisarGeometriaIA(ultimos) {
+    const ll = (s) => {
+        const lat = s.latitude != null ? Number(s.latitude) : (s.logradouro && s.logradouro.lat);
+        const lng = s.longitude != null ? Number(s.longitude) : (s.logradouro && s.logradouro.lng);
+        return (lat != null && lng != null && !isNaN(lat) && !isNaN(lng)) ? { lat: Number(lat), lng: Number(lng) } : null;
+    };
+    const pts = ultimos.map(ll).filter(Boolean);
+    if (pts.length < 3) return null;
+
+    const mx = 111320 * Math.cos(pts[pts.length - 1].lat * Math.PI / 180), my = 110540;
+    const xy = pts.map(p => ({ x: p.lng * mx, y: p.lat * my }));
+    const steps = [];
+    for (let i = 1; i < xy.length; i++) steps.push({ x: xy[i].x - xy[i - 1].x, y: xy[i].y - xy[i - 1].y });
+
+    const mediana = (arr) => { const a = [...arr].sort((p, q) => p - q); const m = a.length >> 1; return a.length % 2 ? a[m] : (a[m - 1] + a[m]) / 2; };
+    let med = { x: mediana(steps.map(t => t.x)), y: mediana(steps.map(t => t.y)) };
+    let sm = Math.hypot(med.x, med.y);
+    if (sm < 0.5) return null;
+
+    const conforme = (t, ref, sref) => {
+        const l = Math.hypot(t.x, t.y);
+        if (l < 0.4 * sref || l > 2.5 * sref) return false;
+        return (t.x * ref.x + t.y * ref.y) / (l * sref) >= 0.82; // até ~35°
+    };
+
+    // trecho final (fileira atual): passos alinhados ao passo mediano
+    let n = 0;
+    for (let i = steps.length - 1; i >= 0 && conforme(steps[i], med, sm); i--) n++;
+    if (n < 2) return null;
+    const run = steps.slice(steps.length - n);
+    const step = { x: mediana(run.map(t => t.x)), y: mediana(run.map(t => t.y)) };
+    const k = n + 1;
+    const origem = pts[pts.length - k];
+    return { stepX: step.x, stepY: step.y, k, origemLat: origem.lat, origemLng: origem.lng, mx, my };
+}
+
+function gerarSequenciaIA(quantidade, posicoes) {
     if (!iaPendencia) return;
 
     const pad = iaPendencia;
@@ -2461,6 +2569,12 @@ function gerarSequenciaIA(quantidade) {
     if (contDelta > 0) {
         deltaLat /= contDelta;
         deltaLng /= contDelta;
+    }
+    // Passo mais confiável (mediana da fileira atual) quando há surveys espalhados
+    const geo = ultimos.length > 5 ? analisarGeometriaIA(ultimos) : null;
+    if (geo) {
+        deltaLat = geo.stepY / geo.my;
+        deltaLng = geo.stepX / geo.mx;
     }
 
     const ultimoSurvey = ultimos[ultimos.length - 1];
@@ -2485,7 +2599,10 @@ function gerarSequenciaIA(quantidade) {
             }
         }
 
-        if (ultLat != null && ultLng != null && (deltaLat !== 0 || deltaLng !== 0)) {
+        if (posicoes) {
+            novo.latitude = +posicoes[i - 1].lat.toFixed(8);
+            novo.longitude = +posicoes[i - 1].lng.toFixed(8);
+        } else if (ultLat != null && ultLng != null && (deltaLat !== 0 || deltaLng !== 0)) {
             novo.latitude = +(ultLat + deltaLat * i).toFixed(8);
             novo.longitude = +(ultLng + deltaLng * i).toFixed(8);
         }
