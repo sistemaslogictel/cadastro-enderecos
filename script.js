@@ -410,6 +410,17 @@ document.getElementById('logoutBtn').addEventListener('click', async () => {
 // ============================================
 const map = L.map('map', { maxZoom: 22, minZoom: 3, zoomControl: false }).setView([-22.90200282, -43.27065822], 15);
 
+// Trava a rolagem interna do card do mapa: overflow "clip" não cria área rolável,
+// então o navegador não consegue deslocar o card (deformando a borda) ao focar/abrir popups
+(function travarRolagemCardMapa() {
+    let el = map.getContainer();
+    while (el && el !== document.body) {
+        el.style.overflow = 'clip';
+        if (el.classList && el.classList.contains('card')) break;
+        el = el.parentElement;
+    }
+})();
+
 const camadas = {
     map: L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/{z}/{y}/{x}', {
         attribution: 'Tiles © Esri', maxZoom: 22, maxNativeZoom: 19
@@ -2229,11 +2240,25 @@ function perguntarSetor(g) {
             return (lat != null && lng != null && !isNaN(lat) && !isNaN(lng)) ? toXY(lat, lng) : null;
         }).filter(Boolean);
 
+        // Continua do ÚLTIMO survey em diante: resto da fileira atual, depois as fileiras seguintes
+        const ult = toXY(g.ultLat, g.ultLng);
+        const aUlt = ult.x * uh.x + ult.y * uh.y;
+        const cx = poli.reduce((t, p) => t + p.x, 0) / poli.length;
+        const cy = poli.reduce((t, p) => t + p.y, 0) / poli.length;
+        const lado = (cx * vh.x + cy * vh.y) >= 0 ? 1 : -1;   // lado do setor em relação à fileira atual
+
+        const ordemFileiras = [0];
+        const rMax = Math.ceil(Math.max(Math.abs(bmin), Math.abs(bmax)) / dist);
+        for (let r = 1; r <= rMax; r++) ordemFileiras.push(lado * r);
+        for (let r = 1; r <= rMax; r++) ordemFileiras.push(-lado * r);
+
         const posicoes = [];
-        for (let r = Math.floor(bmin / dist); r <= Math.ceil(bmax / dist); r++) {
-            for (let j = Math.floor(amin / s); j <= Math.ceil(amax / s); j++) {
-                const x = j * s * uh.x + r * dist * vh.x;
-                const y = j * s * uh.y + r * dist * vh.y;
+        for (const r of ordemFileiras) {
+            for (let j = Math.floor(amin / s) - 1; j <= Math.ceil(amax / s) + 1; j++) {
+                const a = j * s;
+                if (r === 0 && a <= aUlt + 0.5 * s) continue;       // só depois do último cadastrado
+                const x = a * uh.x + r * dist * vh.x;
+                const y = a * uh.y + r * dist * vh.y;
                 if (!pontoNoPoligono(x, y, poli)) continue;
                 if (existentes.some(e => Math.hypot(e.x - x, e.y - y) < 0.45 * s)) continue;
                 posicoes.push({ lat: g.origemLat + y / g.my, lng: g.origemLng + x / g.mx });
@@ -2700,7 +2725,8 @@ function analisarGeometriaIA(ultimos) {
     const step = { x: mediana(run.map(t => t.x)), y: mediana(run.map(t => t.y)) };
     const k = n + 1;
     const origem = pts[pts.length - k];
-    return { stepX: step.x, stepY: step.y, k, origemLat: origem.lat, origemLng: origem.lng, mx, my };
+    const ult = pts[pts.length - 1];
+    return { stepX: step.x, stepY: step.y, k, origemLat: origem.lat, origemLng: origem.lng, ultLat: ult.lat, ultLng: ult.lng, mx, my };
 }
 
 function gerarSequenciaIA(quantidade, posicoes) {
