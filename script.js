@@ -2072,6 +2072,7 @@ function perguntarExpandirVerificacao() {
                 <button class="ia-btn ia-btn-secondary" data-meta="15" type="button">15</button>
                 <button class="ia-btn ia-btn-secondary" data-meta="20" type="button">20</button>
                 <button class="ia-btn ia-btn-success" id="iaSetorBtn" type="button">🗺️ Desenhar setor no mapa</button>
+                <button class="ia-btn ia-btn-success" id="iaLinhasBtn" type="button">📏 Desenhar linhas no mapa</button>
             </div>
             <div class="ia-msg-input-group">
                 <input type="number" id="iaMetaInput" min="6" max="500" placeholder="Outro valor">
@@ -2112,6 +2113,11 @@ function perguntarExpandirVerificacao() {
             wrapper.remove();
             escreverMensagemUser('Desenhar setor no mapa');
             iniciarDesenhoSetor();
+        });
+        document.getElementById('iaLinhasBtn').addEventListener('click', () => {
+            wrapper.remove();
+            escreverMensagemUser('Desenhar linhas no mapa');
+            iniciarDesenhoLinhas();
         });
         document.getElementById('iaMetaBtn').addEventListener('click', usar);
         document.getElementById('iaMetaInput').addEventListener('keypress', (e) => {
@@ -2182,6 +2188,136 @@ function iniciarDesenhoSetor() {
         escreverMensagemUser('Setor definido');
         _iaSetor = { pts: pts.map(p => [p[0], p[1]]), layer: poly };
         detectarPadroes(false);
+    });
+}
+
+// ============================================
+// IA — DESENHAR LINHAS NO MAPA (2 cliques = 1 linha)
+// ============================================
+function iniciarDesenhoLinhas() {
+    const linhas = [];          // [[ [lat,lng], [lat,lng] ], ...]
+    const camadasLinha = [];    // camadas de cada linha (para desfazer)
+    const grupo = L.layerGroup().addTo(map);
+    let pendente = null, marcaPendente = null;
+    map.getContainer().style.cursor = 'crosshair';
+
+    const ponto = (ll) => L.circleMarker(ll, { radius: 5, color: '#16a34a', fillColor: '#16a34a', fillOpacity: 1 });
+
+    const onClick = (e) => {
+        if (!pendente) {
+            pendente = e.latlng;
+            marcaPendente = ponto(e.latlng).addTo(grupo);
+            return;
+        }
+        const a = pendente, b = e.latlng;
+        const ls = [
+            marcaPendente,
+            L.polyline([a, b], { color: '#16a34a', weight: 3 }).addTo(grupo),
+            ponto(b).addTo(grupo)
+        ];
+        camadasLinha.push(ls);
+        linhas.push([[a.lat, a.lng], [b.lat, b.lng]]);
+        pendente = null; marcaPendente = null;
+    };
+    map.on('click', onClick);
+
+    const encerrar = () => {
+        map.off('click', onClick);
+        map.getContainer().style.cursor = '';
+    };
+
+    escreverMensagemIA(
+        `Marque cada linha com <strong>2 cliques</strong> no mapa (início e fim), seguindo a fileira onde devo cadastrar. 
+        Pode desenhar quantas linhas quiser, em qualquer parte do mapa. Quando terminar, clique em <strong>Concluir</strong>.`,
+        false
+    );
+    const wrapper = document.createElement('div');
+    wrapper.className = 'ia-msg ia-msg-ia';
+    wrapper.innerHTML = `
+        <div class="ia-msg-actions">
+            <button class="ia-btn ia-btn-success" id="iaLinOk" type="button">Concluir</button>
+            <button class="ia-btn ia-btn-secondary" id="iaLinDesfaz" type="button">Desfazer última</button>
+            <button class="ia-btn ia-btn-secondary" id="iaLinCancela" type="button">Cancelar</button>
+        </div>`;
+    iaChatBody.appendChild(wrapper);
+    iaChatBody.scrollTop = iaChatBody.scrollHeight;
+
+    document.getElementById('iaLinDesfaz').addEventListener('click', () => {
+        if (pendente) { grupo.removeLayer(marcaPendente); pendente = null; marcaPendente = null; return; }
+        if (!linhas.length) return;
+        linhas.pop();
+        camadasLinha.pop().forEach(l => grupo.removeLayer(l));
+    });
+    document.getElementById('iaLinCancela').addEventListener('click', () => {
+        encerrar();
+        map.removeLayer(grupo);
+        wrapper.remove();
+        escreverMensagemUser('Cancelar');
+        escreverMensagemIA('Tudo bem! Continue cadastrando manualmente.');
+        _iaJaDisparou = false;
+    });
+    document.getElementById('iaLinOk').addEventListener('click', () => {
+        if (pendente) { grupo.removeLayer(marcaPendente); pendente = null; marcaPendente = null; }
+        if (!linhas.length) {
+            showToast('Nenhuma linha', 'Marque pelo menos 1 linha (2 cliques).', 'warning');
+            return;
+        }
+        encerrar();
+        wrapper.remove();
+        escreverMensagemUser(`${linhas.length} linha(s) marcada(s)`);
+        _iaSetor = { linhas: linhas.map(l => l.map(p => [p[0], p[1]])), layer: grupo };
+        detectarPadroes(false);
+    });
+}
+
+function perguntarLinhas(g) {
+    const sugerido = g ? Math.hypot(g.stepX, g.stepY) : 8;
+    const div = document.createElement('div');
+    div.className = 'ia-msg ia-msg-ia';
+    div.innerHTML = `
+        Vou criar os surveys <strong>em cima das ${_iaSetor.linhas.length} linha(s)</strong> marcadas, a partir do primeiro ponto de cada uma.
+        <div style="margin-top:8px;font-size:0.8rem;">
+            <label>Distância entre casas (m)
+                <input type="number" id="iaLinDist" min="1" step="0.5" value="${sugerido.toFixed(1)}" style="width:100%">
+            </label>
+        </div>
+        <div class="ia-msg-actions" style="margin-top:8px;">
+            <button class="ia-btn ia-btn-success" id="iaLinCriar" type="button">Criar</button>
+        </div>`;
+    iaChatBody.appendChild(div);
+    iaChatBody.scrollTop = iaChatBody.scrollHeight;
+
+    document.getElementById('iaLinCriar').addEventListener('click', () => {
+        const dist = parseFloat(document.getElementById('iaLinDist').value);
+        if (isNaN(dist) || dist <= 0) { showToast('Valor inválido', 'Informe a distância entre casas.', 'warning'); return; }
+
+        const lat0 = _iaSetor.linhas[0][0][0], lng0 = _iaSetor.linhas[0][0][1];
+        const mx = 111320 * Math.cos(lat0 * Math.PI / 180), my = 110540;
+        const toXY = (lat, lng) => ({ x: (lng - lng0) * mx, y: (lat - lat0) * my });
+        const existentes = surveysMemoria.map(sv => {
+            const lat = sv.latitude != null ? Number(sv.latitude) : null;
+            const lng = sv.longitude != null ? Number(sv.longitude) : null;
+            return (lat != null && lng != null && !isNaN(lat) && !isNaN(lng)) ? toXY(lat, lng) : null;
+        }).filter(Boolean);
+
+        const posicoes = [];
+        _iaSetor.linhas.forEach(([A, B]) => {
+            const a = toXY(A[0], A[1]), b = toXY(B[0], B[1]);
+            const L_ = Math.hypot(b.x - a.x, b.y - a.y);
+            if (L_ < 0.01) return;
+            const dx = (b.x - a.x) / L_, dy = (b.y - a.y) / L_;
+            const n = Math.floor(L_ / dist + 1e-6);
+            for (let i = 0; i <= n; i++) {
+                const x = a.x + dx * dist * i, y = a.y + dy * dist * i;
+                if (existentes.some(e => Math.hypot(e.x - x, e.y - y) < 0.45 * dist)) continue;
+                posicoes.push({ lat: lat0 + y / my, lng: lng0 + x / mx });
+            }
+        });
+        if (!posicoes.length) { showToast('Nada a criar', 'As linhas são curtas demais para essa distância.', 'warning'); return; }
+        if (posicoes.length > 2000) { showToast('Limite excedido', `${posicoes.length} casas passam do máximo de 2000.`, 'warning'); return; }
+        div.remove();
+        escreverMensagemUser(`${dist} m entre casas (${posicoes.length} casas)`);
+        gerarSequenciaIA(posicoes.length, posicoes);
     });
 }
 
@@ -2466,6 +2602,10 @@ function perguntarTipoIncremento() {
 // Escolha do layout quando a verificação foi expandida (mais de 5 surveys analisados)
 function perguntarQuantidade() {
     if (!iaPendencia) return;
+    if (_iaSetor && _iaSetor.linhas) {
+        perguntarLinhas(analisarGeometriaIA(iaPendencia.ultimos || []));
+        return;
+    }
     if (_iaSetor) {
         const gs = analisarGeometriaIA(iaPendencia.ultimos || []);
         if (gs) { perguntarSetor(gs); return; }
