@@ -359,6 +359,14 @@ function aplicarPermissoes() {
 let surveysMemoria = [];
 let _surveyIdSeq = 0;
 let _iaJaDisparou = false;
+let _iaMeta = 0;     // qtde de surveys no endereço para verificar o padrão (0 = não expandido)
+let _iaJanela = 5;   // quantos surveys recentes a análise de padrão considera
+let _iaSetor = null; // setor desenhado no mapa: { pts: [[lat,lng],...], layer }
+
+function limparSetorIA() {
+    if (_iaSetor && _iaSetor.layer) map.removeLayer(_iaSetor.layer);
+    _iaSetor = null;
+}
 let _surveyEditandoIdx = null;
 
 // ============================================
@@ -1485,7 +1493,7 @@ document.getElementById('clearBtn')?.addEventListener('click', () => {
     surveysMemoria = [];
     marcadoresSurveys.forEach(m => map.removeLayer(m));
     marcadoresSurveys = [];
-    _iaJaDisparou = false;
+    _iaJaDisparou = false; _iaMeta = 0; _iaJanela = 5; limparSetorIA();
     showToast('Lista limpa', 'Todos os surveys foram removidos.', 'success', 2500);
     renderizarSurveys();
 });
@@ -1532,7 +1540,7 @@ document.getElementById('exportBtn')?.addEventListener('click', async () => {
         surveysMemoria = [];
         marcadoresSurveys.forEach(m => map.removeLayer(m));
         marcadoresSurveys = [];
-        _iaJaDisparou = false;
+        _iaJaDisparou = false; _iaMeta = 0; _iaJanela = 5; limparSetorIA();
 
         showToast('ZIP gerado', `${total} moradia(s) exportada(s). Lista limpa.`, 'success', 4000);
         renderizarSurveys();
@@ -2003,7 +2011,8 @@ function escreverMensagemUser(texto) {
 // ============================================
 function verificarIAAutomatica() {
     if (_iaJaDisparou) return;
-    if (surveysMemoria.length < 5) return;
+    const alvo = _iaMeta > 0 ? _iaMeta : 5;
+    if (surveysMemoria.length < alvo) return;
 
     const grupos = {};
     surveysMemoria.forEach(s => {
@@ -2014,19 +2023,237 @@ function verificarIAAutomatica() {
 
     let grupoValido = null;
     for (const key in grupos) {
-        if (grupos[key].length >= 5) { grupoValido = grupos[key]; break; }
+        if (grupos[key].length >= alvo) { grupoValido = grupos[key]; break; }
     }
     if (!grupoValido) return;
 
     _iaJaDisparou = true;
     abrirChatIA();
-    setTimeout(() => detectarPadroes(false), 800);
+
+    if (_iaMeta > 0) {
+        // Meta de verificação expandida atingida: analisa o padrão dos últimos N
+        _iaJanela = _iaMeta;
+        _iaMeta = 0;
+        setTimeout(() => detectarPadroes(false), 800);
+    } else {
+        setTimeout(perguntarExpandirVerificacao, 800);
+    }
+}
+
+// ============================================
+// IA — PERGUNTAR SE EXPANDE A VERIFICAÇÃO (10, 15, 20 ou outro valor)
+// ============================================
+function perguntarExpandirVerificacao() {
+    limparSetorIA();
+    escreverMensagemIA(
+        `Olá! Eu sou a <strong>IA Logictel</strong>. Você já cadastrou <strong>5 surveys</strong> no mesmo endereço.<br><br>
+        Deseja <strong>expandir a verificação de padrão</strong>? Assim eu só analiso depois de você cadastrar mais surveys, usando todos eles para achar o padrão.`,
+        false
+    );
+
+    setTimeout(() => {
+        const wrapper = document.createElement('div');
+        wrapper.className = 'ia-msg ia-msg-ia';
+        wrapper.innerHTML = `
+            <div class="ia-msg-actions">
+                <button class="ia-btn ia-btn-success" data-meta="5" type="button">Analisar agora (5)</button>
+                <button class="ia-btn ia-btn-secondary" data-meta="10" type="button">10</button>
+                <button class="ia-btn ia-btn-secondary" data-meta="15" type="button">15</button>
+                <button class="ia-btn ia-btn-secondary" data-meta="20" type="button">20</button>
+                <button class="ia-btn ia-btn-success" id="iaSetorBtn" type="button">🗺️ Desenhar setor no mapa</button>
+            </div>
+            <div class="ia-msg-input-group">
+                <input type="number" id="iaMetaInput" min="6" max="500" placeholder="Outro valor">
+                <button class="ia-btn ia-btn-secondary" id="iaMetaBtn" type="button">Usar</button>
+            </div>
+        `;
+        iaChatBody.appendChild(wrapper);
+        iaChatBody.scrollTop = iaChatBody.scrollHeight;
+
+        const escolher = (n) => {
+            wrapper.remove();
+            if (n <= 5) {
+                escreverMensagemUser('Analisar agora');
+                detectarPadroes(false);
+                return;
+            }
+            escreverMensagemUser(String(n));
+            _iaMeta = n;
+            _iaJaDisparou = false; // volta a observar os cadastros
+            escreverMensagemIA(
+                `Combinado! Continue cadastrando. Quando você chegar a <strong>${n} surveys</strong> no mesmo endereço, 
+                eu analiso o padrão deles e pergunto se devo cadastrar conforme esse padrão.`
+            );
+        };
+
+        wrapper.querySelectorAll('[data-meta]').forEach(btn =>
+            btn.addEventListener('click', () => escolher(parseInt(btn.dataset.meta, 10))));
+
+        const usar = () => {
+            const n = parseInt(document.getElementById('iaMetaInput').value, 10);
+            if (isNaN(n) || n < 6 || n > 500) {
+                showToast('Valor inválido', 'Informe um número entre 6 e 500.', 'warning');
+                return;
+            }
+            escolher(n);
+        };
+        document.getElementById('iaSetorBtn').addEventListener('click', () => {
+            wrapper.remove();
+            escreverMensagemUser('Desenhar setor no mapa');
+            iniciarDesenhoSetor();
+        });
+        document.getElementById('iaMetaBtn').addEventListener('click', usar);
+        document.getElementById('iaMetaInput').addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') { e.preventDefault(); usar(); }
+        });
+    }, 500);
+}
+
+// ============================================
+// IA — DESENHAR SETOR NO MAPA (clique nos vértices)
+// ============================================
+function iniciarDesenhoSetor() {
+    const pts = [];
+    const marcas = [];
+    const poly = L.polygon([], { color: '#16a34a', weight: 2, fillOpacity: 0.12, dashArray: '6 4' }).addTo(map);
+    map.getContainer().style.cursor = 'crosshair';
+
+    const onClick = (e) => {
+        pts.push([e.latlng.lat, e.latlng.lng]);
+        marcas.push(L.circleMarker(e.latlng, { radius: 5, color: '#16a34a', fillColor: '#16a34a', fillOpacity: 1 }).addTo(map));
+        poly.setLatLngs(pts);
+    };
+    map.on('click', onClick);
+
+    const encerrar = () => {
+        map.off('click', onClick);
+        map.getContainer().style.cursor = '';
+        marcas.forEach(m => map.removeLayer(m));
+    };
+
+    escreverMensagemIA(
+        `Clique no mapa para marcar os <strong>vértices do setor</strong> onde devo cadastrar (mínimo 3 pontos). 
+        Quando terminar, clique em <strong>Concluir</strong>.`,
+        false
+    );
+    const wrapper = document.createElement('div');
+    wrapper.className = 'ia-msg ia-msg-ia';
+    wrapper.innerHTML = `
+        <div class="ia-msg-actions">
+            <button class="ia-btn ia-btn-success" id="iaSetorOk" type="button">Concluir</button>
+            <button class="ia-btn ia-btn-secondary" id="iaSetorDesfaz" type="button">Desfazer último</button>
+            <button class="ia-btn ia-btn-secondary" id="iaSetorCancela" type="button">Cancelar</button>
+        </div>`;
+    iaChatBody.appendChild(wrapper);
+    iaChatBody.scrollTop = iaChatBody.scrollHeight;
+
+    document.getElementById('iaSetorDesfaz').addEventListener('click', () => {
+        if (!pts.length) return;
+        pts.pop();
+        map.removeLayer(marcas.pop());
+        poly.setLatLngs(pts);
+    });
+    document.getElementById('iaSetorCancela').addEventListener('click', () => {
+        encerrar();
+        map.removeLayer(poly);
+        wrapper.remove();
+        escreverMensagemUser('Cancelar');
+        escreverMensagemIA('Tudo bem! Continue cadastrando manualmente.');
+        _iaJaDisparou = false;
+    });
+    document.getElementById('iaSetorOk').addEventListener('click', () => {
+        if (pts.length < 3) {
+            showToast('Setor incompleto', 'Marque pelo menos 3 pontos no mapa.', 'warning');
+            return;
+        }
+        encerrar();
+        wrapper.remove();
+        escreverMensagemUser('Setor definido');
+        _iaSetor = { pts: pts.map(p => [p[0], p[1]]), layer: poly };
+        detectarPadroes(false);
+    });
+}
+
+// Ponto dentro do polígono (coordenadas planas)
+function pontoNoPoligono(x, y, poli) {
+    let dentro = false;
+    for (let i = 0, j = poli.length - 1; i < poli.length; j = i++) {
+        const xi = poli[i].x, yi = poli[i].y, xj = poli[j].x, yj = poli[j].y;
+        if (((yi > y) !== (yj > y)) && (x < (xj - xi) * (y - yi) / (yj - yi) + xi)) dentro = !dentro;
+    }
+    return dentro;
+}
+
+function perguntarSetor(g) {
+    const passo = Math.hypot(g.stepX, g.stepY);
+    const div = document.createElement('div');
+    div.className = 'ia-msg ia-msg-ia';
+    div.innerHTML = `
+        Vou preencher o setor com casas a cada ~<strong>${passo.toFixed(1)} m</strong> (espaçamento da sua fileira), 
+        alinhadas à direção dela.
+        <div style="margin-top:8px;font-size:0.8rem;">
+            <label>Distância entre fileiras (m)
+                <input type="number" id="iaSetorDist" min="1" step="0.5" value="${(passo * 2).toFixed(1)}" style="width:100%">
+            </label>
+        </div>
+        <div class="ia-msg-actions" style="margin-top:8px;">
+            <button class="ia-btn ia-btn-success" id="iaSetorCriar" type="button">Criar</button>
+        </div>`;
+    iaChatBody.appendChild(div);
+    iaChatBody.scrollTop = iaChatBody.scrollHeight;
+
+    document.getElementById('iaSetorCriar').addEventListener('click', () => {
+        const dist = parseFloat(document.getElementById('iaSetorDist').value);
+        if (isNaN(dist) || dist <= 0) { showToast('Valor inválido', 'Informe a distância entre fileiras.', 'warning'); return; }
+
+        const toXY = (lat, lng) => ({ x: (lng - g.origemLng) * g.mx, y: (lat - g.origemLat) * g.my });
+        const poli = _iaSetor.pts.map(p => toXY(p[0], p[1]));
+        const s = passo;
+        const uh = { x: g.stepX / s, y: g.stepY / s };
+        const vh = { x: -uh.y, y: uh.x };
+
+        let amin = Infinity, amax = -Infinity, bmin = Infinity, bmax = -Infinity;
+        poli.forEach(p => {
+            const a = p.x * uh.x + p.y * uh.y, b = p.x * vh.x + p.y * vh.y;
+            amin = Math.min(amin, a); amax = Math.max(amax, a);
+            bmin = Math.min(bmin, b); bmax = Math.max(bmax, b);
+        });
+        const nJ = (Math.ceil(amax / s) - Math.floor(amin / s) + 1);
+        const nR = (Math.ceil(bmax / dist) - Math.floor(bmin / dist) + 1);
+        if (nJ * nR > 20000) { showToast('Setor muito grande', 'Desenhe um setor menor ou aumente a distância.', 'warning'); return; }
+
+        // casas já cadastradas (evita duplicar)
+        const existentes = surveysMemoria.map(sv => {
+            const lat = sv.latitude != null ? Number(sv.latitude) : null;
+            const lng = sv.longitude != null ? Number(sv.longitude) : null;
+            return (lat != null && lng != null && !isNaN(lat) && !isNaN(lng)) ? toXY(lat, lng) : null;
+        }).filter(Boolean);
+
+        const posicoes = [];
+        for (let r = Math.floor(bmin / dist); r <= Math.ceil(bmax / dist); r++) {
+            for (let j = Math.floor(amin / s); j <= Math.ceil(amax / s); j++) {
+                const x = j * s * uh.x + r * dist * vh.x;
+                const y = j * s * uh.y + r * dist * vh.y;
+                if (!pontoNoPoligono(x, y, poli)) continue;
+                if (existentes.some(e => Math.hypot(e.x - x, e.y - y) < 0.45 * s)) continue;
+                posicoes.push({ lat: g.origemLat + y / g.my, lng: g.origemLng + x / g.mx });
+            }
+        }
+        if (!posicoes.length) { showToast('Nada a criar', 'Nenhuma casa coube no setor desenhado.', 'warning'); return; }
+        if (posicoes.length > 2000) { showToast('Limite excedido', `${posicoes.length} casas passam do máximo de 2000. Desenhe um setor menor.`, 'warning'); return; }
+        div.remove();
+        escreverMensagemUser(`${dist} m entre fileiras (${posicoes.length} casas)`);
+        gerarSequenciaIA(posicoes.length, posicoes);
+    });
 }
 
 // ============================================
 // IA — DETECÇÃO DE PADRÕES
 // ============================================
 function detectarPadroes(manual) {
+    const janela = manual ? 5 : _iaJanela;
+    _iaJanela = 5;
+
     if (!surveysMemoria || surveysMemoria.length < 5) {
         escreverMensagemIA(
             `Olá! Eu sou a <strong>IA Logictel</strong>.<br><br>
@@ -2041,7 +2268,7 @@ function detectarPadroes(manual) {
         new Date(a.created_at) - new Date(b.created_at)
     );
 
-    const padrao = encontrarPadrao(lista);
+    const padrao = encontrarPadrao(lista, janela);
 
     if (!padrao) {
         const grupos = {};
@@ -2052,7 +2279,7 @@ function detectarPadroes(manual) {
         });
 
         let grupo = null;
-        for (const k in grupos) if (grupos[k].length >= 5) { grupo = grupos[k]; break; }
+        for (const k in grupos) if (grupos[k].length >= janela) { grupo = grupos[k]; break; }
 
         if (grupo) {
             iaPendencia = {
@@ -2063,7 +2290,7 @@ function detectarPadroes(manual) {
                 campo: null,
                 ultimoValor: null,
                 delta: null,
-                ultimos: grupo.slice(-5)
+                ultimos: grupo.slice(-janela)
             };
 
             escreverMensagemIA(
@@ -2105,10 +2332,10 @@ function detectarPadroes(manual) {
 
         escreverMensagemIA(
             `Analisei seus <strong>${lista.length}</strong> surveys e <strong>não encontrei um padrão claro</strong>.<br><br>
-            Para eu detectar, os 5 últimos precisam ter:
+            Para eu detectar, os ${janela} últimos precisam ter:
             <ul style="margin:8px 0 8px 16px;font-size:0.8rem;">
                 <li>Mesmo logradouro e mesma fachada; ou</li>
-                <li>Mesmo logradouro e mesma combinação de complementos fixos, com <strong>1 valor incrementando</strong> (1,2,3,4,5).</li>
+                <li>Mesmo logradouro e mesma combinação de complementos fixos, com <strong>1 valor incrementando</strong> (1,2,3,4,5...).</li>
             </ul>`
         );
         return;
@@ -2211,7 +2438,84 @@ function perguntarTipoIncremento() {
 // ============================================
 // IA — PERGUNTAR QUANTIDADE
 // ============================================
+// Escolha do layout quando a verificação foi expandida (mais de 5 surveys analisados)
 function perguntarQuantidade() {
+    if (!iaPendencia) return;
+    if (_iaSetor) {
+        const gs = analisarGeometriaIA(iaPendencia.ultimos || []);
+        if (gs) { perguntarSetor(gs); return; }
+        showToast('Fileira não detectada', 'Não consegui ler a direção das casas; usando a quantidade em linha.', 'warning', 4000);
+        limparSetorIA();
+    }
+    const g = (iaPendencia.ultimos || []).length > 5 ? analisarGeometriaIA(iaPendencia.ultimos) : null;
+    if (!g) { perguntarQuantidadeLinha(); return; }
+
+    const div = document.createElement('div');
+    div.className = 'ia-msg ia-msg-ia';
+    div.innerHTML = `
+        Como devo distribuir os novos surveys no mapa?
+        <div class="ia-msg-actions">
+            <button class="ia-btn ia-btn-secondary" id="iaLayoutLinha" type="button">Em linha</button>
+            <button class="ia-btn ia-btn-success" id="iaLayoutFileiras" type="button">Em fileiras (condomínio)</button>
+        </div>`;
+    iaChatBody.appendChild(div);
+    iaChatBody.scrollTop = iaChatBody.scrollHeight;
+
+    document.getElementById('iaLayoutLinha').addEventListener('click', () => {
+        div.remove(); escreverMensagemUser('Em linha'); perguntarQuantidadeLinha();
+    });
+    document.getElementById('iaLayoutFileiras').addEventListener('click', () => {
+        div.remove(); escreverMensagemUser('Em fileiras'); perguntarFileiras(g);
+    });
+}
+
+function perguntarFileiras(g) {
+    const passo = Math.hypot(g.stepX, g.stepY);
+    const div = document.createElement('div');
+    div.className = 'ia-msg ia-msg-ia';
+    div.innerHTML = `
+        Detectei uma fileira de <strong>${g.k} casas</strong> com ~<strong>${passo.toFixed(1)} m</strong> entre elas.<br>
+        <small style="color:var(--text-tertiary)">As fileiras novas seguem o mesmo sentido e espaçamento.</small>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-top:8px;font-size:0.8rem;">
+            <label>Casas por fileira<input type="number" id="iaFilPor" min="${g.k}" value="${Math.max(g.k, 20)}" style="width:100%"></label>
+            <label>Fileiras novas<input type="number" id="iaFilQtd" min="0" value="1" style="width:100%"></label>
+            <label>Distância entre fileiras (m)<input type="number" id="iaFilDist" min="1" step="0.5" value="${(passo * 2).toFixed(1)}" style="width:100%"></label>
+            <label>Lado das novas fileiras<select id="iaFilLado" style="width:100%"><option value="esq">Esquerda</option><option value="dir">Direita</option></select></label>
+        </div>
+        <div class="ia-msg-actions" style="margin-top:8px;"><button class="ia-btn ia-btn-success" id="iaFilCriar" type="button">Criar</button></div>`;
+    iaChatBody.appendChild(div);
+    iaChatBody.scrollTop = iaChatBody.scrollHeight;
+
+    document.getElementById('iaFilCriar').addEventListener('click', () => {
+        const por = parseInt(document.getElementById('iaFilPor').value, 10);
+        const qtd = parseInt(document.getElementById('iaFilQtd').value, 10);
+        const dist = parseFloat(document.getElementById('iaFilDist').value);
+        const lado = document.getElementById('iaFilLado').value;
+        if (isNaN(por) || por < g.k || isNaN(qtd) || qtd < 0 || isNaN(dist) || dist <= 0) {
+            showToast('Valores inválidos', `Casas por fileira deve ser ≥ ${g.k}, fileiras ≥ 0 e distância > 0.`, 'warning');
+            return;
+        }
+        const posicoes = [];
+        const u = { x: g.stepX, y: g.stepY };
+        const s = Math.hypot(u.x, u.y);
+        const uh = { x: u.x / s, y: u.y / s };
+        const vh = lado === 'esq' ? { x: -uh.y, y: uh.x } : { x: uh.y, y: -uh.x };
+        const pt = (dx, dy) => ({ lat: g.origemLat + dy / g.my, lng: g.origemLng + dx / g.mx });
+        for (let j = g.k; j < por; j++) posicoes.push(pt(j * u.x, j * u.y));            // completa a fileira atual
+        for (let r = 1; r <= qtd; r++) {
+            for (let j = 0; j < por; j++) {
+                posicoes.push(pt(r * dist * vh.x + j * u.x, r * dist * vh.y + j * u.y));
+            }
+        }
+        if (!posicoes.length) { showToast('Nada a criar', 'Aumente as casas por fileira ou as fileiras.', 'warning'); return; }
+        if (posicoes.length > 2000) { showToast('Limite excedido', 'O máximo é 2000 casas por vez.', 'warning'); return; }
+        div.remove();
+        escreverMensagemUser(`${por} por fileira, ${qtd} fileira(s) nova(s), ${dist} m, lado ${lado === 'esq' ? 'esquerdo' : 'direito'}`);
+        gerarSequenciaIA(posicoes.length, posicoes);
+    });
+}
+
+function perguntarQuantidadeLinha() {
     if (!iaPendencia) return;
 
     const div = document.createElement('div');
@@ -2256,11 +2560,11 @@ function perguntarQuantidade() {
 // ============================================
 // IA — ENCONTRAR PADRÃO
 // ============================================
-function encontrarPadrao(lista) {
-    if (lista.length < 5) return null;
+function encontrarPadrao(lista, janela = 5) {
+    if (lista.length < janela) return null;
 
-    const ultimos = lista.slice(-5);
-    if (ultimos.length < 5) return null;
+    const ultimos = lista.slice(-janela);
+    if (ultimos.length < janela) return null;
 
     const logradouroRef = ultimos[0].logradouro && ultimos[0].logradouro.rua;
     if (!logradouroRef) return null;
@@ -2284,7 +2588,7 @@ function encontrarPadrao(lista) {
         if (mesmoDelta) {
             return {
                 tipo: 'fachada',
-                quantidade: 5,
+                quantidade: janela,
                 descricao: 'fachadas',
                 enderecoResumo: `${l0.tipo || ''} ${l0.rua}, ${l0.bairro || ''}`.trim(),
                 campo: 'numero',
@@ -2295,7 +2599,7 @@ function encontrarPadrao(lista) {
         }
     }
 
-    // 5 últimos só com fachada SN (sem pisos/complementos): cria tudo como SN
+    // últimos só com fachada SN (sem pisos/complementos): cria tudo como SN
     const soSN = ultimos.every(s =>
         String(s.numero || '').trim().toUpperCase() === 'SN' &&
         !s.pisos &&
@@ -2304,7 +2608,7 @@ function encontrarPadrao(lista) {
     if (soSN) {
         return {
             tipo: 'sn',
-            quantidade: 5,
+            quantidade: janela,
             descricao: 'fachadas SN',
             enderecoResumo: `${l0.tipo || ''} ${l0.rua}, ${l0.bairro || ''}`.trim(),
             campo: 'numero',
@@ -2345,7 +2649,7 @@ function encontrarPadrao(lista) {
         const tipoRef = (ultimos[0].complementos[c] || {}).tipo || 'complemento';
         return {
             tipo: 'complemento',
-            quantidade: 5,
+            quantidade: janela,
             descricao: tipoRef.toLowerCase(),
             enderecoResumo: `${l0.tipo || ''} ${l0.rua}, ${ultimos[0].numero}, ${l0.bairro || ''}`.trim(),
             campo: 'complemento_' + c,
@@ -2362,7 +2666,44 @@ function encontrarPadrao(lista) {
 // ============================================
 // IA — GERAR SEQUÊNCIA
 // ============================================
-function gerarSequenciaIA(quantidade) {
+// Lê a geometria dos surveys analisados: passo mediano e fileira atual (trecho final alinhado)
+function analisarGeometriaIA(ultimos) {
+    const ll = (s) => {
+        const lat = s.latitude != null ? Number(s.latitude) : (s.logradouro && s.logradouro.lat);
+        const lng = s.longitude != null ? Number(s.longitude) : (s.logradouro && s.logradouro.lng);
+        return (lat != null && lng != null && !isNaN(lat) && !isNaN(lng)) ? { lat: Number(lat), lng: Number(lng) } : null;
+    };
+    const pts = ultimos.map(ll).filter(Boolean);
+    if (pts.length < 3) return null;
+
+    const mx = 111320 * Math.cos(pts[pts.length - 1].lat * Math.PI / 180), my = 110540;
+    const xy = pts.map(p => ({ x: p.lng * mx, y: p.lat * my }));
+    const steps = [];
+    for (let i = 1; i < xy.length; i++) steps.push({ x: xy[i].x - xy[i - 1].x, y: xy[i].y - xy[i - 1].y });
+
+    const mediana = (arr) => { const a = [...arr].sort((p, q) => p - q); const m = a.length >> 1; return a.length % 2 ? a[m] : (a[m - 1] + a[m]) / 2; };
+    let med = { x: mediana(steps.map(t => t.x)), y: mediana(steps.map(t => t.y)) };
+    let sm = Math.hypot(med.x, med.y);
+    if (sm < 0.5) return null;
+
+    const conforme = (t, ref, sref) => {
+        const l = Math.hypot(t.x, t.y);
+        if (l < 0.4 * sref || l > 2.5 * sref) return false;
+        return (t.x * ref.x + t.y * ref.y) / (l * sref) >= 0.82; // até ~35°
+    };
+
+    // trecho final (fileira atual): passos alinhados ao passo mediano
+    let n = 0;
+    for (let i = steps.length - 1; i >= 0 && conforme(steps[i], med, sm); i--) n++;
+    if (n < 2) return null;
+    const run = steps.slice(steps.length - n);
+    const step = { x: mediana(run.map(t => t.x)), y: mediana(run.map(t => t.y)) };
+    const k = n + 1;
+    const origem = pts[pts.length - k];
+    return { stepX: step.x, stepY: step.y, k, origemLat: origem.lat, origemLng: origem.lng, mx, my };
+}
+
+function gerarSequenciaIA(quantidade, posicoes) {
     if (!iaPendencia) return;
 
     const pad = iaPendencia;
@@ -2385,6 +2726,12 @@ function gerarSequenciaIA(quantidade) {
     if (contDelta > 0) {
         deltaLat /= contDelta;
         deltaLng /= contDelta;
+    }
+    // Passo mais confiável (mediana da fileira atual) quando há surveys espalhados
+    const geo = ultimos.length > 5 ? analisarGeometriaIA(ultimos) : null;
+    if (geo) {
+        deltaLat = geo.stepY / geo.my;
+        deltaLng = geo.stepX / geo.mx;
     }
 
     const ultimoSurvey = ultimos[ultimos.length - 1];
@@ -2409,7 +2756,10 @@ function gerarSequenciaIA(quantidade) {
             }
         }
 
-        if (ultLat != null && ultLng != null && (deltaLat !== 0 || deltaLng !== 0)) {
+        if (posicoes) {
+            novo.latitude = +posicoes[i - 1].lat.toFixed(8);
+            novo.longitude = +posicoes[i - 1].lng.toFixed(8);
+        } else if (ultLat != null && ultLng != null && (deltaLat !== 0 || deltaLng !== 0)) {
             novo.latitude = +(ultLat + deltaLat * i).toFixed(8);
             novo.longitude = +(ultLng + deltaLng * i).toFixed(8);
         }
@@ -2427,6 +2777,7 @@ function gerarSequenciaIA(quantidade) {
     );
 
     iaPendencia = null;
+    limparSetorIA();
 }
 
 // ============================================
