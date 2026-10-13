@@ -452,6 +452,11 @@
                         <button class="toggle-btn" data-target="listBody" type="button" aria-expanded="true">&#9660;</button>
                     </header>
                     <div class="card-body" id="listBody">
+                        <div id="gruposToolbar" style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:8px;">
+                            <button type="button" id="grpExpandir" class="btn-editar" style="padding:6px 10px;">Expandir tudo</button>
+                            <button type="button" id="grpRecolher" class="btn-editar" style="padding:6px 10px;">Recolher tudo</button>
+                            <button type="button" id="grpAlterarRoteiro" class="btn-editar" style="padding:6px 10px;" disabled>Alterar roteiro dos selecionados (0)</button>
+                        </div>
                         <div class="table-wrapper">
                             <table id="surveysTable">
                                 <colgroup>

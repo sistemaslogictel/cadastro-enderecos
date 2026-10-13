@@ -1396,6 +1396,150 @@ function cancelarEdicaoSurvey(manterRoteiro) {
 // ============================================
 // RENDERIZAR SURVEYS SALVOS
 // ============================================
+// ============================================
+// SURVEYS SALVOS — TROCAR ROTEIRO DOS LOGRADOUROS SELECIONADOS
+// ============================================
+function logradouroDeRegistro(r) {
+    return {
+        _registro_id: r.id,
+        origem: 'Roteiro XML',
+        tipo: normalizarTipo(r.tipo) || 'Rua',
+        rua: r.logradouro || '',
+        bairro: r.bairro || '',
+        cidade: r.municipio || '',
+        estado: r.uf || '',
+        cep: r.cep || '',
+        lat: r.latitude != null ? Number(r.latitude) : null,
+        lng: r.longitude != null ? Number(r.longitude) : null,
+        cod_bairro: r.cod_bairro || '',
+        cod_lograd: r.cod_lograd || '',
+        id_roteiro: r.id_roteiro || '',
+        id_localidade: r.id_localidade || '',
+        localidade: r.localidade || '',
+        localidade_abrev: r.localidade_abrev || ''
+    };
+}
+
+async function buscarRoteirosParaTroca(query) {
+    const norm = (t) => (t || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/\s+/g, ' ').trim();
+    const cep = query.replace(/\D/g, '');
+    if (cep.length === 8) {
+        const { data, error } = await supabaseClient.from('logradouros').select('*')
+            .eq('origem', 'Roteiro XML').ilike('cep', `%${cep}%`).limit(30);
+        if (error) throw error;
+        return data || [];
+    }
+    const palavras = norm(query).split(/\s+/).filter(p => p.length >= 2);
+    if (!palavras.length) return [];
+    const chave = [...palavras].sort((a, b) => b.length - a.length)[0];
+    const { data, error } = await supabaseClient.from('logradouros').select('*')
+        .eq('origem', 'Roteiro XML')
+        .or(`logradouro.ilike.%${chave}%,bairro.ilike.%${chave}%,municipio.ilike.%${chave}%,cep.ilike.%${chave}%`)
+        .limit(200);
+    if (error) throw error;
+    const blob = (r) => norm([r.tipo, r.logradouro, r.bairro, r.municipio, r.uf, r.cep ? String(r.cep).replace(/\D/g, '') : ''].filter(Boolean).join(' '));
+    const ok = (data || []).filter(r => { const b = blob(r); return palavras.every(p => b.includes(p)); });
+    return ok.slice(0, 50);
+}
+
+function abrirTrocaRoteiro() {
+    if (!gruposSelecionados.size) return;
+    const nSurveys = surveysMemoria.filter(sv => gruposSelecionados.has(chaveGrupo(sv.logradouro))).length;
+
+    const overlay = document.createElement('div');
+    overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:10000;display:flex;align-items:center;justify-content:center;padding:16px;';
+    overlay.innerHTML = `
+        <div style="background:var(--bg-card,#fff);color:var(--text-primary);border-radius:12px;padding:16px;width:100%;max-width:560px;max-height:85vh;display:flex;flex-direction:column;gap:10px;box-shadow:var(--shadow-lg);">
+            <strong>Alterar roteiro de ${gruposSelecionados.size} logradouro(s) (${nSurveys} survey(s))</strong>
+            <small style="color:var(--text-tertiary);">Busque o logradouro/CEP do roteiro correto e clique nele para aplicar a todos os selecionados.</small>
+            <input type="text" id="trocaBusca" placeholder="Nome da rua, bairro ou CEP" autocomplete="off" style="width:100%;padding:8px 10px;">
+            <div id="trocaLista" style="overflow:auto;flex:1;min-height:120px;border:1px solid var(--border-color,#ddd);border-radius:8px;"></div>
+            <div style="text-align:right;"><button type="button" id="trocaFechar" class="btn-editar" style="padding:6px 12px;">Cancelar</button></div>
+        </div>`;
+    document.body.appendChild(overlay);
+    const input = overlay.querySelector('#trocaBusca');
+    const lista = overlay.querySelector('#trocaLista');
+    input.focus();
+    const fechar = () => overlay.remove();
+    overlay.querySelector('#trocaFechar').addEventListener('click', fechar);
+    overlay.addEventListener('click', (e) => { if (e.target === overlay) fechar(); });
+
+    let timer = null;
+    input.addEventListener('input', () => {
+        clearTimeout(timer);
+        timer = setTimeout(async () => {
+            const q = input.value.trim();
+            if (q.length < 2) { lista.innerHTML = ''; return; }
+            lista.innerHTML = '<div style="padding:10px;">Buscando...</div>';
+            try {
+                const rs = await buscarRoteirosParaTroca(q);
+                if (!rs.length) { lista.innerHTML = '<div style="padding:10px;">Nada encontrado.</div>'; return; }
+                lista.innerHTML = '';
+                rs.forEach(r => {
+                    const it = document.createElement('div');
+                    it.style.cssText = 'padding:8px 10px;cursor:pointer;border-bottom:1px solid var(--border-light,#eee);';
+                    it.innerHTML = `<strong>${escapeHtml([normalizarTipo(r.tipo), r.logradouro].filter(Boolean).join(' '))}</strong>
+                        <div style="font-size:.8rem;color:var(--text-tertiary);">${escapeHtml([r.bairro, [r.municipio, r.uf].filter(Boolean).join('/')].filter(Boolean).join(', '))} · CEP ${escapeHtml(formatarCEP(r.cep || '') || '—')}</div>
+                        ${idsRoteiroHtml(r)}`;
+                    it.addEventListener('mouseenter', () => it.style.background = 'var(--bg-secondary)');
+                    it.addEventListener('mouseleave', () => it.style.background = '');
+                    it.addEventListener('click', () => {
+                        const rotulo = `${[normalizarTipo(r.tipo), r.logradouro].filter(Boolean).join(' ')} — CEP ${formatarCEP(r.cep || '') || '—'}`;
+                        if (!confirm(`Aplicar "${rotulo}" a ${nSurveys} survey(s) de ${gruposSelecionados.size} logradouro(s)?`)) return;
+                        const novo = logradouroDeRegistro(r);
+                        let alterados = 0;
+                        surveysMemoria.forEach(sv => {
+                            if (!gruposSelecionados.has(chaveGrupo(sv.logradouro))) return;
+                            const antigo = sv.logradouro || {};
+                            // preserva a posição do survey quando ela vinha do logradouro antigo
+                            if (sv.latitude == null && antigo.lat != null) sv.latitude = antigo.lat;
+                            if (sv.longitude == null && antigo.lng != null) sv.longitude = antigo.lng;
+                            sv.logradouro = { ...novo };
+                            alterados++;
+                        });
+                        gruposSelecionados.clear();
+                        gruposAbertos.clear();
+                        fechar();
+                        renderizarSurveys();
+                        showToast('Roteiro alterado', `${alterados} survey(s) atualizado(s).`, 'success', 3500);
+                    });
+                    lista.appendChild(it);
+                });
+            } catch (err) {
+                lista.innerHTML = `<div style="padding:10px;">Erro ao buscar: ${escapeHtml(err.message || String(err))}</div>`;
+            }
+        }, 350);
+    });
+}
+
+document.getElementById('grpAlterarRoteiro')?.addEventListener('click', abrirTrocaRoteiro);
+document.getElementById('grpExpandir')?.addEventListener('click', () => {
+    surveysMemoria.forEach(sv => gruposAbertos.add(chaveGrupo(sv.logradouro)));
+    renderizarSurveys();
+});
+document.getElementById('grpRecolher')?.addEventListener('click', () => {
+    gruposAbertos.clear();
+    renderizarSurveys();
+});
+
+// ============================================
+// SURVEYS SALVOS — AGRUPADOS POR LOGRADOURO
+// ============================================
+const gruposAbertos = new Set();
+const gruposSelecionados = new Set();
+
+function chaveGrupo(l) {
+    l = l || {};
+    return [l.tipo, l.rua, l.bairro, l.cidade, l.estado, l.cep, l.id_roteiro].map(v => String(v || '').toUpperCase()).join('|');
+}
+
+function atualizarBarraGrupos() {
+    const btn = document.getElementById('grpAlterarRoteiro');
+    if (!btn) return;
+    btn.textContent = `Alterar roteiro dos selecionados (${gruposSelecionados.size})`;
+    btn.disabled = gruposSelecionados.size === 0;
+}
+
 function renderizarSurveys() {
     const panel = document.getElementById('listPanel');
     const tbody = document.querySelector('#surveysTable tbody');
@@ -1413,7 +1557,36 @@ function renderizarSurveys() {
 
     panel.style.display = 'block';
 
-    surveysMemoria.forEach((s, idx) => {
+    const grupos = new Map();
+    surveysMemoria.forEach((sv, i) => {
+        const k = chaveGrupo(sv.logradouro);
+        if (!grupos.has(k)) grupos.set(k, []);
+        grupos.get(k).push(i);
+    });
+    [...gruposSelecionados].forEach(k => { if (!grupos.has(k)) gruposSelecionados.delete(k); });
+    [...gruposAbertos].forEach(k => { if (!grupos.has(k)) gruposAbertos.delete(k); });
+
+    grupos.forEach((idxs, key) => {
+        const l0 = surveysMemoria[idxs[0]].logradouro || {};
+        const aberto = gruposAbertos.has(key);
+        const hr = document.createElement('tr');
+        hr.className = 'grupo-row';
+        hr.dataset.grupo = key;
+        hr.style.cssText = 'background:var(--bg-secondary);cursor:pointer;font-weight:600;';
+        hr.innerHTML = `
+            <td colspan="7">
+                <input type="checkbox" class="grp-chk" ${gruposSelecionados.has(key) ? 'checked' : ''} style="margin-right:8px;">
+                <span class="grp-seta">${aberto ? '▼' : '▶'}</span>
+                ${escapeHtml([l0.tipo, l0.rua].filter(Boolean).join(' ') || '—')}
+                <span style="font-weight:400;color:var(--text-tertiary);">
+                    — ${escapeHtml([l0.bairro, [l0.cidade, l0.estado].filter(Boolean).join('/')].filter(Boolean).join(', '))}
+                    · CEP ${escapeHtml(formatarCEP(l0.cep || '') || '—')} · ${idxs.length} survey(s)
+                </span>
+            </td>`;
+        tbody.appendChild(hr);
+
+    idxs.forEach((idx) => {
+        const s = surveysMemoria[idx];
         const l = s.logradouro || {};
         const comps = Array.isArray(s.complementos) ? s.complementos : [];
         const compTexto = comps.length
@@ -1434,8 +1607,31 @@ function renderizarSurveys() {
                 <button class="btn-remover" data-id="${s._id}" title="Remover" type="button">🗑️</button>
             </td>
         `;
+        tr.classList.add('grupo-filho');
+        tr.dataset.grupo = key;
+        if (!aberto) tr.style.display = 'none';
         tbody.appendChild(tr);
     });
+    });
+
+    tbody.querySelectorAll('tr.grupo-row').forEach(hr => {
+        const key = hr.dataset.grupo;
+        const chk = hr.querySelector('.grp-chk');
+        chk.addEventListener('click', (e) => e.stopPropagation());
+        chk.addEventListener('change', () => {
+            if (chk.checked) gruposSelecionados.add(key); else gruposSelecionados.delete(key);
+            atualizarBarraGrupos();
+        });
+        hr.addEventListener('click', () => {
+            const abrir = !gruposAbertos.has(key);
+            if (abrir) gruposAbertos.add(key); else gruposAbertos.delete(key);
+            hr.querySelector('.grp-seta').textContent = abrir ? '▼' : '▶';
+            tbody.querySelectorAll('tr.grupo-filho').forEach(tr => {
+                if (tr.dataset.grupo === key) tr.style.display = abrir ? '' : 'none';
+            });
+        });
+    });
+    atualizarBarraGrupos();
 
     tbody.querySelectorAll('.btn-editar').forEach(btn => {
         btn.addEventListener('click', () => abrirEdicaoSurvey(parseInt(btn.dataset.idx, 10)));
