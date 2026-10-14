@@ -362,9 +362,14 @@ let _iaJaDisparou = false;
 let _iaMeta = 0;     // qtde de surveys no endereço para verificar o padrão (0 = não expandido)
 let _iaJanela = 5;   // quantos surveys recentes a análise de padrão considera
 let _iaCorte = 0;    // surveys antes deste índice (já tratados pela IA) não contam para um novo disparo
-let _iaSetor = null; // setor desenhado no mapa: { pts: [[lat,lng],...], layer }
+let _iaSetor = null; // linhas desenhadas no mapa: { linhas: [...], layer }
+let _iaPreview = null; // pontos de pré-visualização dos surveys que serão criados
+function limparPreviewLinhas() {
+    if (_iaPreview) { map.removeLayer(_iaPreview); _iaPreview = null; }
+}
 
 function limparSetorIA() {
+    limparPreviewLinhas();
     if (_iaSetor && _iaSetor.layer) map.removeLayer(_iaSetor.layer);
     _iaSetor = null;
 }
@@ -499,6 +504,21 @@ function irParaCard(panelId) {
     setTimeout(() => panel.classList.remove('highlight'), 1200);
 }
 
+// Avança de um passo para o próximo (1 → 2 → 3 → 4): recolhe o anterior, abre e rola até o seguinte
+function avancarPara(deId, paraId) {
+    if (deId) recolherCard(deId);
+    expandirCard(paraId);
+    requestAnimationFrame(() => irParaCard(paraId)); // espera o layout recalcular após recolher
+    document.querySelectorAll('.header-nav button').forEach(b => b.classList.toggle('active', b.dataset.goto === paraId));
+}
+
+// Depois de salvar um survey (passo 3), pula para a lista (passo 4).
+// Se preferir ficar no formulário para cadastrar vários seguidos, troque para false.
+const AVANCAR_PARA_LISTA_APOS_SALVAR = true;
+function irParaListaAposSalvar() {
+    if (AVANCAR_PARA_LISTA_APOS_SALVAR) avancarPara(null, 'listPanel');
+}
+
 // ============================================
 // TOGGLE PAINÉIS
 // ============================================
@@ -626,7 +646,7 @@ searchInput.addEventListener('keypress', (e) => {
     if (e.key === 'Enter') {
         e.preventDefault();
         const query = searchInput.value.trim();
-        if (query) buscarSugestoes(query);
+        if (query) buscarSugestoes(query, { explicita: true });
     }
 });
 
@@ -641,84 +661,179 @@ document.getElementById('searchClearBtn')?.addEventListener('click', () => {
     searchInput.focus();
 });
 
-async function buscarSugestoes(query) {
-    if (query === ultimoQuery) return;
-    ultimoQuery = query;
+// ---- utilitários de robustez (timeout / espera) ----
+const _esperar = (ms) => new Promise(r => setTimeout(r, ms));
+function comTimeout(promessa, ms, msg = 'Tempo esgotado') {
+    let timer;
+    const limite = new Promise((_, rej) => { timer = setTimeout(() => rej(new Error(msg)), ms); });
+    return Promise.race([promessa, limite]).finally(() => clearTimeout(timer));
+}
 
-    suggestionsBox.innerHTML = '<div class="suggestion-item empty"><span class="loading"></span>Buscando no roteiro...</div>';
-    suggestionsBox.style.display = 'block';
+let _buscaSeq = 0;            // identifica a busca mais recente (respostas antigas são descartadas)
+let _buscaEmAndamento = false;
 
-    try {
-        const cepDigitos = query.replace(/\D/g, '');
+// Consulta o roteiro. Retorna a lista, ou null se a pesquisa for curta demais.
+async function consultarRoteiro(query) {
+    const cepDigitos = query.replace(/\D/g, '');
 
-        if (cepDigitos.length === 8) {
-            const { data, error } = await supabaseClient
-                .from('logradouros').select('*')
-                .eq('origem', 'Roteiro XML')
-                .ilike('cep', `%${cepDigitos}%`)
-                .limit(30);
-            if (error) throw error;
-            renderizarSugestoes(data || [], query);
-            return;
-        }
-
-        const normalizar = (s) => (s || '')
-            .toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '')
-            .replace(/\s+/g, ' ').trim();
-
-        const queryNorm = normalizar(query)
-            .replace(/^(rua|r\.?|avenida|av\.?|travessa|tv\.?|estrada|est\.?|alameda|al\.?|praca|praça|pc\.?|largo|beco|caminho)\s+/i, '')
-            .trim();
-
-        const palavras = queryNorm.split(/\s+/).filter(p => p.length >= 2);
-        if (palavras.length === 0) {
-            suggestionsBox.innerHTML = '<div class="suggestion-item empty">Digite ao menos 2 letras.</div>';
-            return;
-        }
-
-        const palavraChave = [...palavras].sort((a, b) => b.length - a.length)[0];
-
+    if (cepDigitos.length === 8) {
         const { data, error } = await supabaseClient
             .from('logradouros').select('*')
             .eq('origem', 'Roteiro XML')
-            .or(`logradouro.ilike.%${palavraChave}%,bairro.ilike.%${palavraChave}%,municipio.ilike.%${palavraChave}%,cep.ilike.%${palavraChave}%`)
-            .limit(200);
+            .ilike('cep', `%${cepDigitos}%`)
+            .limit(30);
         if (error) throw error;
-
-        const concatenar = (r) => normalizar([
-            r.tipo, r.logradouro, r.bairro, r.municipio, r.uf,
-            r.cep ? String(r.cep).replace(/\D/g, '') : ''
-        ].filter(Boolean).join(' '));
-
-        const passaFiltro = (r) => {
-            const blob = concatenar(r);
-            return palavras.every(p => {
-                if (blob.includes(p)) return true;
-                const partes = blob.split(/\s+/);
-                return partes.some(pb => pb.length >= 3 && (pb.includes(p) || p.includes(pb)));
-            });
-        };
-
-        let filtrados = (data || []).filter(passaFiltro);
-
-        if (filtrados.length === 0 && palavras.length > 1) {
-            const segunda = [...palavras].sort((a, b) => b.length - a.length)[1];
-            const { data: data2 } = await supabaseClient
-                .from('logradouros').select('*')
-                .eq('origem', 'Roteiro XML')
-                .or(`logradouro.ilike.%${segunda}%,bairro.ilike.%${segunda}%,municipio.ilike.%${segunda}%,cep.ilike.%${segunda}%`)
-                .limit(200);
-            filtrados = (data2 || []).filter(passaFiltro);
-        }
-
-        if (filtrados.length === 0 && data && data.length > 0) filtrados = data;
-
-        renderizarSugestoes(filtrados, query);
-    } catch (err) {
-        console.error('Busca falhou:', err);
-        suggestionsBox.innerHTML = `<div class="suggestion-item empty">Erro ao buscar: ${escapeHtml(err.message)}</div>`;
-        suggestionsBox.style.display = 'block';
+        return data || [];
     }
+
+    const normalizar = (s) => (s || '')
+        .toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+        .replace(/\s+/g, ' ').trim();
+
+    const queryNorm = normalizar(query)
+        .replace(/^(rua|r\.?|avenida|av\.?|travessa|tv\.?|estrada|est\.?|alameda|al\.?|praca|praça|pc\.?|largo|beco|caminho)\s+/i, '')
+        .trim();
+
+    const palavras = queryNorm.split(/\s+/).filter(p => p.length >= 2);
+    if (palavras.length === 0) return null;
+
+    const palavraChave = [...palavras].sort((a, b) => b.length - a.length)[0];
+
+    const { data, error } = await supabaseClient
+        .from('logradouros').select('*')
+        .eq('origem', 'Roteiro XML')
+        .or(`logradouro.ilike.%${palavraChave}%,bairro.ilike.%${palavraChave}%,municipio.ilike.%${palavraChave}%,cep.ilike.%${palavraChave}%`)
+        .limit(200);
+    if (error) throw error;
+
+    const concatenar = (r) => normalizar([
+        r.tipo, r.logradouro, r.bairro, r.municipio, r.uf,
+        r.cep ? String(r.cep).replace(/\D/g, '') : ''
+    ].filter(Boolean).join(' '));
+
+    const passaFiltro = (r) => {
+        const blob = concatenar(r);
+        return palavras.every(p => {
+            if (blob.includes(p)) return true;
+            const partes = blob.split(/\s+/);
+            return partes.some(pb => pb.length >= 3 && (pb.includes(p) || p.includes(pb)));
+        });
+    };
+
+    let filtrados = (data || []).filter(passaFiltro);
+
+    if (filtrados.length === 0 && palavras.length > 1) {
+        const segunda = [...palavras].sort((a, b) => b.length - a.length)[1];
+        const { data: data2, error: error2 } = await supabaseClient
+            .from('logradouros').select('*')
+            .eq('origem', 'Roteiro XML')
+            .or(`logradouro.ilike.%${segunda}%,bairro.ilike.%${segunda}%,municipio.ilike.%${segunda}%,cep.ilike.%${segunda}%`)
+            .limit(200);
+        if (error2) throw error2;
+        filtrados = (data2 || []).filter(passaFiltro);
+    }
+
+    if (filtrados.length === 0 && data && data.length > 0) filtrados = data;
+    return filtrados;
+}
+
+// opts.explicita = true quando veio do botão Buscar / Enter (leva ao passo 2)
+async function buscarSugestoes(query, opts = {}) {
+    const explicita = !!opts.explicita;
+    // só ignora se for exatamente a mesma busca ainda em andamento
+    if (!explicita && _buscaEmAndamento && query === ultimoQuery) return;
+
+    const seq = ++_buscaSeq;
+    ultimoQuery = query;
+    _buscaEmAndamento = true;
+
+    const mostrarCarregando = (txt) => {
+        suggestionsBox.innerHTML = `<div class="suggestion-item empty"><span class="loading"></span>${txt}</div>`;
+        suggestionsBox.style.display = 'block';
+    };
+    mostrarCarregando('Buscando no roteiro...');
+
+    const MAX_TENTATIVAS = 3;
+    for (let tentativa = 1; tentativa <= MAX_TENTATIVAS; tentativa++) {
+        try {
+            const lista = await comTimeout(consultarRoteiro(query), 12000, 'A busca demorou demais');
+            if (seq !== _buscaSeq) return;       // uma busca mais nova já assumiu
+            _buscaEmAndamento = false;
+
+            if (lista === null) {
+                suggestionsBox.innerHTML = '<div class="suggestion-item empty">Digite ao menos 2 letras.</div>';
+                return;
+            }
+            if (explicita && lista.length > 0) {
+                suggestionsBox.style.display = 'none';
+                renderizarResultadosRoteiro(lista, query);
+                avancarPara('panel1', 'resultsPanel');   // 1 → 2
+            } else {
+                renderizarSugestoes(lista, query);
+            }
+            return;
+        } catch (err) {
+            console.warn(`Busca falhou (tentativa ${tentativa}/${MAX_TENTATIVAS}):`, err);
+            if (seq !== _buscaSeq) return;
+            if (tentativa < MAX_TENTATIVAS) {
+                mostrarCarregando(`Reconectando... (tentativa ${tentativa + 1}/${MAX_TENTATIVAS})`);
+                await _esperar(700 * tentativa);
+                if (seq !== _buscaSeq) return;
+            }
+        }
+    }
+
+    // Esgotou as tentativas: libera para buscar de novo e oferece botão
+    _buscaEmAndamento = false;
+    ultimoQuery = '';
+    suggestionsBox.innerHTML = `
+        <div class="suggestion-item empty">
+            Não consegui buscar agora (conexão instável).<br>
+            <button type="button" class="btn-usar-fonte" data-retry="1" style="margin-top:6px;">Tentar novamente</button>
+        </div>`;
+    suggestionsBox.style.display = 'block';
+    suggestionsBox.querySelector('[data-retry]')?.addEventListener('click', (ev) => {
+        ev.stopPropagation();
+        buscarSugestoes(query, { explicita });
+    });
+}
+
+// Passo 2: tabela com os logradouros do roteiro encontrados
+function renderizarResultadosRoteiro(lista, query) {
+    const list = document.getElementById('enderecosList');
+    if (!list) return;
+    list.innerHTML = '';
+
+    const aviso = document.createElement('p');
+    aviso.className = 'empty-state';
+    aviso.textContent = `${lista.length} logradouro(s) do Roteiro encontrado(s). Escolha o correto:`;
+    list.appendChild(aviso);
+
+    const wrapper = document.createElement('div');
+    wrapper.className = 'table-wrapper';
+    const table = document.createElement('table');
+    table.className = 'fontes-table';
+    table.innerHTML = `
+        <thead><tr><th>Base</th><th>Logradouro</th><th>Bairro</th><th>Cidade/UF</th><th>Ação</th></tr></thead>
+        <tbody></tbody>`;
+    const tbody = table.querySelector('tbody');
+
+    lista.forEach(r => {
+        const tr = document.createElement('tr');
+        tr.innerHTML = `
+            <td><span class="fonte-badge">Roteiro</span></td>
+            <td>${escapeHtml([r.tipo, r.logradouro].filter(Boolean).join(' ') || '—')}${idsRoteiroHtml(r)}</td>
+            <td>${escapeHtml(r.bairro || '—')}</td>
+            <td>${escapeHtml([r.municipio, r.uf].filter(Boolean).join('/') || '—')}</td>
+            <td><button class="btn-usar-fonte" type="button">Usar este</button></td>`;
+        tr.querySelector('button').addEventListener('click', () => {
+            searchInput.value = formatarTextoLogradouro(r);
+            selecionarParaSurvey(r);
+        });
+        tbody.appendChild(tr);
+    });
+    wrapper.appendChild(table);
+    list.appendChild(wrapper);
 }
 
 function renderizarSugestoes(lista, query) {
@@ -763,13 +878,7 @@ function formatarTextoLogradouro(r) {
 
 document.getElementById('searchBtn').addEventListener('click', () => {
     const query = searchInput.value.trim();
-    if (query) {
-        buscarSugestoes(query);
-        recolherCard('panel1');
-        expandirCard('resultsPanel');
-        irParaCard('resultsPanel');
-    }
-    suggestionsBox.style.display = 'none';
+    if (query) buscarSugestoes(query, { explicita: true }); // ao concluir, avança para o passo 2
 });
 
 // ============================================
@@ -857,7 +966,10 @@ function normalizarTipo(t) {
 // ============================================
 // SELECIONAR LOGRADOURO → SURVEY
 // ============================================
+let _selecaoSeq = 0; // descarta consultas antigas se o usuário escolher outro logradouro
 async function selecionarParaSurvey(r) {
+    const seq = ++_selecaoSeq;
+    avancarPara('panel1', 'resultsPanel');   // escolheu na busca → passo 2
     enderecoBaseSelecionado = {
         _registro_id: r.id,
         origem: 'Roteiro XML',
@@ -885,6 +997,8 @@ async function selecionarParaSurvey(r) {
     setH('surveyUf', enderecoBaseSelecionado.estado);
     setH('surveyCep', enderecoBaseSelecionado.cep);
 
+    atualizarInfoBase();
+
     const temCoordsRoteiro =
         enderecoBaseSelecionado.lat != null &&
         enderecoBaseSelecionado.lng != null &&
@@ -896,52 +1010,99 @@ async function selecionarParaSurvey(r) {
         setH('surveyLongitude', enderecoBaseSelecionado.lng.toFixed(8));
         irParaLocal(enderecoBaseSelecionado.lat, enderecoBaseSelecionado.lng,
             montarTextoLogradouro(enderecoBaseSelecionado), 'Roteiro');
+        const list = document.getElementById('enderecosList');
+        if (list) list.innerHTML = `<p class="empty-state">✅ Coordenadas do Roteiro aplicadas: <strong>${escapeHtml(montarTextoLogradouro(enderecoBaseSelecionado))}</strong>. Indo para o Survey...</p>`;
+        agendarAvancoParaSurvey(seq);          // 2 → 3
     } else {
         setH('surveyLatitude', '');
         setH('surveyLongitude', '');
-        showToast('Buscando no OpenStreetMap', 'Consultando o logradouro...', 'info', 3000);
-        const opcoes = await buscarOpcoesOSM(enderecoBaseSelecionado);
-        if (opcoes && opcoes.length > 0) {
-            renderizarOpcoesOSM(opcoes, enderecoBaseSelecionado);
-            showToast('Encontramos opções no OSM', 'Clique em uma opção para marcar no mapa.', 'success', 3500);
-        } else {
-            const lat = COORD_DEFAULT_FALLBACK.lat;
-            const lng = COORD_DEFAULT_FALLBACK.lng;
-            setH('surveyLatitude', lat.toFixed(8));
-            setH('surveyLongitude', lng.toFixed(8));
-            enderecoBaseSelecionado.lat = lat;
-                        enderecoBaseSelecionado.lng = lng;
-            irParaLocal(lat, lng, montarTextoLogradouro(enderecoBaseSelecionado), 'Roteiro (coord. padrão)');
-            showToast(
-                'Coordenada padrão aplicada',
-                'O logradouro não foi encontrado no OpenStreetMap. Ajuste manualmente com o botão direito no mapa se precisar.',
-                'warning',
-                6000
-            );
-        }
+        await resolverCoordenadasOSM(seq);
     }
+}
 
+// Mostra o logradouro escolhido no cabeçalho do passo 3
+function atualizarInfoBase() {
     const infoBox = document.getElementById('enderecoBaseInfo');
-    if (infoBox) {
-        const linha1 = [enderecoBaseSelecionado.tipo, enderecoBaseSelecionado.rua].filter(Boolean).join(' ') || '—';
-        const linha2 = [
-            enderecoBaseSelecionado.bairro,
-            [enderecoBaseSelecionado.cidade, enderecoBaseSelecionado.estado].filter(Boolean).join('/')
-        ].filter(Boolean).join(' • ');
-        const linha3 = [formatarCEP(enderecoBaseSelecionado.cep), 'Brasil'].filter(Boolean).join(' • ');
-        infoBox.innerHTML = `
-            <div class="endereco-base-card">
-                <span class="fonte-badge">Roteiro</span>
-                <p class="endereco-base-linha1">${escapeHtml(linha1)}</p>
-                <p class="endereco-base-linha2">${escapeHtml(linha2)}</p>
-                ${linha3 ? `<p class="endereco-base-linha3">${escapeHtml(linha3)}</p>` : ''}
-                ${idsRoteiroHtml(enderecoBaseSelecionado)}
-            </div>
-        `;
-    }
+    if (!infoBox || !enderecoBaseSelecionado) return;
+    const linha1 = [enderecoBaseSelecionado.tipo, enderecoBaseSelecionado.rua].filter(Boolean).join(' ') || '—';
+    const linha2 = [
+        enderecoBaseSelecionado.bairro,
+        [enderecoBaseSelecionado.cidade, enderecoBaseSelecionado.estado].filter(Boolean).join('/')
+    ].filter(Boolean).join(' • ');
+    const linha3 = [formatarCEP(enderecoBaseSelecionado.cep), 'Brasil'].filter(Boolean).join(' • ');
+    infoBox.innerHTML = `
+        <div class="endereco-base-card">
+            <span class="fonte-badge">Roteiro</span>
+            <p class="endereco-base-linha1">${escapeHtml(linha1)}</p>
+            <p class="endereco-base-linha2">${escapeHtml(linha2)}</p>
+            ${linha3 ? `<p class="endereco-base-linha3">${escapeHtml(linha3)}</p>` : ''}
+            ${idsRoteiroHtml(enderecoBaseSelecionado)}
+        </div>
+    `;
+}
 
-    expandirCard('formPanel');
-    irParaCard('formPanel');
+// Quando o passo 2 não exige escolha, dá um instante para ver o local no mapa e segue para o 3
+function agendarAvancoParaSurvey(seq) {
+    setTimeout(() => {
+        if (seq === _selecaoSeq) avancarPara('resultsPanel', 'formPanel');
+    }, 1200);
+}
+
+function aplicarCoordenadaPadrao(seq) {
+    const setH = (id, val) => { const el = document.getElementById(id); if (el) el.value = val || ''; };
+    const lat = COORD_DEFAULT_FALLBACK.lat;
+    const lng = COORD_DEFAULT_FALLBACK.lng;
+    setH('surveyLatitude', lat.toFixed(8));
+    setH('surveyLongitude', lng.toFixed(8));
+    enderecoBaseSelecionado.lat = lat;
+    enderecoBaseSelecionado.lng = lng;
+    irParaLocal(lat, lng, montarTextoLogradouro(enderecoBaseSelecionado), 'Roteiro (coord. padrão)');
+    agendarAvancoParaSurvey(seq);
+}
+
+// Consulta o OSM (com retentativas internas). Em falha de conexão NÃO aplica coordenada padrão:
+// mostra o erro com botão para tentar de novo.
+async function resolverCoordenadasOSM(seq) {
+    const list = document.getElementById('enderecosList');
+    if (list) list.innerHTML = '<p class="empty-state"><span class="loading"></span> Consultando o OpenStreetMap...</p>';
+    showToast('Buscando no OpenStreetMap', 'Consultando o logradouro...', 'info', 3000);
+
+    let opcoes;
+    try {
+        opcoes = await buscarOpcoesOSM(enderecoBaseSelecionado);
+    } catch (err) {
+        console.warn('[OSM] falha de conexão:', err);
+        if (seq !== _selecaoSeq) return;
+        if (list) {
+            list.innerHTML = `
+                <p class="empty-state">Não consegui consultar o OpenStreetMap agora (conexão instável).</p>
+                <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px;">
+                    <button type="button" class="btn-usar-fonte" id="osmRetryBtn">Tentar novamente</button>
+                    <button type="button" class="btn-usar-fonte" id="osmPadraoBtn">Usar coordenada padrão</button>
+                </div>`;
+            document.getElementById('osmRetryBtn').addEventListener('click', () => resolverCoordenadasOSM(seq));
+            document.getElementById('osmPadraoBtn').addEventListener('click', () => {
+                aplicarCoordenadaPadrao(seq);
+                if (list) list.innerHTML = '<p class="empty-state">Coordenada padrão aplicada. Ajuste no mapa (botão direito) se precisar.</p>';
+            });
+        }
+        return;
+    }
+    if (seq !== _selecaoSeq) return;   // o usuário já escolheu outro logradouro
+
+    if (opcoes && opcoes.length > 0) {
+        renderizarOpcoesOSM(opcoes, enderecoBaseSelecionado);
+        showToast('Encontramos opções no OSM', 'Clique em "Usar esta" para marcar no mapa.', 'success', 3500);
+    } else {
+        aplicarCoordenadaPadrao(seq);
+        if (list) list.innerHTML = '<p class="empty-state">Logradouro não encontrado no OpenStreetMap. Coordenada padrão aplicada.</p>';
+        showToast(
+            'Coordenada padrão aplicada',
+            'O logradouro não foi encontrado no OpenStreetMap. Ajuste manualmente com o botão direito no mapa se precisar.',
+            'warning',
+            6000
+        );
+    }
 }
 
 function montarTextoLogradouro(end) {
@@ -982,30 +1143,46 @@ function expandirAbreviacoesRua(rua) {
     return out.join(' ');
 }
 
+let _nominatimUltimaChamada = 0;
+// Retorna a lista (possivelmente vazia). Lança erro se a conexão falhar após as retentativas.
 async function _nominatim(query) {
     if (!query) return [];
-    try {
-        const url = `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(query)}&addressdetails=1&limit=8&accept-language=pt-BR&countrycodes=br`;
-        const res = await fetch(url, { headers: { 'Accept': 'application/json' } });
-        if (!res.ok) return [];
-        const data = await res.json();
-        if (!Array.isArray(data)) return [];
-        return data.map(item => {
-            const a = item.address || {};
-            return {
-                lat: parseFloat(item.lat),
-                lng: parseFloat(item.lon),
-                display_name: item.display_name,
-                rua: a.road || a.pedestrian || '',
-                bairro: a.suburb || a.neighbourhood || '',
-                cidade: a.city || a.town || a.village || '',
-                estado: a.state || ''
-            };
-        });
-    } catch (err) {
-        console.warn('[OSM] erro:', err);
-        return [];
+    const url = `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(query)}&addressdetails=1&limit=8&accept-language=pt-BR&countrycodes=br`;
+    let ultimoErro = null;
+    for (let tentativa = 1; tentativa <= 3; tentativa++) {
+        // o Nominatim pede no máximo ~1 requisição por segundo (acima disso responde 429)
+        const espera = _nominatimUltimaChamada + 1100 - Date.now();
+        if (espera > 0) await _esperar(espera);
+        _nominatimUltimaChamada = Date.now();
+        const ctrl = new AbortController();
+        const timer = setTimeout(() => ctrl.abort(), 10000);
+        try {
+            const res = await fetch(url, { headers: { 'Accept': 'application/json' }, signal: ctrl.signal });
+            if (res.status === 429 || res.status >= 500) throw new Error('OSM HTTP ' + res.status);
+            if (!res.ok) return [];
+            const data = await res.json();
+            if (!Array.isArray(data)) return [];
+            return data.map(item => {
+                const a = item.address || {};
+                return {
+                    lat: parseFloat(item.lat),
+                    lng: parseFloat(item.lon),
+                    display_name: item.display_name,
+                    rua: a.road || a.pedestrian || '',
+                    bairro: a.suburb || a.neighbourhood || '',
+                    cidade: a.city || a.town || a.village || '',
+                    estado: a.state || ''
+                };
+            });
+        } catch (err) {
+            ultimoErro = err;
+            console.warn(`[OSM] tentativa ${tentativa}/3 falhou:`, err);
+            if (tentativa < 3) await _esperar(1500 * tentativa);
+        } finally {
+            clearTimeout(timer);
+        }
     }
+    throw ultimoErro || new Error('Falha ao consultar o OSM');
 }
 
 async function buscarOpcoesOSM(end) {
@@ -1033,15 +1210,20 @@ async function buscarOpcoesOSM(end) {
     };
 
     let primeiraNaoVazia = null;
+    let houveErro = false;
     for (const q of tentativas) {
-        const r = await _nominatim(q);
+        let r;
+        try { r = await _nominatim(q); }
+        catch (e) { houveErro = true; break; }   // conexão com problema: não adianta insistir nas outras variações
         if (r.length && !primeiraNaoVazia) primeiraNaoVazia = r;
         if (r.some(compativel)) {
             // coloca as vias compatíveis primeiro
             return [...r.filter(compativel), ...r.filter(o => !compativel(o))];
         }
     }
-    return primeiraNaoVazia || [];
+    if (primeiraNaoVazia) return primeiraNaoVazia;
+    if (houveErro) throw new Error('Não foi possível consultar o OpenStreetMap');
+    return [];
 }
 
 function renderizarOpcoesOSM(opcoes, end) {
@@ -1088,8 +1270,7 @@ function renderizarOpcoesOSM(opcoes, end) {
             setH('surveyLongitude', o.lng.toFixed(8));
             irParaLocal(o.lat, o.lng, o.display_name || montarTextoLogradouro(end), 'Roteiro + OSM');
             showToast('Coordenadas aplicadas', 'Localização marcada no mapa.', 'success', 2500);
-            expandirCard('formPanel');
-            irParaCard('formPanel');
+            avancarPara('resultsPanel', 'formPanel');   // 2 → 3
         });
     });
 }
@@ -1234,6 +1415,7 @@ document.getElementById('addBtn').addEventListener('click', async () => {
         cancelarEdicaoSurvey(true);
         fixarMarcadorPendente();
         renderizarSurveys();
+        irParaListaAposSalvar();
         return;
     }
 
@@ -1280,6 +1462,7 @@ document.getElementById('addBtn').addEventListener('click', async () => {
     fixarMarcadorPendente(); // casinha vermelha vira azul fixa
 
     renderizarSurveys();
+    irParaListaAposSalvar();
 
     verificarIAAutomatica();
 });
@@ -2269,7 +2452,6 @@ function perguntarExpandirVerificacao() {
                 <button class="ia-btn ia-btn-secondary" data-meta="10" type="button">10</button>
                 <button class="ia-btn ia-btn-secondary" data-meta="15" type="button">15</button>
                 <button class="ia-btn ia-btn-secondary" data-meta="20" type="button">20</button>
-                <button class="ia-btn ia-btn-success" id="iaSetorBtn" type="button">🗺️ Desenhar setor no mapa</button>
                 <button class="ia-btn ia-btn-success" id="iaLinhasBtn" type="button">📏 Desenhar linhas no mapa</button>
             </div>
             <div class="ia-msg-input-group">
@@ -2307,11 +2489,6 @@ function perguntarExpandirVerificacao() {
             }
             escolher(n);
         };
-        document.getElementById('iaSetorBtn').addEventListener('click', () => {
-            wrapper.remove();
-            escreverMensagemUser('Desenhar setor no mapa');
-            iniciarDesenhoSetor();
-        });
         document.getElementById('iaLinhasBtn').addEventListener('click', () => {
             wrapper.remove();
             escreverMensagemUser('Desenhar linhas no mapa');
@@ -2322,71 +2499,6 @@ function perguntarExpandirVerificacao() {
             if (e.key === 'Enter') { e.preventDefault(); usar(); }
         });
     }, 500);
-}
-
-// ============================================
-// IA — DESENHAR SETOR NO MAPA (clique nos vértices)
-// ============================================
-function iniciarDesenhoSetor() {
-    const pts = [];
-    const marcas = [];
-    const poly = L.polygon([], { color: '#16a34a', weight: 2, fillOpacity: 0.12, dashArray: '6 4' }).addTo(map);
-    map.getContainer().style.cursor = 'crosshair';
-
-    const onClick = (e) => {
-        pts.push([e.latlng.lat, e.latlng.lng]);
-        marcas.push(L.circleMarker(e.latlng, { radius: 5, color: '#16a34a', fillColor: '#16a34a', fillOpacity: 1 }).addTo(map));
-        poly.setLatLngs(pts);
-    };
-    map.on('click', onClick);
-
-    const encerrar = () => {
-        map.off('click', onClick);
-        map.getContainer().style.cursor = '';
-        marcas.forEach(m => map.removeLayer(m));
-    };
-
-    escreverMensagemIA(
-        `Clique no mapa para marcar os <strong>vértices do setor</strong> onde devo cadastrar (mínimo 3 pontos). 
-        Quando terminar, clique em <strong>Concluir</strong>.`,
-        false
-    );
-    const wrapper = document.createElement('div');
-    wrapper.className = 'ia-msg ia-msg-ia';
-    wrapper.innerHTML = `
-        <div class="ia-msg-actions">
-            <button class="ia-btn ia-btn-success" id="iaSetorOk" type="button">Concluir</button>
-            <button class="ia-btn ia-btn-secondary" id="iaSetorDesfaz" type="button">Desfazer último</button>
-            <button class="ia-btn ia-btn-secondary" id="iaSetorCancela" type="button">Cancelar</button>
-        </div>`;
-    iaChatBody.appendChild(wrapper);
-    iaChatBody.scrollTop = iaChatBody.scrollHeight;
-
-    document.getElementById('iaSetorDesfaz').addEventListener('click', () => {
-        if (!pts.length) return;
-        pts.pop();
-        map.removeLayer(marcas.pop());
-        poly.setLatLngs(pts);
-    });
-    document.getElementById('iaSetorCancela').addEventListener('click', () => {
-        encerrar();
-        map.removeLayer(poly);
-        wrapper.remove();
-        escreverMensagemUser('Cancelar');
-        escreverMensagemIA('Tudo bem! Continue cadastrando manualmente.');
-        _iaJaDisparou = false;
-    });
-    document.getElementById('iaSetorOk').addEventListener('click', () => {
-        if (pts.length < 3) {
-            showToast('Setor incompleto', 'Marque pelo menos 3 pontos no mapa.', 'warning');
-            return;
-        }
-        encerrar();
-        wrapper.remove();
-        escreverMensagemUser('Setor definido');
-        _iaSetor = { pts: pts.map(p => [p[0], p[1]]), layer: poly };
-        detectarPadroes(false);
-    });
 }
 
 // ============================================
@@ -2469,139 +2581,126 @@ function iniciarDesenhoLinhas() {
 }
 
 function perguntarLinhas(g) {
+    const linhasSel = _iaSetor.linhas;
     const sugerido = g ? Math.hypot(g.stepX, g.stepY) : 8;
-    const div = document.createElement('div');
-    div.className = 'ia-msg ia-msg-ia';
-    div.innerHTML = `
-        Vou criar os surveys <strong>em cima das ${_iaSetor.linhas.length} linha(s)</strong> marcadas, a partir do primeiro ponto de cada uma.
-        <div style="margin-top:8px;font-size:0.8rem;">
-            <label>Distância entre casas (m)
-                <input type="number" id="iaLinDist" min="1" step="0.5" value="${sugerido.toFixed(1)}" style="width:100%">
-            </label>
-        </div>
-        <div class="ia-msg-actions" style="margin-top:8px;">
-            <button class="ia-btn ia-btn-success" id="iaLinCriar" type="button">Criar</button>
-        </div>`;
-    iaChatBody.appendChild(div);
-    iaChatBody.scrollTop = iaChatBody.scrollHeight;
 
-    document.getElementById('iaLinCriar').addEventListener('click', () => {
-        const dist = parseFloat(document.getElementById('iaLinDist').value);
-        if (isNaN(dist) || dist <= 0) { showToast('Valor inválido', 'Informe a distância entre casas.', 'warning'); return; }
+    const lat0 = linhasSel[0][0][0], lng0 = linhasSel[0][0][1];
+    const mx = 111320 * Math.cos(lat0 * Math.PI / 180), my = 110540;
+    const toXY = (lat, lng) => ({ x: (lng - lng0) * mx, y: (lat - lat0) * my });
+    const existentes = surveysMemoria.map(sv => {
+        const lat = sv.latitude != null ? Number(sv.latitude) : null;
+        const lng = sv.longitude != null ? Number(sv.longitude) : null;
+        return (lat != null && lng != null && !isNaN(lat) && !isNaN(lng)) ? toXY(lat, lng) : null;
+    }).filter(Boolean);
 
-        const lat0 = _iaSetor.linhas[0][0][0], lng0 = _iaSetor.linhas[0][0][1];
-        const mx = 111320 * Math.cos(lat0 * Math.PI / 180), my = 110540;
-        const toXY = (lat, lng) => ({ x: (lng - lng0) * mx, y: (lat - lat0) * my });
-        const existentes = surveysMemoria.map(sv => {
-            const lat = sv.latitude != null ? Number(sv.latitude) : null;
-            const lng = sv.longitude != null ? Number(sv.longitude) : null;
-            return (lat != null && lng != null && !isNaN(lat) && !isNaN(lng)) ? toXY(lat, lng) : null;
-        }).filter(Boolean);
+    const segmentos = linhasSel.map(([A, B]) => {
+        const a = toXY(A[0], A[1]), b = toXY(B[0], B[1]);
+        return { a, b, comp: Math.hypot(b.x - a.x, b.y - a.y) };
+    });
+    const compTotal = segmentos.reduce((t, s) => t + s.comp, 0);
 
+    // Posições que serão criadas para um dado espaçamento (mesma regra usada na criação)
+    const calcular = (dist) => {
         const posicoes = [];
-        _iaSetor.linhas.forEach(([A, B]) => {
-            const a = toXY(A[0], A[1]), b = toXY(B[0], B[1]);
-            const L_ = Math.hypot(b.x - a.x, b.y - a.y);
-            if (L_ < 0.01) return;
-            const dx = (b.x - a.x) / L_, dy = (b.y - a.y) / L_;
-            const n = Math.floor(L_ / dist + 1e-6);
+        segmentos.forEach(({ a, b, comp }) => {
+            if (comp < 0.01) return;
+            const dx = (b.x - a.x) / comp, dy = (b.y - a.y) / comp;
+            const n = Math.floor(comp / dist + 1e-6);
             for (let i = 0; i <= n; i++) {
                 const x = a.x + dx * dist * i, y = a.y + dy * dist * i;
                 if (existentes.some(e => Math.hypot(e.x - x, e.y - y) < 0.45 * dist)) continue;
                 posicoes.push({ lat: lat0 + y / my, lng: lng0 + x / mx });
             }
         });
-        if (!posicoes.length) { showToast('Nada a criar', 'As linhas são curtas demais para essa distância.', 'warning'); return; }
-        if (posicoes.length > 2000) { showToast('Limite excedido', `${posicoes.length} casas passam do máximo de 2000.`, 'warning'); return; }
-        div.remove();
-        escreverMensagemUser(`${dist} m entre casas (${posicoes.length} casas)`);
-        gerarSequenciaIA(posicoes.length, posicoes);
-    });
-}
+        return posicoes;
+    };
 
-// Ponto dentro do polígono (coordenadas planas)
-function pontoNoPoligono(x, y, poli) {
-    let dentro = false;
-    for (let i = 0, j = poli.length - 1; i < poli.length; j = i++) {
-        const xi = poli[i].x, yi = poli[i].y, xj = poli[j].x, yj = poli[j].y;
-        if (((yi > y) !== (yj > y)) && (x < (xj - xi) * (y - yi) / (yj - yi) + xi)) dentro = !dentro;
-    }
-    return dentro;
-}
+    // Espaçamento que mais se aproxima de uma quantidade desejada (mais casas = menor espaçamento)
+    const distParaQuantidade = (Q) => {
+        let lo = 0.5, hi = Math.max(compTotal, 1);
+        let melhor = { d: hi, diff: Infinity };
+        for (let i = 0; i < 40; i++) {
+            const mid = (lo + hi) / 2;
+            const n = calcular(mid).length;
+            const diff = Math.abs(n - Q);
+            if (diff < melhor.diff || (diff === melhor.diff && mid > melhor.d)) melhor = { d: mid, diff };
+            if (n >= Q) lo = mid; else hi = mid;
+        }
+        return Math.floor(melhor.d * 100) / 100; // arredonda p/ baixo, para não perder casas
+    };
 
-function perguntarSetor(g) {
-    const passo = Math.hypot(g.stepX, g.stepY);
     const div = document.createElement('div');
     div.className = 'ia-msg ia-msg-ia';
     div.innerHTML = `
-        Vou preencher o setor com casas a cada ~<strong>${passo.toFixed(1)} m</strong> (espaçamento da sua fileira), 
-        alinhadas à direção dela.
-        <div style="margin-top:8px;font-size:0.8rem;">
-            <label>Distância entre fileiras (m)
-                <input type="number" id="iaSetorDist" min="1" step="0.5" value="${(passo * 2).toFixed(1)}" style="width:100%">
+        Vou criar os surveys <strong>em cima das ${linhasSel.length} linha(s)</strong> marcadas, a partir do primeiro ponto de cada uma.
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-top:8px;font-size:0.8rem;">
+            <label>Distância entre casas (m)
+                <input type="number" id="iaLinDist" min="0.5" step="0.5" value="${sugerido.toFixed(1)}" style="width:100%">
+            </label>
+            <label>Qtde de surveys
+                <input type="number" id="iaLinQtd" min="1" step="1" style="width:100%">
             </label>
         </div>
+        <small id="iaLinInfo" style="display:block;margin-top:6px;color:var(--text-tertiary)"></small>
         <div class="ia-msg-actions" style="margin-top:8px;">
-            <button class="ia-btn ia-btn-success" id="iaSetorCriar" type="button">Criar</button>
+            <button class="ia-btn ia-btn-success" id="iaLinCriar" type="button">Criar</button>
+            <button class="ia-btn ia-btn-secondary" id="iaLinCancelar" type="button">Cancelar</button>
         </div>`;
     iaChatBody.appendChild(div);
     iaChatBody.scrollTop = iaChatBody.scrollHeight;
 
-    document.getElementById('iaSetorCriar').addEventListener('click', () => {
-        const dist = parseFloat(document.getElementById('iaSetorDist').value);
-        if (isNaN(dist) || dist <= 0) { showToast('Valor inválido', 'Informe a distância entre fileiras.', 'warning'); return; }
+    const inpDist = div.querySelector('#iaLinDist');
+    const inpQtd = div.querySelector('#iaLinQtd');
+    const info = div.querySelector('#iaLinInfo');
 
-        const toXY = (lat, lng) => ({ x: (lng - g.origemLng) * g.mx, y: (lat - g.origemLat) * g.my });
-        const poli = _iaSetor.pts.map(p => toXY(p[0], p[1]));
-        const s = passo;
-        const uh = { x: g.stepX / s, y: g.stepY / s };
-        const vh = { x: -uh.y, y: uh.x };
+    const mostrarPreview = (posicoes) => {
+        limparPreviewLinhas();
+        _iaPreview = L.layerGroup(posicoes.map(p => L.circleMarker([p.lat, p.lng], {
+            radius: 3, color: '#d97706', fillColor: '#f59e0b', fillOpacity: 0.95, weight: 1, interactive: false
+        }))).addTo(map);
+    };
+    const atualizar = (nota) => {
+        const d = parseFloat(inpDist.value);
+        if (isNaN(d) || d <= 0) { inpQtd.value = ''; info.textContent = ''; limparPreviewLinhas(); return; }
+        const posicoes = calcular(d);
+        inpQtd.value = posicoes.length;
+        info.textContent = `Comprimento das linhas: ${compTotal.toFixed(1)} m • ${posicoes.length} survey(s) com ${d} m entre casas.` + (nota ? ' ' + nota : '');
+        mostrarPreview(posicoes);
+    };
 
-        let amin = Infinity, amax = -Infinity, bmin = Infinity, bmax = -Infinity;
-        poli.forEach(p => {
-            const a = p.x * uh.x + p.y * uh.y, b = p.x * vh.x + p.y * vh.y;
-            amin = Math.min(amin, a); amax = Math.max(amax, a);
-            bmin = Math.min(bmin, b); bmax = Math.max(bmax, b);
-        });
-        const nJ = (Math.ceil(amax / s) - Math.floor(amin / s) + 1);
-        const nR = (Math.ceil(bmax / dist) - Math.floor(bmin / dist) + 1);
-        if (nJ * nR > 20000) { showToast('Setor muito grande', 'Desenhe um setor menor ou aumente a distância.', 'warning'); return; }
+    // Mudou o espaçamento → recalcula a quantidade na hora
+    inpDist.addEventListener('input', () => atualizar());
+    // Mudou a quantidade → ajusta o espaçamento automaticamente
+    const aplicarQtd = () => {
+        const Q = parseInt(inpQtd.value, 10);
+        if (isNaN(Q) || Q < 1) { showToast('Quantidade inválida', 'Informe um número inteiro maior que zero.', 'warning'); return; }
+        inpDist.value = distParaQuantidade(Q);
+        const real = calcular(parseFloat(inpDist.value)).length;
+        atualizar(real !== Q ? `(Não dá para fechar exatamente ${Q} com um espaçamento único; usei o mais próximo.)` : '');
+    };
+    inpQtd.addEventListener('change', aplicarQtd);
+    inpQtd.addEventListener('keypress', (e) => { if (e.key === 'Enter') { e.preventDefault(); aplicarQtd(); } });
+    atualizar();
 
-        // casas já cadastradas (evita duplicar)
-        const existentes = surveysMemoria.map(sv => {
-            const lat = sv.latitude != null ? Number(sv.latitude) : null;
-            const lng = sv.longitude != null ? Number(sv.longitude) : null;
-            return (lat != null && lng != null && !isNaN(lat) && !isNaN(lng)) ? toXY(lat, lng) : null;
-        }).filter(Boolean);
-
-        // Continua do ÚLTIMO survey em diante: resto da fileira atual, depois as fileiras seguintes
-        const ult = toXY(g.ultLat, g.ultLng);
-        const aUlt = ult.x * uh.x + ult.y * uh.y;
-        const cx = poli.reduce((t, p) => t + p.x, 0) / poli.length;
-        const cy = poli.reduce((t, p) => t + p.y, 0) / poli.length;
-        const lado = (cx * vh.x + cy * vh.y) >= 0 ? 1 : -1;   // lado do setor em relação à fileira atual
-
-        const ordemFileiras = [0];
-        const rMax = Math.ceil(Math.max(Math.abs(bmin), Math.abs(bmax)) / dist);
-        for (let r = 1; r <= rMax; r++) ordemFileiras.push(lado * r);
-        for (let r = 1; r <= rMax; r++) ordemFileiras.push(-lado * r);
-
-        const posicoes = [];
-        for (const r of ordemFileiras) {
-            for (let j = Math.floor(amin / s) - 1; j <= Math.ceil(amax / s) + 1; j++) {
-                const a = j * s;
-                if (r === 0 && a <= aUlt + 0.5 * s) continue;       // só depois do último cadastrado
-                const x = a * uh.x + r * dist * vh.x;
-                const y = a * uh.y + r * dist * vh.y;
-                if (!pontoNoPoligono(x, y, poli)) continue;
-                if (existentes.some(e => Math.hypot(e.x - x, e.y - y) < 0.45 * s)) continue;
-                posicoes.push({ lat: g.origemLat + y / g.my, lng: g.origemLng + x / g.mx });
-            }
-        }
-        if (!posicoes.length) { showToast('Nada a criar', 'Nenhuma casa coube no setor desenhado.', 'warning'); return; }
-        if (posicoes.length > 2000) { showToast('Limite excedido', `${posicoes.length} casas passam do máximo de 2000. Desenhe um setor menor.`, 'warning'); return; }
+    div.querySelector('#iaLinCancelar').addEventListener('click', () => {
+        limparPreviewLinhas();
         div.remove();
-        escreverMensagemUser(`${dist} m entre fileiras (${posicoes.length} casas)`);
+        escreverMensagemUser('Cancelar');
+        escreverMensagemIA('Tudo bem! Continue cadastrando manualmente.');
+        limparSetorIA();
+        iaPendencia = null;
+        _iaJaDisparou = false;
+    });
+
+    div.querySelector('#iaLinCriar').addEventListener('click', () => {
+        const dist = parseFloat(inpDist.value);
+        if (isNaN(dist) || dist <= 0) { showToast('Valor inválido', 'Informe a distância entre casas.', 'warning'); return; }
+        const posicoes = calcular(dist);
+        if (!posicoes.length) { showToast('Nada a criar', 'As linhas são curtas demais para essa distância.', 'warning'); return; }
+        if (posicoes.length > 2000) { showToast('Limite excedido', `${posicoes.length} casas passam do máximo de 2000.`, 'warning'); return; }
+        limparPreviewLinhas();
+        div.remove();
+        escreverMensagemUser(`${dist} m entre casas (${posicoes.length} casas)`);
         gerarSequenciaIA(posicoes.length, posicoes);
     });
 }
@@ -2803,12 +2902,6 @@ function perguntarQuantidade() {
     if (_iaSetor && _iaSetor.linhas) {
         perguntarLinhas(analisarGeometriaIA(iaPendencia.ultimos || []));
         return;
-    }
-    if (_iaSetor) {
-        const gs = analisarGeometriaIA(iaPendencia.ultimos || []);
-        if (gs) { perguntarSetor(gs); return; }
-        showToast('Fileira não detectada', 'Não consegui ler a direção das casas; usando a quantidade em linha.', 'warning', 4000);
-        limparSetorIA();
     }
     const g = (iaPendencia.ultimos || []).length > 5 ? analisarGeometriaIA(iaPendencia.ultimos) : null;
     if (!g) { perguntarQuantidadeLinha(); return; }
