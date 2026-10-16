@@ -454,6 +454,25 @@ const houseIconIA = L.divIcon({
     iconSize: [14, 18], iconAnchor: [7, 18], popupAnchor: [0, -18]
 });
 
+// Cores das linhas desenhadas pela IA (cada linha = uma cor, repetindo se passar de 10)
+const PALETA_LINHAS = ['#16a34a', '#2563eb', '#dc2626', '#d97706', '#9333ea', '#0891b2', '#db2777', '#65a30d', '#ea580c', '#4f46e5'];
+const corLinha = (i) => PALETA_LINHAS[i % PALETA_LINHAS.length];
+const _iconesCor = {};
+function iconeCasaCor(cor) {
+    if (!_iconesCor[cor]) {
+        _iconesCor[cor] = L.divIcon({
+            className: 'house-marker',
+            html: houseSVG.replace(/#2a4fd6/g, cor).replace(/#1e3c72/g, '#1f2937'),
+            iconSize: [14, 18], iconAnchor: [7, 18], popupAnchor: [0, -18]
+        });
+    }
+    return _iconesCor[cor];
+}
+// Ícone do survey: cor da linha (se veio da IA de linhas) > verde IA > azul padrão
+function iconeSurvey(s) {
+    return s._cor ? iconeCasaCor(s._cor) : (s._ia ? houseIconIA : houseIcon);
+}
+
 // Casinha VERMELHA = posição ainda não cadastrada (pendente)
 const houseIconPendente = L.divIcon({
     className: 'house-marker',
@@ -508,15 +527,24 @@ function irParaCard(panelId) {
 function avancarPara(deId, paraId) {
     if (deId) recolherCard(deId);
     expandirCard(paraId);
-    requestAnimationFrame(() => irParaCard(paraId)); // espera o layout recalcular após recolher
+    // espera o layout recalcular após recolher; no passo 3 usa a visão fixa do formulário
+    requestAnimationFrame(() => paraId === 'formPanel' ? centralizarFormularioSurvey() : irParaCard(paraId));
     document.querySelectorAll('.header-nav button').forEach(b => b.classList.toggle('active', b.dataset.goto === paraId));
 }
 
-// Depois de salvar um survey (passo 3), pula para a lista (passo 4).
-// Se preferir ficar no formulário para cadastrar vários seguidos, troque para false.
-const AVANCAR_PARA_LISTA_APOS_SALVAR = true;
+// Visão fixa do passo 3: da Latitude/Longitude até o botão "Adicionar ao Survey".
+// Usada ao chegar no passo 3 e de novo a cada survey salvo, para não precisar rolar a tela.
+function centralizarFormularioSurvey() {
+    expandirCard('formPanel');
+    const alvo = document.getElementById('surveyLatitude')?.parentElement;
+    if (!alvo) { irParaCard('formPanel'); return; }
+    const header = document.querySelector('.app-header');
+    alvo.style.scrollMarginTop = ((header ? header.offsetHeight : 60) + 10) + 'px'; // abaixo do cabeçalho fixo
+    alvo.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    document.querySelectorAll('.header-nav button').forEach(b => b.classList.toggle('active', b.dataset.goto === 'formPanel'));
+}
 function irParaListaAposSalvar() {
-    if (AVANCAR_PARA_LISTA_APOS_SALVAR) avancarPara(null, 'listPanel');
+    requestAnimationFrame(centralizarFormularioSurvey);
 }
 
 // ============================================
@@ -1833,9 +1861,8 @@ function renderizarSurveys() {
             }
             map.setView([lat, lng], 18);
             if (marcadorAtual) map.removeLayer(marcadorAtual);
-            marcadorAtual = L.marker([lat, lng], { icon: s._ia ? houseIconIA : houseIcon, draggable: false }).addTo(map);
-            const nome = s.logradouro ? s.logradouro.rua : '';
-            marcadorAtual.bindPopup(`<strong>${escapeHtml(nome)}, ${escapeHtml(s.numero || '')}</strong>`).openPopup();
+            marcadorAtual = L.marker([lat, lng], { icon: iconeSurvey(s), draggable: false }).addTo(map);
+            marcadorAtual.bindPopup(popupSurveyHtml(s)).openPopup();
             tornarMarcadorArrastavel(marcadorAtual, s);
             document.getElementById('panel2').scrollIntoView({ behavior: 'smooth', block: 'start' });
         });
@@ -1855,6 +1882,39 @@ function renderizarSurveys() {
     renderizarMarcadoresSurveys();
 }
 
+// Texto exibido embaixo da casinha: "75" ou "SN - (Quadra 1, Lote 1)"
+function textoRotuloSurvey(s) {
+    const num = (s.numero == null ? '' : String(s.numero)).trim();
+    const comps = (Array.isArray(s.complementos) ? s.complementos : [])
+        .filter(c => c && (c.tipo || c.valor))
+        .map(c => [c.tipo, c.valor].filter(Boolean).join(' ').trim())
+        .filter(Boolean);
+    const partes = [];
+    if (num) partes.push(num);
+    if (comps.length) partes.push(`(${comps.join(', ')})`);
+    return partes.join(' - ');
+}
+function popupSurveyHtml(s) {
+    const nome = s.logradouro ? s.logradouro.rua : '';
+    const rotulo = textoRotuloSurvey(s);
+    return `<strong>${escapeHtml(nome)}${rotulo ? ', ' + escapeHtml(rotulo) : ''}</strong>`;
+}
+
+// Clique na casinha mostra/esconde o rótulo embaixo dela. Troque para true para exibir sempre.
+const ROTULOS_SEMPRE_VISIVEIS = false;
+const _rotulosAbertos = new Set();   // ids com rótulo aberto (sobrevive à re-renderização dos marcadores)
+function configurarRotuloSurvey(m, s) {
+    const abrir = () => {
+        const txt = textoRotuloSurvey(s);
+        if (!txt) return;
+        m.bindTooltip(escapeHtml(txt), { permanent: true, direction: 'bottom', offset: [0, 3], className: 'survey-label' }).openTooltip();
+        _rotulosAbertos.add(s._id);
+    };
+    const fechar = () => { m.unbindTooltip(); _rotulosAbertos.delete(s._id); };
+    m.on('click', () => { if (m.getTooltip()) fechar(); else abrir(); });
+    if (ROTULOS_SEMPRE_VISIVEIS || _rotulosAbertos.has(s._id)) abrir();
+}
+
 function renderizarMarcadoresSurveys() {
     marcadoresSurveys.forEach(m => map.removeLayer(m));
     marcadoresSurveys = [];
@@ -1863,10 +1923,9 @@ function renderizarMarcadoresSurveys() {
         const lat = s.latitude != null ? Number(s.latitude) : (s.logradouro && s.logradouro.lat);
         const lng = s.longitude != null ? Number(s.longitude) : (s.logradouro && s.logradouro.lng);
         if (lat == null || lng == null) return;
-        const icon = s._ia ? houseIconIA : houseIcon;
-        const m = L.marker([lat, lng], { icon: icon, draggable: false }).addTo(map);
-        const nome = s.logradouro ? s.logradouro.rua : '';
-        m.bindPopup(`<strong>${escapeHtml(nome)}, ${escapeHtml(s.numero || '')}</strong>`);
+        const m = L.marker([lat, lng], { icon: iconeSurvey(s), draggable: false }).addTo(map);
+        m.bindPopup(popupSurveyHtml(s));
+        configurarRotuloSurvey(m, s);
         tornarMarcadorArrastavel(m, s);
         marcadoresSurveys.push(m);
     });
@@ -2511,19 +2570,20 @@ function iniciarDesenhoLinhas() {
     let pendente = null, marcaPendente = null;
     map.getContainer().style.cursor = 'crosshair';
 
-    const ponto = (ll) => L.circleMarker(ll, { radius: 5, color: '#16a34a', fillColor: '#16a34a', fillOpacity: 1 });
+    const ponto = (ll, cor) => L.circleMarker(ll, { radius: 5, color: cor, fillColor: cor, fillOpacity: 1 });
 
     const onClick = (e) => {
+        const cor = corLinha(linhas.length); // cada linha ganha uma cor
         if (!pendente) {
             pendente = e.latlng;
-            marcaPendente = ponto(e.latlng).addTo(grupo);
+            marcaPendente = ponto(e.latlng, cor).addTo(grupo);
             return;
         }
         const a = pendente, b = e.latlng;
         const ls = [
             marcaPendente,
-            L.polyline([a, b], { color: '#16a34a', weight: 3 }).addTo(grupo),
-            ponto(b).addTo(grupo)
+            L.polyline([a, b], { color: cor, weight: 3 }).addTo(grupo),
+            ponto(b, cor).addTo(grupo)
         ];
         camadasLinha.push(ls);
         linhas.push([[a.lat, a.lng], [b.lat, b.lng]]);
@@ -2583,6 +2643,7 @@ function iniciarDesenhoLinhas() {
 function perguntarLinhas(g) {
     const linhasSel = _iaSetor.linhas;
     const sugerido = g ? Math.hypot(g.stepX, g.stepY) : 8;
+    const tipoPadrao = iaPendencia && iaPendencia.tipo;
 
     const lat0 = linhasSel[0][0][0], lng0 = linhasSel[0][0][1];
     const mx = 111320 * Math.cos(lat0 * Math.PI / 180), my = 110540;
@@ -2593,53 +2654,76 @@ function perguntarLinhas(g) {
         return (lat != null && lng != null && !isNaN(lat) && !isNaN(lng)) ? toXY(lat, lng) : null;
     }).filter(Boolean);
 
-    const segmentos = linhasSel.map(([A, B]) => {
+    const segmentos = linhasSel.map(([A, B], i) => {
         const a = toXY(A[0], A[1]), b = toXY(B[0], B[1]);
-        return { a, b, comp: Math.hypot(b.x - a.x, b.y - a.y) };
+        return { a, b, comp: Math.hypot(b.x - a.x, b.y - a.y), cor: corLinha(i) };
     });
-    const compTotal = segmentos.reduce((t, s) => t + s.comp, 0);
 
-    // Posições que serão criadas para um dado espaçamento (mesma regra usada na criação)
-    const calcular = (dist) => {
+    // Estado de cada linha: n = qtde de surveys, step = metros entre casas
+    const estado = segmentos.map(s => ({
+        n: s.comp < 0.01 ? 1 : Math.floor(s.comp / sugerido + 1e-6) + 1,
+        step: sugerido
+    }));
+    const definirQtd = (i, n) => {
+        const s = segmentos[i];
+        n = Math.max(1, Math.min(2000, Math.floor(n)));
+        if (s.comp < 0.01) n = 1;
+        estado[i].n = n;
+        estado[i].step = n > 1 ? s.comp / (n - 1) : 0;   // espalha de ponta a ponta da linha
+    };
+    const definirDist = (i, d) => {
+        const s = segmentos[i];
+        estado[i].step = d;
+        estado[i].n = s.comp < 0.01 ? 1 : Math.floor(s.comp / d + 1e-6) + 1;
+    };
+
+    // Posições de todas as linhas; "ordem" = posição dentro da própria linha (1, 2, 3...)
+    const calcular = () => {
         const posicoes = [];
-        segmentos.forEach(({ a, b, comp }) => {
-            if (comp < 0.01) return;
-            const dx = (b.x - a.x) / comp, dy = (b.y - a.y) / comp;
-            const n = Math.floor(comp / dist + 1e-6);
-            for (let i = 0; i <= n; i++) {
-                const x = a.x + dx * dist * i, y = a.y + dy * dist * i;
-                if (existentes.some(e => Math.hypot(e.x - x, e.y - y) < 0.45 * dist)) continue;
-                posicoes.push({ lat: lat0 + y / my, lng: lng0 + x / mx });
+        let ignoradas = 0;
+        segmentos.forEach((s, i) => {
+            const { n, step } = estado[i];
+            const dx = s.comp > 0 ? (s.b.x - s.a.x) / s.comp : 0;
+            const dy = s.comp > 0 ? (s.b.y - s.a.y) / s.comp : 0;
+            let ordem = 0;
+            for (let k = 0; k < n; k++) {
+                const x = s.a.x + dx * step * k, y = s.a.y + dy * step * k;
+                if (existentes.some(e => Math.hypot(e.x - x, e.y - y) < Math.max(0.45 * step, 0.5))) { ignoradas++; continue; }
+                ordem++;
+                posicoes.push({ lat: lat0 + y / my, lng: lng0 + x / mx, linha: i, cor: s.cor, ordem });
             }
         });
-        return posicoes;
+        return { posicoes, ignoradas };
     };
 
-    // Espaçamento que mais se aproxima de uma quantidade desejada (mais casas = menor espaçamento)
-    const distParaQuantidade = (Q) => {
-        let lo = 0.5, hi = Math.max(compTotal, 1);
-        let melhor = { d: hi, diff: Infinity };
-        for (let i = 0; i < 40; i++) {
-            const mid = (lo + hi) / 2;
-            const n = calcular(mid).length;
-            const diff = Math.abs(n - Q);
-            if (diff < melhor.diff || (diff === melhor.diff && mid > melhor.d)) melhor = { d: mid, diff };
-            if (n >= Q) lo = mid; else hi = mid;
-        }
-        return Math.floor(melhor.d * 100) / 100; // arredonda p/ baixo, para não perder casas
-    };
+    const linhasHtml = segmentos.map((s, i) => `
+        <div style="display:grid;grid-template-columns:1.1fr .9fr 1fr 1fr;gap:6px;align-items:center;margin-top:4px;">
+            <span><span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:${s.cor};margin-right:4px"></span>Linha ${i + 1}</span>
+            <span style="color:var(--text-tertiary)">${s.comp.toFixed(1)} m</span>
+            <input type="number" min="1" step="1" data-qtd="${i}" style="width:100%">
+            <input type="number" min="0.5" step="0.5" data-dist="${i}" style="width:100%">
+        </div>`).join('');
 
     const div = document.createElement('div');
     div.className = 'ia-msg ia-msg-ia';
     div.innerHTML = `
-        Vou criar os surveys <strong>em cima das ${linhasSel.length} linha(s)</strong> marcadas, a partir do primeiro ponto de cada uma.
-        <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-top:8px;font-size:0.8rem;">
-            <label>Distância entre casas (m)
-                <input type="number" id="iaLinDist" min="0.5" step="0.5" value="${sugerido.toFixed(1)}" style="width:100%">
-            </label>
-            <label>Qtde de surveys
-                <input type="number" id="iaLinQtd" min="1" step="1" style="width:100%">
-            </label>
+        Vou criar os surveys <strong>em cima das ${linhasSel.length} linha(s)</strong> marcadas, a partir do primeiro ponto de cada uma. Defina a <strong>quantidade de cada linha</strong> (ou a distância entre casas).
+        <div style="font-size:0.8rem;margin-top:8px;">
+            <div style="display:grid;grid-template-columns:1.1fr .9fr 1fr 1fr;gap:6px;color:var(--text-tertiary);font-weight:600;">
+                <span>Linha</span><span>Compr.</span><span>Qtde</span><span>m entre casas</span>
+            </div>
+            <div style="max-height:220px;overflow:auto;">${linhasHtml}</div>
+            <div style="display:flex;gap:6px;align-items:flex-end;margin-top:8px;">
+                <label style="flex:1">Mesma qtde em todas as linhas
+                    <input type="number" id="iaLinTodas" min="1" step="1" style="width:100%">
+                </label>
+                <button class="ia-btn ia-btn-secondary" id="iaLinTodasBtn" type="button">Aplicar</button>
+            </div>
+            ${tipoPadrao && tipoPadrao !== 'sn' ? `
+            <label style="display:flex;gap:6px;align-items:center;margin-top:8px;">
+                <input type="checkbox" id="iaLinReiniciar" ${tipoPadrao === 'complemento' ? 'checked' : ''}>
+                <span>Reiniciar a numeração em cada linha (ex.: A1, A2, A3… em todas)</span>
+            </label>` : ''}
         </div>
         <small id="iaLinInfo" style="display:block;margin-top:6px;color:var(--text-tertiary)"></small>
         <div class="ia-msg-actions" style="margin-top:8px;">
@@ -2649,37 +2733,57 @@ function perguntarLinhas(g) {
     iaChatBody.appendChild(div);
     iaChatBody.scrollTop = iaChatBody.scrollHeight;
 
-    const inpDist = div.querySelector('#iaLinDist');
-    const inpQtd = div.querySelector('#iaLinQtd');
+    const inpQ = (i) => div.querySelector(`[data-qtd="${i}"]`);
+    const inpD = (i) => div.querySelector(`[data-dist="${i}"]`);
     const info = div.querySelector('#iaLinInfo');
 
     const mostrarPreview = (posicoes) => {
         limparPreviewLinhas();
         _iaPreview = L.layerGroup(posicoes.map(p => L.circleMarker([p.lat, p.lng], {
-            radius: 3, color: '#d97706', fillColor: '#f59e0b', fillOpacity: 0.95, weight: 1, interactive: false
+            radius: 4, color: '#fff', weight: 1, fillColor: p.cor, fillOpacity: 1, interactive: false
         }))).addTo(map);
     };
-    const atualizar = (nota) => {
-        const d = parseFloat(inpDist.value);
-        if (isNaN(d) || d <= 0) { inpQtd.value = ''; info.textContent = ''; limparPreviewLinhas(); return; }
-        const posicoes = calcular(d);
-        inpQtd.value = posicoes.length;
-        info.textContent = `Comprimento das linhas: ${compTotal.toFixed(1)} m • ${posicoes.length} survey(s) com ${d} m entre casas.` + (nota ? ' ' + nota : '');
+    const mostrarLinha = (i) => {
+        inpQ(i).value = estado[i].n;
+        inpD(i).value = estado[i].n > 1 ? +estado[i].step.toFixed(2) : '';
+    };
+    const atualizar = () => {
+        const { posicoes, ignoradas } = calcular();
+        info.textContent = `Total: ${posicoes.length} survey(s) em ${segmentos.length} linha(s)` +
+            (ignoradas ? ` • ${ignoradas} posição(ões) já ocupada(s) ignorada(s)` : '');
         mostrarPreview(posicoes);
     };
 
-    // Mudou o espaçamento → recalcula a quantidade na hora
-    inpDist.addEventListener('input', () => atualizar());
-    // Mudou a quantidade → ajusta o espaçamento automaticamente
-    const aplicarQtd = () => {
-        const Q = parseInt(inpQtd.value, 10);
-        if (isNaN(Q) || Q < 1) { showToast('Quantidade inválida', 'Informe um número inteiro maior que zero.', 'warning'); return; }
-        inpDist.value = distParaQuantidade(Q);
-        const real = calcular(parseFloat(inpDist.value)).length;
-        atualizar(real !== Q ? `(Não dá para fechar exatamente ${Q} com um espaçamento único; usei o mais próximo.)` : '');
+    segmentos.forEach((_, i) => {
+        // Mudou a quantidade da linha → ajusta a distância dela automaticamente
+        const aplicarQtd = () => {
+            const n = parseInt(inpQ(i).value, 10);
+            if (isNaN(n) || n < 1) { mostrarLinha(i); return; }
+            definirQtd(i, n);
+            mostrarLinha(i);
+            atualizar();
+        };
+        inpQ(i).addEventListener('change', aplicarQtd);
+        inpQ(i).addEventListener('keypress', (e) => { if (e.key === 'Enter') { e.preventDefault(); aplicarQtd(); } });
+        // Mudou a distância da linha → recalcula a quantidade dela na hora
+        inpD(i).addEventListener('input', () => {
+            const d = parseFloat(inpD(i).value);
+            if (isNaN(d) || d <= 0) return;
+            definirDist(i, d);
+            inpQ(i).value = estado[i].n;
+            atualizar();
+        });
+        mostrarLinha(i);
+    });
+
+    const aplicarTodas = () => {
+        const n = parseInt(div.querySelector('#iaLinTodas').value, 10);
+        if (isNaN(n) || n < 1) { showToast('Quantidade inválida', 'Informe um número inteiro maior que zero.', 'warning'); return; }
+        segmentos.forEach((_, i) => { definirQtd(i, n); mostrarLinha(i); });
+        atualizar();
     };
-    inpQtd.addEventListener('change', aplicarQtd);
-    inpQtd.addEventListener('keypress', (e) => { if (e.key === 'Enter') { e.preventDefault(); aplicarQtd(); } });
+    div.querySelector('#iaLinTodasBtn').addEventListener('click', aplicarTodas);
+    div.querySelector('#iaLinTodas').addEventListener('keypress', (e) => { if (e.key === 'Enter') { e.preventDefault(); aplicarTodas(); } });
     atualizar();
 
     div.querySelector('#iaLinCancelar').addEventListener('click', () => {
@@ -2693,15 +2797,14 @@ function perguntarLinhas(g) {
     });
 
     div.querySelector('#iaLinCriar').addEventListener('click', () => {
-        const dist = parseFloat(inpDist.value);
-        if (isNaN(dist) || dist <= 0) { showToast('Valor inválido', 'Informe a distância entre casas.', 'warning'); return; }
-        const posicoes = calcular(dist);
-        if (!posicoes.length) { showToast('Nada a criar', 'As linhas são curtas demais para essa distância.', 'warning'); return; }
+        const { posicoes } = calcular();
+        if (!posicoes.length) { showToast('Nada a criar', 'Nenhuma posição livre nas linhas.', 'warning'); return; }
         if (posicoes.length > 2000) { showToast('Limite excedido', `${posicoes.length} casas passam do máximo de 2000.`, 'warning'); return; }
+        const reiniciar = !!div.querySelector('#iaLinReiniciar')?.checked;
         limparPreviewLinhas();
         div.remove();
-        escreverMensagemUser(`${dist} m entre casas (${posicoes.length} casas)`);
-        gerarSequenciaIA(posicoes.length, posicoes);
+        escreverMensagemUser(`${segmentos.length} linha(s), ${posicoes.length} casas`);
+        gerarSequenciaIA(posicoes.length, posicoes, { reiniciar });
     });
 }
 
@@ -3160,7 +3263,7 @@ function analisarGeometriaIA(ultimos) {
     return { stepX: step.x, stepY: step.y, k, origemLat: origem.lat, origemLng: origem.lng, ultLat: ult.lat, ultLng: ult.lng, mx, my };
 }
 
-function gerarSequenciaIA(quantidade, posicoes) {
+function gerarSequenciaIA(quantidade, posicoes, opts = {}) {
     if (!iaPendencia) return;
 
     const pad = iaPendencia;
@@ -3198,18 +3301,21 @@ function gerarSequenciaIA(quantidade, posicoes) {
     let criados = 0;
 
     for (let i = 1; i <= quantidade; i++) {
+        // numeração: contínua entre as linhas, ou reiniciada em cada linha (opts.reiniciar)
+        const idx = (opts.reiniciar && posicoes && posicoes[i - 1].ordem) ? posicoes[i - 1].ordem : i;
         const novo = JSON.parse(JSON.stringify(ultimoSurvey));
         novo._id = 'ia_' + (++_surveyIdSeq);
         novo._ia = true;
+        if (posicoes && posicoes[i - 1].cor) novo._cor = posicoes[i - 1].cor; else delete novo._cor;
         novo.created_at = new Date().toISOString();
 
         if (pad.tipo === 'fachada') {
-            novo.numero = String(pad.ultimoValor + pad.delta * i);
+            novo.numero = String(pad.ultimoValor + pad.delta * idx);
         } else if (pad.tipo === 'complemento') {
             const comp = novo.complementos[pad.compIndex];
             if (comp) {
                 const prefixo = String(comp.valor).replace(/\d+$/, '');
-                comp.valor = prefixo + String(pad.ultimoValor + pad.delta * i);
+                comp.valor = prefixo + String(pad.ultimoValor + pad.delta * idx);
             }
         }
 
@@ -3230,7 +3336,7 @@ function gerarSequenciaIA(quantidade, posicoes) {
 
     escreverMensagemIA(
         `✅ Pronto! Criei <strong>${criados} novos surveys</strong>${pad.tipo === 'sn' ? ' como <strong>SN</strong>' : ' continuando o padrão'}.<br><br>
-        Eles aparecem na lista com <strong>fundo verde</strong> e a etiqueta <strong>🤖 IA</strong> para você diferenciar.`
+        Eles aparecem na lista com <strong>fundo verde</strong> e a etiqueta <strong>🤖 IA</strong> para você diferenciar.${posicoes && posicoes.some(p => p.cor) ? '<br>Cada linha ficou com uma <strong>cor própria</strong> no mapa.' : ''}`
     );
 
     iaPendencia = null;
