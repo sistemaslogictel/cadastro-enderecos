@@ -344,7 +344,19 @@ function usuarioEhAdm() {
     return regex.test(login) || regex.test(email);
 }
 
+// Base IBGE: somente usuários ATR
+function usuarioEhATR() {
+    const login = (sessionStorage.getItem('usuarioLogado') || '').trim().toUpperCase();
+    const email = (usuarioAtual && usuarioAtual.email ? usuarioAtual.email : '').toUpperCase();
+    return /^ATR/.test(login) || /^ATR/.test(email);
+}
+
 function aplicarPermissoes() {
+    const atr = usuarioEhATR();
+    const panel6 = document.getElementById('ibgePanel');
+    const nav6 = document.getElementById('navIbgeBtn');
+    if (panel6) panel6.style.display = atr ? '' : 'none';
+    if (nav6) nav6.style.display = atr ? '' : 'none';
     const adm = usuarioEhAdm();
     const panel5 = document.getElementById('uploadPanel');
     const nav5 = document.getElementById('navUploadBtn');
@@ -626,16 +638,30 @@ document.querySelectorAll('.card-header').forEach(h => {
 // ============================================
 // ABAS DO MAPA
 // ============================================
+// Troca a camada de fundo: 'map' (Mapa), 'satellite' (Satélite) ou 'mub' (Mapa + imagem do MUB por cima)
+function ativarCamadaMapa(alvo) {
+    if (alvo === camadaAtual) return;
+    if (camadaAtual === 'mub') { window.MUB && window.MUB.desativar(); map.removeLayer(camadas.map); }
+    else map.removeLayer(camadas[camadaAtual]);
+
+    if (alvo === 'mub') { camadas.map.addTo(map); window.MUB && window.MUB.ativar(); }
+    else camadas[alvo].addTo(map);
+
+    camadaAtual = alvo;
+    document.querySelectorAll('.map-tab').forEach(t => t.classList.toggle('active', t.dataset.layer === alvo));
+}
+
 document.querySelectorAll('.map-tab').forEach(tab => {
     tab.addEventListener('click', (e) => {
         e.stopPropagation();
         const alvo = tab.dataset.layer;
         if (alvo === camadaAtual) return;
-        map.removeLayer(camadas[camadaAtual]);
-        camadas[alvo].addTo(map);
-        camadaAtual = alvo;
-        document.querySelectorAll('.map-tab').forEach(t => t.classList.remove('active'));
-        tab.classList.add('active');
+        // MUB ainda não carregado: pede a imagem (ao carregar, a aba é ativada sozinha)
+        if (alvo === 'mub' && !(window.MUB && window.MUB.temImagem())) {
+            window.MUB && window.MUB.escolher();
+            return;
+        }
+        ativarCamadaMapa(alvo);
     });
 });
 
@@ -992,20 +1018,21 @@ function irParaLocal(lat, lng, nome, origem) {
 // TORNAR MARCADOR DE SURVEY ARRASTÁVEL
 // ============================================
 function tornarMarcadorArrastavel(marker, surveyRef) {
-    marker.on('mousedown', () => marker.dragging.enable());
+    // Só o survey que está em modo edição pode ser reposicionado (cursor de "mãozinha" ao passar por cima)
+    const emEdicao = surveyRef && _surveyEditandoIdx != null && surveysMemoria[_surveyEditandoIdx] === surveyRef;
+    if (!emEdicao) return;
+    marker.dragging.enable();
     marker.on('dragend', () => {
         const pos = marker.getLatLng();
-        if (surveyRef) {
-            surveyRef.latitude = +pos.lat.toFixed(8);
-            surveyRef.longitude = +pos.lng.toFixed(8);
-            if (marcadorAtual === marker) {
-                const setH = (id, val) => { const el = document.getElementById(id); if (el) el.value = val; };
-                setH('surveyLatitude', pos.lat.toFixed(8));
-                setH('surveyLongitude', pos.lng.toFixed(8));
-                document.getElementById('coordsDisplay').textContent = `${pos.lat.toFixed(8)}, ${pos.lng.toFixed(8)}`;
-                document.getElementById('origemDisplay').textContent = 'Ajustado manualmente (arrastado)';
-            }
-        }
+        surveyRef.latitude = +pos.lat.toFixed(8);
+        surveyRef.longitude = +pos.lng.toFixed(8);
+        const setH = (id, val) => { const el = document.getElementById(id); if (el) el.value = val; };
+        setH('surveyLatitude', pos.lat.toFixed(8));
+        setH('surveyLongitude', pos.lng.toFixed(8));
+        const cd = document.getElementById('coordsDisplay');
+        const od = document.getElementById('origemDisplay');
+        if (cd) cd.textContent = `${pos.lat.toFixed(8)}, ${pos.lng.toFixed(8)}`;
+        if (od) od.textContent = 'Ajustado manualmente (arrastado)';
     });
 }
 
@@ -1071,6 +1098,7 @@ async function selecionarParaSurvey(r) {
     };
 
     const setH = (id, val) => { const el = document.getElementById(id); if (el) el.value = val || ''; };
+    atualizarCamadaIbge();
     setH('surveyTipo', enderecoBaseSelecionado.tipo);
     setH('surveyLogradouro', enderecoBaseSelecionado.rua);
     setH('surveyBairro', enderecoBaseSelecionado.bairro);
@@ -1602,6 +1630,7 @@ function abrirEdicaoSurvey(idx) {
     }
 
     enderecoBaseSelecionado = { ...l, _registro_id: l._registro_id };
+    atualizarCamadaIbge();
 
     const addBtn = document.getElementById('addBtn');
     if (addBtn) {
@@ -1630,11 +1659,16 @@ function abrirEdicaoSurvey(idx) {
 
     expandirCard('formPanel');
     irParaCard('formPanel');
-    showToast('Modo edição', 'Ajuste os dados e clique em "Salvar edição".', 'info', 3000);
+    // casinha laranja no mapa, liberada para arrastar
+    renderizarMarcadoresSurveys();
+    const mEd = marcadoresSurveys.find(m => m._sid === s._id);
+    if (mEd) map.setView(mEd.getLatLng(), Math.max(map.getZoom(), 19));
+    showToast('Modo edição', 'Ajuste os dados ou arraste a casinha laranja no mapa. Depois clique em "Salvar edição".', 'info', 4500);
 }
 
 function cancelarEdicaoSurvey(manterRoteiro) {
     _surveyEditandoIdx = null;
+    renderizarMarcadoresSurveys();   // casinha volta à cor normal e deixa de ser arrastável
     const addBtn = document.getElementById('addBtn');
     if (addBtn) {
         addBtn.innerHTML = `
@@ -1660,6 +1694,7 @@ function cancelarEdicaoSurvey(manterRoteiro) {
         infoBox.innerHTML = '<p class="empty-state-sm">Selecione uma fonte em "Endereços Encontrados".</p>';
     }
     enderecoBaseSelecionado = null;
+    atualizarCamadaIbge();
 }
 
 // ============================================
@@ -1906,6 +1941,18 @@ function renderizarSurveys() {
         btn.addEventListener('click', () => abrirEdicaoSurvey(parseInt(btn.dataset.idx, 10)));
     });
 
+    // dois cliques na linha do survey = entrar em modo de edição
+    tbody.querySelectorAll('tr.grupo-filho').forEach(tr => {
+        tr.title = 'Dois cliques para editar';
+        tr.addEventListener('dblclick', (e) => {
+            if (e.target.closest('button, input, a, select, textarea')) return;
+            const b = tr.querySelector('.btn-editar');
+            if (!b) return;
+            if (window.getSelection) window.getSelection().removeAllRanges();
+            abrirEdicaoSurvey(parseInt(b.dataset.idx, 10));
+        });
+    });
+
     tbody.querySelectorAll('.btn-ir').forEach(btn => {
         btn.addEventListener('click', () => {
             const s = surveysMemoria[parseInt(btn.dataset.idx, 10)];
@@ -1970,14 +2017,26 @@ function renderizarMarcadoresSurveys() {
     marcadoresSurveys.forEach(m => map.removeLayer(m));
     marcadoresSurveys = [];
 
-    surveysMemoria.forEach(s => {
+    surveysMemoria.forEach((s, idx) => {
         const lat = s.latitude != null ? Number(s.latitude) : (s.logradouro && s.logradouro.lat);
         const lng = s.longitude != null ? Number(s.longitude) : (s.logradouro && s.logradouro.lng);
         if (lat == null || lng == null) return;
-        const m = L.marker([lat, lng], { icon: iconeSurvey(s), draggable: false }).addTo(map);
+        const editando = (_surveyEditandoIdx === idx);
+        const m = L.marker([lat, lng], {
+            icon: editando ? iconeCasaCor('#f59e0b') : iconeSurvey(s),   // laranja = em edição
+            draggable: false,
+            zIndexOffset: editando ? 2000 : 0
+        }).addTo(map);
+        m._sid = s._id;
         m.bindPopup(popupSurveyHtml(s));
         configurarRotuloSurvey(m, s);
         tornarMarcadorArrastavel(m, s);
+        // dois cliques na casinha = entrar em modo de edição
+        m.on('dblclick', (ev) => {
+            if (ev.originalEvent) L.DomEvent.stop(ev.originalEvent);
+            m.closePopup();
+            abrirEdicaoSurvey(idx);
+        });
         marcadoresSurveys.push(m);
     });
 }
@@ -3569,6 +3628,540 @@ function gerarSequenciaIA(quantidade, posicoes, opts = {}) {
     });
     document.getElementById('zipViewClose')?.addEventListener('click', fechar);
     document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && !painel.hidden) fechar(); });
+})();
+
+// ============================================
+// MUB — IMAGEM DO MAPA URBANO BÁSICO COMO CAMADA
+// Sobe uma imagem (PNG/JPG/WEBP) do MUB; ela é dimensionada pela ESCALA (padrão 1:4224) e pelo DPI
+// da imagem, e posicionada arrastando a alça ✥. Fica salva neste navegador (IndexedDB).
+// ============================================
+(function modulMub() {
+    const input = document.getElementById('mubFileInput');
+    if (!input) return;
+
+    const DB_NOME = 'cadastro_roteiro', DB_STORE = 'kv', CHAVE = 'mub';
+    const ESCALA_PADRAO = 4224;
+    const DPI_PADRAO = 96;
+
+    const abrirDb = () => new Promise((ok, erro) => {
+        if (!window.indexedDB) { erro(new Error('IndexedDB indisponível')); return; }
+        const r = indexedDB.open(DB_NOME, 1);
+        r.onupgradeneeded = () => r.result.createObjectStore(DB_STORE);
+        r.onsuccess = () => ok(r.result);
+        r.onerror = () => erro(r.error);
+    });
+    const dbOp = async (modo, fn) => {
+        const db = await abrirDb();
+        return new Promise((ok, erro) => {
+            const tx = db.transaction(DB_STORE, modo);
+            const req = fn(tx.objectStore(DB_STORE));
+            tx.oncomplete = () => ok(req ? req.result : undefined);
+            tx.onerror = () => erro(tx.error);
+        });
+    };
+    const salvarDb = (v) => dbOp('readwrite', st => st.put(v, CHAVE));
+    const lerDb = () => dbOp('readonly', st => st.get(CHAVE));
+    const apagarDb = () => dbOp('readwrite', st => st.delete(CHAVE));
+
+    let st = null;          // { blob, w, h, dpi, escala, lat, lng, opacity, travado }
+    let overlay = null, alca = null, controle = null, urlImg = null, ativo = false;
+
+    function limites() {
+        const wM = st.w / st.dpi * 0.0254 * st.escala;   // largura real em metros
+        const hM = st.h / st.dpi * 0.0254 * st.escala;
+        const dLat = (hM / 2) / 110540;
+        const dLng = (wM / 2) / (111320 * Math.cos(st.lat * Math.PI / 180));
+        return L.latLngBounds([st.lat - dLat, st.lng - dLng], [st.lat + dLat, st.lng + dLng]);
+    }
+    function montar() {
+        if (overlay) { if (map.hasLayer(overlay)) map.removeLayer(overlay); overlay = null; }
+        if (urlImg) URL.revokeObjectURL(urlImg);
+        urlImg = URL.createObjectURL(st.blob);
+        overlay = L.imageOverlay(urlImg, limites(), { opacity: st.opacity, interactive: false });
+        if (ativo) overlay.addTo(map);
+    }
+    const persistir = () => { if (st) salvarDb(st).catch(e => console.warn('[MUB] não foi possível salvar:', e)); };
+    function reposicionar() {
+        if (overlay) overlay.setBounds(limites());
+        if (alca) alca.setLatLng([st.lat, st.lng]);
+    }
+
+    function removerAlca() { if (alca) { map.removeLayer(alca); alca = null; } }
+    function mostrarAlca() {
+        removerAlca();
+        if (!ativo || !st || st.travado) return;
+        alca = L.marker([st.lat, st.lng], {
+            draggable: true, zIndexOffset: 3000, title: 'Arraste para mover o MUB',
+            icon: L.divIcon({ className: 'mub-handle', html: '✥', iconSize: [30, 30], iconAnchor: [15, 15] })
+        }).addTo(map);
+        alca.on('drag', () => {
+            const p = alca.getLatLng();
+            st.lat = p.lat; st.lng = p.lng;
+            if (overlay) overlay.setBounds(limites());
+        });
+        alca.on('dragend', persistir);
+    }
+
+    // ---- painel de controle (canto superior direito do mapa) ----
+    function criarControle() {
+        const C = L.Control.extend({
+            options: { position: 'topright' },
+            onAdd() {
+                const div = L.DomUtil.create('div', 'mub-ctrl');
+                div.innerHTML = `
+                    <div class="mub-ctrl-title">MUB</div>
+                    <label>Transparência
+                        <input type="range" id="mubOp" min="10" max="100" value="${Math.round(st.opacity * 100)}">
+                    </label>
+                    <div class="mub-row">
+                        <label>Escala 1:<input type="number" id="mubEsc" min="1" step="1" value="${st.escala}"></label>
+                        <label>DPI<input type="number" id="mubDpi" min="10" max="1200" step="1" value="${Math.round(st.dpi)}"></label>
+                    </div>
+                    <label class="mub-chk"><input type="checkbox" id="mubTrav" ${st.travado ? 'checked' : ''}> Travar posição</label>
+                    <div class="mub-row">
+                        <button type="button" id="mubCentro">Centralizar aqui</button>
+                        <button type="button" id="mubTroca">Trocar imagem</button>
+                        <button type="button" id="mubRem">Remover</button>
+                    </div>
+                    <small>Arraste a alça ✥ para posicionar o MUB sobre o mapa.</small>`;
+                L.DomEvent.disableClickPropagation(div);
+                L.DomEvent.disableScrollPropagation(div);
+
+                div.querySelector('#mubOp').addEventListener('input', (e) => {
+                    st.opacity = Math.max(0.1, Math.min(1, e.target.value / 100));
+                    if (overlay) overlay.setOpacity(st.opacity);
+                });
+                div.querySelector('#mubOp').addEventListener('change', persistir);
+                const num = (id, campo, min, max) => div.querySelector(id).addEventListener('change', (e) => {
+                    const v = parseFloat(e.target.value);
+                    if (isNaN(v) || v < min || v > max) { e.target.value = Math.round(st[campo]); return; }
+                    st[campo] = v; reposicionar(); persistir();
+                });
+                num('#mubEsc', 'escala', 1, 1000000);
+                num('#mubDpi', 'dpi', 10, 1200);
+                div.querySelector('#mubTrav').addEventListener('change', (e) => {
+                    st.travado = e.target.checked; mostrarAlca(); persistir();
+                });
+                div.querySelector('#mubCentro').addEventListener('click', () => {
+                    const c = map.getCenter(); st.lat = c.lat; st.lng = c.lng; reposicionar(); persistir();
+                });
+                div.querySelector('#mubTroca').addEventListener('click', () => input.click());
+                div.querySelector('#mubRem').addEventListener('click', remover);
+                return div;
+            }
+        });
+        controle = new C();
+        controle.addTo(map);
+    }
+    function removerControle() { if (controle) { controle.remove(); controle = null; } }
+
+    function ativar() {
+        ativo = true;
+        if (!st) return;
+        if (overlay && !map.hasLayer(overlay)) overlay.addTo(map);
+        mostrarAlca();
+        removerControle();
+        criarControle();
+    }
+    function desativar() {
+        ativo = false;
+        removerAlca();
+        removerControle();
+        if (overlay && map.hasLayer(overlay)) map.removeLayer(overlay);
+    }
+    async function remover() {
+        if (!confirm('Remover a imagem do MUB deste navegador?')) return;
+        const eraAtivo = ativo;
+        desativar();
+        if (overlay) { overlay = null; }
+        if (urlImg) { URL.revokeObjectURL(urlImg); urlImg = null; }
+        st = null;
+        try { await apagarDb(); } catch (e) { console.warn(e); }
+        if (eraAtivo) ativarCamadaMapa('map');
+        showToast('MUB removido', 'A imagem foi removida.', 'success', 2500);
+    }
+
+    // DPI gravado na própria imagem (PNG pHYs / JPEG JFIF), se existir
+    function detectarDpi(buf) {
+        try {
+            const b = new Uint8Array(buf.slice(0, 65536));
+            const dv = new DataView(b.buffer);
+            if (b[0] === 0x89 && b[1] === 0x50) {                         // PNG
+                for (let i = 8; i < b.length - 16; i++) {
+                    if (b[i] === 0x70 && b[i + 1] === 0x48 && b[i + 2] === 0x59 && b[i + 3] === 0x73) {   // "pHYs"
+                        const ppm = dv.getUint32(i + 4);
+                        if (b[i + 12] === 1 && ppm > 0) return ppm * 0.0254;
+                    }
+                }
+            } else if (b[0] === 0xFF && b[1] === 0xD8 && b[6] === 0x4A && b[7] === 0x46) {  // JPEG "JFIF"
+                const un = b[13], x = dv.getUint16(14);
+                if (x > 0 && un === 1) return x;
+                if (x > 0 && un === 2) return x * 2.54;
+            }
+        } catch (e) { /* ignora */ }
+        return null;
+    }
+    const lerDimensoes = (blob) => new Promise((ok, erro) => {
+        const u = URL.createObjectURL(blob);
+        const img = new Image();
+        img.onload = () => { ok({ w: img.naturalWidth, h: img.naturalHeight }); URL.revokeObjectURL(u); };
+        img.onerror = () => { erro(new Error('Não consegui abrir a imagem.')); URL.revokeObjectURL(u); };
+        img.src = u;
+    });
+
+    input.addEventListener('change', async () => {
+        const file = input.files && input.files[0];
+        input.value = '';
+        if (!file) return;
+        if (!/^image\//.test(file.type) && !/\.(png|jpe?g|webp|gif|bmp)$/i.test(file.name)) {
+            showToast('Formato não suportado', 'Envie o MUB como imagem (PNG, JPG ou WEBP). Se estiver em PDF, converta para imagem.', 'warning', 6000);
+            return;
+        }
+        try {
+            const [dim, buf] = await Promise.all([lerDimensoes(file), file.arrayBuffer()]);
+            const dpi = detectarDpi(buf);
+            const c = map.getCenter();
+            st = {
+                blob: file, w: dim.w, h: dim.h,
+                dpi: dpi || (st ? st.dpi : DPI_PADRAO),
+                escala: st ? st.escala : ESCALA_PADRAO,
+                lat: c.lat, lng: c.lng,
+                opacity: st ? st.opacity : 0.8,
+                travado: false
+            };
+            montar();
+            persistir();
+            if (camadaAtual !== 'mub') ativarCamadaMapa('mub');
+            else { removerControle(); criarControle(); mostrarAlca(); }
+            map.fitBounds(limites(), { padding: [30, 30], maxZoom: 19 });
+            showToast('MUB carregado', `Escala 1:${st.escala} • ${Math.round(st.dpi)} DPI${dpi ? ' (lido da imagem)' : ' (ajuste o DPI se o tamanho ficar errado)'}.`, 'success', 6000);
+        } catch (err) {
+            console.error('[MUB]', err);
+            showToast('Erro ao abrir a imagem', err.message, 'error', 6000);
+        }
+    });
+
+    window.MUB = {
+        temImagem: () => !!st,
+        escolher: () => input.click(),
+        ativar, desativar
+    };
+
+    // restaura a última imagem usada neste navegador
+    lerDb().then(v => { if (v && v.blob) { st = v; montar(); } }).catch(() => {});
+})();
+
+// ============================================
+// BASE IBGE — EXIBIÇÃO NO MAPA
+// Casinhas brancas translúcidas, atrás dos surveys, com a fachada do IBGE.
+// Clique na casinha mostra os complementos. Fachadas repetidas ficam juntas na mesma casinha.
+// ============================================
+let _ibgeSeq = 0;
+let _ibgeCamada = null;
+let _ibgeControle = null;
+let _ibgeResumo = null;                       // { fachadas, registros }
+let _ibgeVisivel = localStorage.getItem('ibgeVisivel') !== '0';
+
+const _ibgeNorm = (v) => String(v == null ? '' : v).normalize('NFD').replace(/[\u0300-\u036f]/g, '').toUpperCase().replace(/\s+/g, ' ').trim();
+
+function limparIbge() {
+    if (_ibgeCamada) { map.removeLayer(_ibgeCamada); _ibgeCamada = null; }
+    _ibgeResumo = null;
+    atualizarControleIbge();
+}
+
+function atualizarControleIbge() {
+    if (!_ibgeControle) {
+        const C = L.Control.extend({
+            options: { position: 'bottomleft' },
+            onAdd() {
+                const div = L.DomUtil.create('div', 'ibge-ctrl');
+                div.innerHTML = '<label><input type="checkbox" id="ibgeToggle"> <span id="ibgeToggleTxt"></span></label>';
+                L.DomEvent.disableClickPropagation(div);
+                div.querySelector('#ibgeToggle').addEventListener('change', (e) => {
+                    _ibgeVisivel = e.target.checked;
+                    localStorage.setItem('ibgeVisivel', _ibgeVisivel ? '1' : '0');
+                    if (_ibgeCamada) { if (_ibgeVisivel) _ibgeCamada.addTo(map); else map.removeLayer(_ibgeCamada); }
+                });
+                return div;
+            }
+        });
+        _ibgeControle = new C();
+    }
+    const el = _ibgeControle.getContainer();
+    if (!_ibgeResumo) {
+        if (el) _ibgeControle.remove();
+        return;
+    }
+    if (!el || !el.parentNode) _ibgeControle.addTo(map);
+    const c = _ibgeControle.getContainer();
+    c.querySelector('#ibgeToggle').checked = _ibgeVisivel;
+    c.querySelector('#ibgeToggleTxt').textContent =
+        `IBGE: ${_ibgeResumo.fachadas} fachada(s) • ${_ibgeResumo.registros} registro(s)`;
+}
+
+const _ibgeSVG = houseSVG.replace(/#2a4fd6/g, '#ffffff').replace(/#1e3c72/g, '#334155');
+
+function _ibgeComplementos(r) {
+    const out = [];
+    for (let i = 1; i <= 5; i++) {
+        const t = (r['tipo_complemento' + i] || '').toString().trim();
+        const v = (r['complemento' + i] || '').toString().trim();
+        if (t || v) out.push([t, v].filter(Boolean).join(' '));
+    }
+    return out;
+}
+
+async function atualizarCamadaIbge() {
+    const seq = ++_ibgeSeq;
+    limparIbge();
+    const l = enderecoBaseSelecionado;
+    if (!l || !l.rua || typeof supabaseClient === 'undefined' || !supabaseClient) return;
+
+    try {
+        // letras acentuadas viram "_" (curinga) na busca; o filtro exato é feito aqui no navegador
+        const padrao = String(l.rua).trim().replace(/[%\\]/g, '').replace(/[^\x00-\x7F]/g, '_');
+        const todos = [];
+        for (let de = 0; de < 20000; de += 1000) {
+            const { data, error } = await supabaseClient
+                .from('logradouros_ibge').select('*')
+                .ilike('logradouro', `%${padrao}%`)
+                .range(de, de + 999);
+            if (error) throw error;
+            todos.push(...(data || []));
+            if (!data || data.length < 1000) break;
+        }
+        if (seq !== _ibgeSeq) return;     // o usuário já escolheu outro logradouro
+
+        const alvo = _ibgeNorm(l.rua);
+        const alvoCompleto = _ibgeNorm([l.tipo, l.rua].filter(Boolean).join(' '));
+        const cep5 = String(l.cep || '').replace(/\D/g, '').slice(0, 5);
+        const bairroAlvo = _ibgeNorm(l.bairro);
+
+        const registros = todos.filter(r => {
+            const nome = _ibgeNorm(r.logradouro);
+            const nomeCompleto = _ibgeNorm([r.tipo, r.logradouro].filter(Boolean).join(' '));
+            if (![nome, nomeCompleto].some(n => n === alvo || n === alvoCompleto)) return false;
+            // mesma rua em outro bairro/cidade: confere CEP ou bairro quando houver como comparar
+            const rCep5 = String(r.cep || '').replace(/\D/g, '').slice(0, 5);
+            const rBairro = _ibgeNorm(r.bairro);
+            const temRef = (cep5 && rCep5) || (bairroAlvo && rBairro);
+            if (!temRef) return true;
+            return (cep5 && rCep5 && cep5 === rCep5) || (bairroAlvo && rBairro && bairroAlvo === rBairro);
+        }).filter(r => r.latitude != null && r.longitude != null);
+
+        if (!registros.length) return;
+
+        // agrupa: mesma fachada na mesma posição = uma casinha só, com todos os complementos no popup
+        const grupos = new Map();
+        registros.forEach(r => {
+            const fach = (r.numero_fachada == null ? '' : String(r.numero_fachada)).trim() || 'SN';
+            const chave = [fach.toUpperCase(), Number(r.latitude).toFixed(5), Number(r.longitude).toFixed(5)].join('|');
+            if (!grupos.has(chave)) grupos.set(chave, { fachada: fach, lat: Number(r.latitude), lng: Number(r.longitude), itens: [] });
+            grupos.get(chave).itens.push(r);
+        });
+
+        const camada = L.layerGroup();
+        grupos.forEach(g => {
+            const icone = L.divIcon({
+                className: 'ibge-marker',
+                html: `${_ibgeSVG}<span class="ibge-num">${escapeHtml(g.fachada)}</span>`,
+                iconSize: [14, 18], iconAnchor: [7, 18], popupAnchor: [0, -18]
+            });
+            // zIndexOffset negativo: fica ATRÁS dos surveys cadastrados
+            const m = L.marker([g.lat, g.lng], { icon: icone, zIndexOffset: -1000, keyboard: false });
+            const linhas = g.itens.slice(0, 30).map(r => {
+                const comps = _ibgeComplementos(r);
+                const and = r.qtd_andares != null && r.qtd_andares !== '' ? ` • ${escapeHtml(String(r.qtd_andares))} andar(es)` : '';
+                return `<li>${comps.length ? escapeHtml(comps.join(', ')) : '<em>sem complemento</em>'}${and}</li>`;
+            }).join('');
+            const mais = g.itens.length > 30 ? `<small>+ ${g.itens.length - 30} registro(s)</small>` : '';
+            m.bindPopup(`<strong>IBGE — ${escapeHtml([l.tipo, l.rua].filter(Boolean).join(' '))}, ${escapeHtml(g.fachada)}</strong>` +
+                `<ul class="ibge-pop">${linhas}</ul>${mais}`);
+            m.addTo(camada);
+        });
+
+        _ibgeCamada = camada;
+        _ibgeResumo = { fachadas: grupos.size, registros: registros.length };
+        if (_ibgeVisivel) camada.addTo(map);
+        atualizarControleIbge();
+    } catch (err) {
+        console.warn('[IBGE] não foi possível carregar a base:', err);
+    }
+}
+
+// ============================================
+// BASE IBGE — IMPORTAÇÃO (só ATR)
+// Lê .xlsx/.xls/.csv e grava em public.logradouros_ibge
+// ============================================
+(function importarIbge() {
+    const btn = document.getElementById('ibgeUploadBtn');
+    if (!btn) return;
+    const fileInput = document.getElementById('ibgeFile');
+    const status = document.getElementById('ibgeStatus');
+    const chkSubstituir = document.getElementById('ibgeSubstituir');
+
+    const semAcento = (v) => String(v == null ? '' : v).normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+    const normCab = (h) => semAcento(h).toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '');
+
+    // nomes aceitos para cada coluna do arquivo
+    const ALIAS = {
+        qtd_andares: ['qtd_andares', 'andares', 'qtde_andares', 'numero_andares', 'n_andares', 'qtd_pavimentos', 'pavimentos'],
+        cep: ['cep'],
+        bairro: ['bairro'],
+        tipo: ['tipo', 'tipo_logradouro', 'tipo_lograd', 'tipo_de_logradouro'],
+        logradouro: ['logradouro', 'rua', 'nome_logradouro', 'nome_do_logradouro', 'endereco'],
+        numero_fachada: ['numero_fachada', 'numero', 'num_fachada', 'fachada', 'numero_da_fachada', 'n_fachada'],
+        latitude: ['latitude', 'lat'],
+        longitude: ['longitude', 'lng', 'lon', 'long']
+    };
+    for (let i = 1; i <= 5; i++) {
+        ALIAS['tipo_complemento' + i] = ['tipo_complemento' + i, 'tipo_complemento_' + i, 'tipo_comp' + i, 'tipo_comp_' + i];
+        ALIAS['complemento' + i] = ['complemento' + i, 'complemento_' + i, 'comp' + i, 'comp_' + i];
+    }
+    const campoDoCabecalho = {};
+    Object.entries(ALIAS).forEach(([campo, nomes]) => nomes.forEach(n => { if (!(n in campoDoCabecalho)) campoDoCabecalho[n] = campo; }));
+
+    const txt = (v) => (v == null ? '' : String(v).trim());
+    const num = (v) => {
+        if (typeof v === 'number') return isFinite(v) ? v : null;
+        const n = parseFloat(txt(v).replace(/\s/g, '').replace(',', '.'));
+        return isNaN(n) ? null : n;
+    };
+    const chaveDe = (r) => [
+        r.logradouro, r.cep, r.numero_fachada,
+        r.latitude != null ? Number(r.latitude).toFixed(6) : '', r.longitude != null ? Number(r.longitude).toFixed(6) : '',
+        r.tipo_complemento1, r.complemento1, r.tipo_complemento2, r.complemento2, r.tipo_complemento3, r.complemento3,
+        r.tipo_complemento4, r.complemento4, r.tipo_complemento5, r.complemento5
+    ].map(v => semAcento(v == null ? '' : v).toLowerCase().trim()).join('|');
+
+    async function lerPlanilha(file) {
+        if (typeof XLSX === 'undefined') throw new Error('Leitor de planilhas (SheetJS) não carregado. Verifique a internet e recarregue (Ctrl+F5).');
+        let wb;
+        if (/\.csv$/i.test(file.name) || /\.txt$/i.test(file.name)) {
+            const texto = await file.text();
+            const primeira = texto.split(/\r?\n/)[0] || '';
+            const sep = primeira.includes(';') ? ';' : (primeira.includes('\t') ? '\t' : ',');
+            wb = XLSX.read(texto, { type: 'string', FS: sep });
+        } else {
+            wb = XLSX.read(await file.arrayBuffer(), { type: 'array' });
+        }
+        const ws = wb.Sheets[wb.SheetNames[0]];
+        const linhas = XLSX.utils.sheet_to_json(ws, { defval: '', raw: true });
+        return linhas.map(lin => {
+            const r = {};
+            Object.keys(lin).forEach(k => {
+                const campo = campoDoCabecalho[normCab(k)];
+                if (campo && !(campo in r)) r[campo] = lin[k];
+            });
+            return r;
+        });
+    }
+
+    function normalizar(r) {
+        let lat = num(r.latitude), lng = num(r.longitude);
+        if (lat != null && Math.abs(lat) > 90) lat = null;
+        if (lng != null && Math.abs(lng) > 180) lng = null;
+        if (lat == null || lng == null) { lat = null; lng = null; }
+        let cep = txt(r.cep).replace(/\D/g, '');
+        if (cep && cep.length < 8) cep = cep.padStart(8, '0');
+        const andares = parseInt(txt(r.qtd_andares), 10);
+        const out = {
+            qtd_andares: isNaN(andares) ? null : andares,
+            cep: cep || null,
+            bairro: txt(r.bairro) || null,
+            tipo: txt(r.tipo) || null,
+            logradouro: txt(r.logradouro),
+            numero_fachada: txt(r.numero_fachada) || null,
+            latitude: lat != null ? +lat.toFixed(8) : null,
+            longitude: lng != null ? +lng.toFixed(8) : null,
+            origem: 'IBGE',
+            usuario_id: (typeof usuarioAtual !== 'undefined' && usuarioAtual) ? usuarioAtual.id : null
+        };
+        for (let i = 1; i <= 5; i++) {
+            out['tipo_complemento' + i] = txt(r['tipo_complemento' + i]) || null;
+            out['complemento' + i] = txt(r['complemento' + i]) || null;
+        }
+        return out;
+    }
+
+    btn.addEventListener('click', async () => {
+        if (!usuarioEhATR()) {
+            showToast('Sem permissão', 'Apenas usuários ATR podem importar a base IBGE.', 'error', 5000);
+            return;
+        }
+        const file = fileInput.files[0];
+        if (!file) { showToast('Nenhum arquivo', 'Selecione um arquivo .xlsx, .xls ou .csv.', 'warning'); return; }
+        const substituir = !!(chkSubstituir && chkSubstituir.checked);
+        if (substituir && !confirm('Isso APAGA toda a base IBGE atual antes de importar este arquivo. Continuar?')) return;
+
+        btn.disabled = true;
+        status.textContent = 'Lendo planilha...';
+        try {
+            const brutas = await lerPlanilha(file);
+            const validas = brutas.map(normalizar).filter(r => r.logradouro);
+            if (!validas.length) {
+                status.textContent = 'Nenhum registro válido (coluna "logradouro" não encontrada ou vazia).';
+                showToast('Sem registros', 'Confira os nomes das colunas da planilha.', 'warning', 6000);
+                return;
+            }
+            const semCoord = validas.filter(r => r.latitude == null).length;
+
+            // repetidos dentro do próprio arquivo
+            const porChave = new Map();
+            validas.forEach(r => porChave.set(chaveDe(r), r));
+            let novos = Array.from(porChave.values());
+            const repetidosArquivo = validas.length - novos.length;
+
+            let jaExistiam = 0;
+            if (substituir) {
+                status.textContent = 'Apagando a base IBGE atual...';
+                const { error } = await supabaseClient.from('logradouros_ibge').delete().not('id', 'is', null);
+                if (error) throw error;
+            } else {
+                // não duplica o que já está no banco
+                status.textContent = 'Verificando o que já existe na base...';
+                const nomes = Array.from(new Set(novos.map(r => r.logradouro)));
+                const existentes = new Set();
+                for (let i = 0; i < nomes.length; i += 40) {
+                    const parte = nomes.slice(i, i + 40);
+                    for (let de = 0; de < 100000; de += 1000) {
+                        const { data, error } = await supabaseClient.from('logradouros_ibge').select('*')
+                            .in('logradouro', parte).range(de, de + 999);
+                        if (error) throw error;
+                        (data || []).forEach(e => existentes.add(chaveDe(e)));
+                        if (!data || data.length < 1000) break;
+                    }
+                    status.textContent = `Verificando o que já existe na base... ${Math.min(i + 40, nomes.length)}/${nomes.length} logradouros`;
+                }
+                const antes = novos.length;
+                novos = novos.filter(r => !existentes.has(chaveDe(r)));
+                jaExistiam = antes - novos.length;
+            }
+
+            const TAM = 500;
+            let inseridos = 0;
+            for (let i = 0; i < novos.length; i += TAM) {
+                const lote = novos.slice(i, i + TAM);
+                const { error } = await supabaseClient.from('logradouros_ibge').insert(lote);
+                if (error) throw error;
+                inseridos += lote.length;
+                status.textContent = `Importando... ${inseridos}/${novos.length}`;
+            }
+
+            status.textContent = `${inseridos} importado(s) • ${jaExistiam} já existiam • ${repetidosArquivo} repetido(s) no arquivo` +
+                (semCoord ? ` • ${semCoord} sem coordenadas (não aparecem no mapa)` : '') + '.';
+            showToast('Base IBGE importada', `${inseridos} registro(s) novo(s).`, 'success', 5000);
+            fileInput.value = '';
+            atualizarCamadaIbge();     // se já há um logradouro selecionado, atualiza o mapa
+        } catch (err) {
+            console.error('[IBGE] Erro na importação:', err);
+            status.textContent = `Erro: ${err.message}`;
+            showToast('Erro na importação', err.message, 'error', 8000);
+        } finally {
+            btn.disabled = false;
+        }
+    });
 })();
 
 // ============================================

@@ -1658,3 +1658,69 @@ tr.linha-ia .btn-ir {
 @media (max-width: 600px) {
     .zip-view { left: 8px; right: 8px; bottom: 8px; width: auto; max-width: none; }
 }
+
+/* ============================================
+   EDIÇÃO: casinha arrastável ("mãozinha")
+   ============================================ */
+.house-marker.leaflet-marker-draggable { cursor: grab !important; }
+.leaflet-dragging .house-marker.leaflet-marker-draggable { cursor: grabbing !important; }
+.house-marker.leaflet-marker-draggable svg { filter: drop-shadow(0 0 3px rgba(245, 158, 11, 0.9)); }
+
+/* ============================================
+   MUB (imagem sobre o mapa)
+   ============================================ */
+.mub-ctrl {
+    width: 230px; padding: 10px 12px;
+    background: var(--bg-card); color: var(--text-primary);
+    border: 1px solid var(--border-light); border-radius: var(--radius-md);
+    box-shadow: var(--shadow-lg);
+    font-size: 0.78rem; line-height: 1.3;
+}
+.mub-ctrl-title { font-weight: 700; font-size: 0.85rem; margin-bottom: 6px; }
+.mub-ctrl label { display: block; margin-bottom: 6px; color: var(--text-secondary); }
+.mub-ctrl input[type="range"] { width: 100%; }
+.mub-ctrl input[type="number"] {
+    width: 100%; padding: 4px 6px; margin-top: 2px;
+    background: var(--bg-card); color: var(--text-primary);
+    border: 1px solid var(--border-medium); border-radius: 6px; font-family: inherit;
+}
+.mub-ctrl .mub-row { display: flex; gap: 6px; margin-bottom: 6px; }
+.mub-ctrl .mub-row > * { flex: 1; min-width: 0; }
+.mub-ctrl .mub-chk { display: flex; align-items: center; gap: 6px; }
+.mub-ctrl button {
+    padding: 5px 4px; font-family: inherit; font-size: 0.72rem; cursor: pointer;
+    background: transparent; color: var(--text-secondary);
+    border: 1px solid var(--border-medium); border-radius: 6px;
+}
+.mub-ctrl button:hover { background: var(--bg-hover); color: var(--text-primary); }
+.mub-ctrl small { display: block; color: var(--text-tertiary); }
+.mub-handle {
+    display: flex; align-items: center; justify-content: center;
+    width: 30px; height: 30px; border-radius: 50%;
+    background: rgba(37, 99, 235, 0.9); color: #fff;
+    font-size: 18px; line-height: 1; cursor: move;
+    border: 2px solid #fff; box-shadow: 0 2px 6px rgba(0, 0, 0, 0.4);
+}
+
+/* ============================================
+   BASE IBGE (casinhas brancas translúcidas)
+   ============================================ */
+.ibge-marker { position: relative; overflow: visible; background: none; border: none; }
+.ibge-marker svg { display: block; width: 100%; height: 100%; opacity: 0.55; }
+.ibge-marker:hover svg { opacity: 0.9; }
+.ibge-marker .ibge-num {
+    position: absolute; top: 100%; left: 50%; transform: translateX(-50%);
+    font-size: 10px; font-weight: 600; white-space: nowrap; pointer-events: none;
+    color: #fff; text-shadow: 0 0 2px #000, 0 0 3px #000, 0 0 3px #000;
+    opacity: 0.85;
+}
+.ibge-ctrl {
+    padding: 6px 10px;
+    background: var(--bg-card); color: var(--text-primary);
+    border: 1px solid var(--border-light); border-radius: var(--radius-md);
+    box-shadow: var(--shadow-md);
+    font-size: 0.75rem;
+}
+.ibge-ctrl label { display: flex; align-items: center; gap: 6px; cursor: pointer; margin: 0; }
+ul.ibge-pop { margin: 6px 0 0; padding-left: 16px; font-size: 0.8rem; }
+.ibge-substituir { display: flex; align-items: center; gap: 8px; margin-top: 10px; font-size: 0.85rem; color: var(--text-secondary); }
