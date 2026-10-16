@@ -2497,9 +2497,21 @@ let iaNaoLidas = 0;
 function inicializarChatIA() {
     if (!iaChatEl) return;
 
+    // a janela da IA fica SEMPRE disponível: começa minimizada e abre ao clicar no cabeçalho
+    iaChatEl.dataset.state = 'minimized';
+    if (iaFabEl) iaFabEl.style.display = 'none';
+    if (iaCloseBtn) iaCloseBtn.style.display = 'none';   // não há mais "fechar": só minimizar
+    iaMensagemInterativa(
+        `Olá! Eu sou a <strong>IA Logictel</strong>. 👋<br>
+        Digite <strong>Verificar IBGE</strong> para ver as fachadas do IBGE do logradouro escolhido. 
+        Quando você cadastrar 5 surveys no mesmo endereço, eu também procuro o padrão.`
+    );
+
     iaChatHeader?.addEventListener('click', (e) => {
         if (e.target.closest('.ia-chat-actions')) return;
+        const estavaAberto = iaChatEl.dataset.state === 'open';
         abrirChatIA();
+        if (!estavaAberto) document.getElementById('iaChatInput')?.focus();
     });
 
     iaMinimizeBtn?.addEventListener('click', (e) => {
@@ -2567,6 +2579,7 @@ function abrirChatIA() {
     if (iaFabEl) iaFabEl.style.display = 'none';
     iaNaoLidas = 0;
     if (iaFabBadge) iaFabBadge.style.display = 'none';
+    atualizarBadgeChatIA();
     iaChatBody.scrollTop = iaChatBody.scrollHeight;
 }
 
@@ -2577,13 +2590,15 @@ function minimizarChatIA() {
 }
 
 function fecharChatIA() {
-    if (!iaChatEl) return;
-    iaChatEl.dataset.state = 'closed';
-    if (iaFabEl) iaFabEl.style.display = '';
-    if (iaNaoLidas > 0 && iaFabBadge) {
-        iaFabBadge.style.display = '';
-        iaFabBadge.textContent = String(iaNaoLidas);
-    }
+    // a janela nunca some: "fechar" apenas minimiza
+    minimizarChatIA();
+}
+
+function atualizarBadgeChatIA() {
+    const b = document.getElementById('iaHeaderBadge');
+    if (!b) return;
+    b.style.display = iaNaoLidas > 0 ? '' : 'none';
+    b.textContent = String(iaNaoLidas);
 }
 
 function adicionarTypingIA() {
@@ -2608,10 +2623,7 @@ function escreverMensagemIA(html, delay = 500) {
         iaChatBody.scrollTop = iaChatBody.scrollHeight;
         if (iaChatEl.dataset.state !== 'open') {
             iaNaoLidas++;
-            if (iaFabBadge) {
-                iaFabBadge.style.display = '';
-                iaFabBadge.textContent = String(iaNaoLidas);
-            }
+            atualizarBadgeChatIA();   // bolinha no cabeçalho minimizado
         }
     }, delay);
 }
@@ -4092,6 +4104,7 @@ function gerarSequenciaIA(quantidade, posicoes, opts = {}) {
 let _ibgeSeq = 0;
 let _ibgeGrupos = [];                        // casinhas do IBGE carregadas: { fachada, lat, lng, itens, marker }
 let _ibgeSel = null;                         // sessão de marcação ("Verificar IBGE") em andamento
+let _ibgeCriterio = '';                      // como o roteiro foi cruzado com o IBGE (CEP + logradouro, só CEP...)
 let _ibgeCamada = null;
 let _ibgeControle = null;
 let _ibgeResumo = null;                       // { fachadas, registros }
@@ -4099,9 +4112,29 @@ let _ibgeVisivel = localStorage.getItem('ibgeVisivel') !== '0';
 
 const _ibgeNorm = (v) => String(v == null ? '' : v).normalize('NFD').replace(/[\u0300-\u036f]/g, '').toUpperCase().replace(/\s+/g, ' ').trim();
 
+// Palavras de ligação ignoradas ao comparar nomes de logradouro
+const _IBGE_STOP = new Set(['DE', 'DA', 'DO', 'DAS', 'DOS', 'E', 'A', 'O']);
+const _ibgeTokens = (s) => _ibgeNorm(s).split(' ').filter(t => t && !_IBGE_STOP.has(t));
+
+// O nome do IBGE confere com o do roteiro? Aceita igual ou "contido" (ex.: roteiro "SANTA EDWIGES" × IBGE "EDWIGES")
+function _ibgeNomeIgual(r, l) {
+    const alvo = _ibgeNorm(l.rua);
+    const alvoCompleto = _ibgeNorm([l.tipo, l.rua].filter(Boolean).join(' '));
+    const nome = _ibgeNorm(r.logradouro);
+    const nomeCompleto = _ibgeNorm([r.tipo, r.logradouro].filter(Boolean).join(' '));
+    return [nome, nomeCompleto].some(n => n && (n === alvo || n === alvoCompleto));
+}
+function _ibgeNomeContido(r, l) {
+    const ti = _ibgeTokens(r.logradouro), tr = _ibgeTokens(l.rua);
+    if (!ti.length || !tr.length) return false;
+    const dentro = (x, y) => x.every(t => y.includes(t));
+    return dentro(ti, tr) || dentro(tr, ti);
+}
+
 function limparIbge() {
     encerrarSelecaoIbge(true);   // a marcação pertence à camada atual
     _ibgeGrupos = [];
+    _ibgeCriterio = '';
     if (_ibgeCamada) { map.removeLayer(_ibgeCamada); _ibgeCamada = null; }
     _ibgeResumo = null;
     atualizarControleIbge();
@@ -4135,6 +4168,7 @@ function atualizarControleIbge() {
     c.querySelector('#ibgeToggle').checked = _ibgeVisivel;
     c.querySelector('#ibgeToggleTxt').textContent =
         `IBGE: ${_ibgeResumo.fachadas} fachada(s) • ${_ibgeResumo.registros} registro(s)`;
+    c.title = _ibgeCriterio ? `Cruzado por: ${_ibgeCriterio}` : '';
 }
 
 const _ibgeSVG = houseSVG.replace(/#2a4fd6/g, '#ffffff').replace(/#1e3c72/g, '#334155');
@@ -4165,36 +4199,59 @@ async function atualizarCamadaIbge() {
     if (!l || !l.rua || typeof supabaseClient === 'undefined' || !supabaseClient) return;
 
     try {
-        // letras acentuadas viram "_" (curinga) na busca; o filtro exato é feito aqui no navegador
-        const padrao = String(l.rua).trim().replace(/[%\\]/g, '').replace(/[^\x00-\x7F]/g, '_');
-        const todos = [];
-        for (let de = 0; de < 20000; de += 1000) {
-            const { data, error } = await supabaseClient
-                .from('logradouros_ibge').select('*')
-                .ilike('logradouro', `%${padrao}%`)
-                .range(de, de + 999);
-            if (error) throw error;
-            todos.push(...(data || []));
-            if (!data || data.length < 1000) break;
-        }
+        const temCoord = (r) => r.latitude != null && r.longitude != null;
+        const cep8 = (() => { const d = String(l.cep || '').replace(/\D/g, ''); return d ? d.padStart(8, '0') : ''; })();
+        const buscarTudo = async (montar) => {
+            const out = [];
+            for (let de = 0; de < 20000; de += 1000) {
+                const { data, error } = await montar().range(de, de + 999);
+                if (error) throw error;
+                out.push(...(data || []));
+                if (!data || data.length < 1000) break;
+            }
+            return out;
+        };
+
+        let registros = [];
+        let criterio = '';
+
+        // 1) CEP do roteiro × cep do IBGE (8 dígitos)
+        const porCep = cep8.length === 8
+            ? (await buscarTudo(() => supabaseClient.from('logradouros_ibge').select('*').eq('cep', cep8))).filter(temCoord)
+            : [];
         if (seq !== _ibgeSeq) return;     // o usuário já escolheu outro logradouro
 
-        const alvo = _ibgeNorm(l.rua);
-        const alvoCompleto = _ibgeNorm([l.tipo, l.rua].filter(Boolean).join(' '));
-        const cep5 = String(l.cep || '').replace(/\D/g, '').slice(0, 5);
-        const bairroAlvo = _ibgeNorm(l.bairro);
+        const cepEnome = porCep.filter(r => _ibgeNomeIgual(r, l) || _ibgeNomeContido(r, l));
+        const nomesNoCep = new Set(porCep.map(r => _ibgeNorm(r.logradouro)));
+        if (cepEnome.length) {
+            registros = cepEnome; criterio = 'CEP + logradouro';
+        } else if (porCep.length && nomesNoCep.size === 1) {
+            // o CEP aponta para um único logradouro no IBGE: vale mesmo que o nome seja escrito diferente
+            registros = porCep; criterio = 'somente CEP';
+        } else {
+            // 2) sem CEP que resolva: cruza pelo nome. O IBGE pode omitir partes do nome
+            //    (ex.: "SANTA EDWIGES" → "EDWIGES"), então busca pela palavra mais longa.
+            const palavras = String(l.rua).trim().split(/\s+/).filter(w => w && !_IBGE_STOP.has(_ibgeNorm(w)));
+            palavras.sort((a, b) => b.length - a.length);
+            const chave = (palavras[0] || String(l.rua)).replace(/[%\\]/g, '').replace(/[^\x00-\x7F]/g, '_');
+            const todos = (await buscarTudo(() => supabaseClient.from('logradouros_ibge').select('*').ilike('logradouro', `%${chave}%`))).filter(temCoord);
+            if (seq !== _ibgeSeq) return;
 
-        const registros = todos.filter(r => {
-            const nome = _ibgeNorm(r.logradouro);
-            const nomeCompleto = _ibgeNorm([r.tipo, r.logradouro].filter(Boolean).join(' '));
-            if (![nome, nomeCompleto].some(n => n === alvo || n === alvoCompleto)) return false;
-            // mesma rua em outro bairro/cidade: confere CEP ou bairro quando houver como comparar
-            const rCep5 = String(r.cep || '').replace(/\D/g, '').slice(0, 5);
-            const rBairro = _ibgeNorm(r.bairro);
-            const temRef = (cep5 && rCep5) || (bairroAlvo && rBairro);
-            if (!temRef) return true;
-            return (cep5 && rCep5 && cep5 === rCep5) || (bairroAlvo && rBairro && bairroAlvo === rBairro);
-        }).filter(r => r.latitude != null && r.longitude != null);
+            const cep5 = cep8.slice(0, 5);
+            const bairroAlvo = _ibgeNorm(l.bairro);
+            registros = todos.filter(r => {
+                const exato = _ibgeNomeIgual(r, l);
+                if (!exato && !_ibgeNomeContido(r, l)) return false;
+                // mesma rua em outro bairro/cidade: confere CEP ou bairro quando houver como comparar
+                const rCep5 = String(r.cep || '').replace(/\D/g, '').slice(0, 5);
+                const rBairro = _ibgeNorm(r.bairro);
+                const temRef = (cep5 && rCep5) || (bairroAlvo && rBairro);
+                if (!temRef) return exato;       // sem como confirmar: só aceita nome idêntico
+                return (cep5 && rCep5 && cep5 === rCep5) || (bairroAlvo && rBairro && bairroAlvo === rBairro);
+            });
+            criterio = 'logradouro + bairro/CEP';
+        }
+        _ibgeCriterio = registros.length ? criterio : '';
 
         if (!registros.length) return;
 
@@ -4279,7 +4336,7 @@ async function iniciarVerificacaoIbge() {
     catch (err) { console.warn('[IBGE]', err); }
 
     if (!_ibgeGrupos.length) {
-        escreverMensagemIA(`Não encontrei fachadas do IBGE para <strong>${escapeHtml(nomeRua)}</strong>. Confira se o logradouro escolhido é o certo ou tente de novo em instantes.`, 300);
+        escreverMensagemIA(`Cruzei o CEP (<strong>${escapeHtml(l.cep ? formatarCEP(l.cep) : 'não informado')}</strong>) e o logradouro <strong>${escapeHtml(nomeRua)}</strong> com a base do IBGE, mas não encontrei fachadas. Confira se o logradouro escolhido é o certo ou tente de novo em instantes.`, 300);
         return;
     }
 
@@ -4382,6 +4439,7 @@ function iniciarSelecaoIbge(nomeRua) {
     S.painelEl = iaMensagemInterativa(`
         Encontrei <strong>${_ibgeGrupos.length}</strong> casinha(s) do IBGE em <strong>${escapeHtml(nomeRua)}</strong> (brancas e translúcidas no mapa; clique em uma para ver a legenda).<br><br>
         Para marcar: <strong>clique nas casinhas</strong> ou use <strong>Passar linha</strong> e eu marco todas por onde a linha passar.<br>
+        <small>Cruzamento com o roteiro: <strong>${escapeHtml(_ibgeCriterio || '—')}</strong>.</small><br>
         Marcadas: <strong id="ibgeContador"></strong>
         <div class="ia-msg-actions" style="margin-top:8px;">
             <button class="ia-btn ia-btn-success" data-acao="linha" type="button">✏️ Passar linha</button>

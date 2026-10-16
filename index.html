@@ -611,7 +611,7 @@
     <div class="toast-container" id="toastContainer" aria-live="polite" aria-atomic="true"></div>
 
     <!-- CHAT DA IA -->
-    <div class="ia-chat" id="iaChat" data-state="closed">
+    <div class="ia-chat" id="iaChat" data-state="minimized">
         <div class="ia-chat-header" id="iaChatHeader">
             <div class="ia-chat-avatar">
                 <span aria-hidden="true">🤖</span>
@@ -620,6 +620,7 @@
                 <strong>IA Logictel</strong>
                 <span class="ia-chat-status">Online</span>
             </div>
+            <span class="ia-header-badge" id="iaHeaderBadge" style="display:none;">1</span>
             <div class="ia-chat-actions">
                 <button class="ia-chat-btn" id="iaMinimizeBtn" type="button" title="Minimizar" aria-label="Minimizar">
                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">

@@ -1745,3 +1745,10 @@ ul.ibge-pop { margin: 6px 0 0; padding-left: 16px; font-size: 0.8rem; }
 /* IBGE: casinha marcada para cadastro */
 .ibge-marker.ibge-sel svg { opacity: 1; filter: drop-shadow(0 0 3px #f59e0b); }
 .ibge-marker.ibge-sel .ibge-num { opacity: 1; }
+
+/* IA: bolinha de mensagens não lidas no cabeçalho (janela minimizada) */
+.ia-header-badge {
+    min-width: 18px; height: 18px; padding: 0 5px; border-radius: 9px;
+    background: #ef4444; color: #fff; font-size: 11px; font-weight: 700;
+    display: inline-flex; align-items: center; justify-content: center;
+}
