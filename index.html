@@ -589,7 +589,7 @@
                         </svg>
                         <h2 class="card-title">Mapa</h2>
                         <div class="map-tabs">
-                            <button class="map-tab" data-layer="mub" type="button" title="Imagem do MUB sobre o mapa (escala 1:4224)">MUB</button>
+                            <button class="map-tab" data-layer="mub" type="button" title="MUB (arquivo .mbtiles georreferenciado)">MUB</button>
                             <button class="map-tab" data-layer="satellite" type="button">Satélite</button>
                             <button class="map-tab active" data-layer="map" type="button">Mapa</button>
                         </div>
@@ -600,7 +600,7 @@
                         </button>
                     </header>
                     <div class="card-body card-body-map">
-                        <input type="file" id="mubFileInput" accept="image/*,.png,.jpg,.jpeg,.webp" hidden>
+                        <input type="file" id="mubFileInput" accept=".mbtiles,image/*,.png,.jpg,.jpeg,.webp" hidden>
                         <div id="map" role="application" aria-label="Mapa interativo"></div>
                     </div>
                 </section>

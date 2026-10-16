@@ -3649,9 +3649,11 @@ function gerarSequenciaIA(quantidade, posicoes, opts = {}) {
 })();
 
 // ============================================
-// MUB — IMAGEM DO MAPA URBANO BÁSICO COMO CAMADA
-// Sobe uma imagem (PNG/JPG/WEBP) do MUB; ela é dimensionada pela ESCALA (padrão 1:4224) e pelo DPI
-// da imagem, e posicionada arrastando a alça ✥. Fica salva neste navegador (IndexedDB).
+// MUB — MAPA URBANO BÁSICO COMO CAMADA
+// Aceita:
+//  • arquivo .mbtiles (GEORREFERENCIADO): é lido direto no navegador (sql.js) e aparece no lugar certo, sem ajuste.
+//  • imagem PNG/JPG/WEBP (sem georreferência): dimensionada por escala/DPI e posicionada com a alça ✥.
+// O arquivo fica salvo neste navegador (IndexedDB), então não precisa subir de novo.
 // ============================================
 (function modulMub() {
     const input = document.getElementById('mubFileInput');
@@ -3661,6 +3663,7 @@ function gerarSequenciaIA(quantidade, posicoes, opts = {}) {
     const ESCALA_PADRAO = 4224;
     const DPI_PADRAO = 96;
 
+    // ---------- armazenamento local ----------
     const abrirDb = () => new Promise((ok, erro) => {
         if (!window.indexedDB) { erro(new Error('IndexedDB indisponível')); return; }
         const r = indexedDB.open(DB_NOME, 1);
@@ -3677,37 +3680,140 @@ function gerarSequenciaIA(quantidade, posicoes, opts = {}) {
             tx.onerror = () => erro(tx.error);
         });
     };
-    const salvarDb = (v) => dbOp('readwrite', st => st.put(v, CHAVE));
-    const lerDb = () => dbOp('readonly', st => st.get(CHAVE));
-    const apagarDb = () => dbOp('readwrite', st => st.delete(CHAVE));
+    const salvarDb = (v) => dbOp('readwrite', s => s.put(v, CHAVE));
+    const lerDb = () => dbOp('readonly', s => s.get(CHAVE));
+    const apagarDb = () => dbOp('readwrite', s => s.delete(CHAVE));
 
-    let st = null;          // { blob, w, h, dpi, escala, lat, lng, opacity, travado }
+    // ---------- estado ----------
+    let st = null;        // { tipo:'mbtiles'|'imagem', blob, nome, opacity, ... }
+    let mb = null;        // MBTiles aberto: { db, stmt, minzoom, maxzoom, bounds, mime, tms }
     let overlay = null, alca = null, controle = null, urlImg = null, ativo = false;
 
+    const persistir = () => { if (st) salvarDb(st).catch(e => console.warn('[MUB] não foi possível salvar:', e)); };
+
+    // ---------- MBTiles (sql.js) ----------
+    let _sqlPromise = null;
+    function carregarSqlJs() {
+        if (_sqlPromise) return _sqlPromise;
+        const bases = ['https://cdnjs.cloudflare.com/ajax/libs/sql.js/1.8.0/', 'https://cdn.jsdelivr.net/npm/sql.js@1.8.0/dist/'];
+        _sqlPromise = (async () => {
+            for (const b of bases) {
+                try {
+                    if (!window.initSqlJs) {
+                        await new Promise((ok, er) => {
+                            const sc = document.createElement('script');
+                            sc.src = b + 'sql-wasm.js';
+                            sc.onload = ok; sc.onerror = () => er(new Error('falha ao baixar ' + b));
+                            document.head.appendChild(sc);
+                        });
+                    }
+                    return await window.initSqlJs({ locateFile: f => b + f });
+                } catch (e) { console.warn('[MUB] sql.js:', e); }
+            }
+            throw new Error('Não consegui carregar o leitor de MBTiles (sql.js). Verifique a internet e tente de novo.');
+        })();
+        _sqlPromise.catch(() => { _sqlPromise = null; });
+        return _sqlPromise;
+    }
+
+    async function abrirMbtiles(blob) {
+        const SQL = await carregarSqlJs();
+        const db = new SQL.Database(new Uint8Array(await blob.arrayBuffer()));
+        const meta = {};
+        try {
+            const r = db.exec('SELECT name, value FROM metadata');
+            if (r[0]) r[0].values.forEach(([k, v]) => { meta[k] = v; });
+        } catch (e) { /* sem tabela metadata */ }
+        let zr;
+        try { zr = db.exec('SELECT MIN(zoom_level), MAX(zoom_level), COUNT(*) FROM tiles')[0].values[0]; }
+        catch (e) { db.close(); throw new Error('Este arquivo não parece ser um MBTiles válido.'); }
+        if (!zr || !zr[2]) { db.close(); throw new Error('O MBTiles não contém nenhum tile.'); }
+
+        let bounds = null;
+        if (meta.bounds) {
+            const p = String(meta.bounds).split(',').map(Number);
+            if (p.length === 4 && p.every(isFinite)) bounds = L.latLngBounds([p[1], p[0]], [p[3], p[2]]);   // w,s,e,n
+        }
+        const fmt = String(meta.format || 'png').toLowerCase();
+        const mime = fmt === 'jpg' || fmt === 'jpeg' ? 'image/jpeg' : (fmt === 'webp' ? 'image/webp' : 'image/png');
+        return {
+            db,
+            stmt: db.prepare('SELECT tile_data FROM tiles WHERE zoom_level=? AND tile_column=? AND tile_row=?'),
+            minzoom: meta.minzoom != null ? parseInt(meta.minzoom, 10) : zr[0],
+            maxzoom: meta.maxzoom != null ? parseInt(meta.maxzoom, 10) : zr[1],
+            bounds, mime,
+            tms: String(meta.scheme || 'tms').toLowerCase() !== 'xyz',
+            nome: meta.name || ''
+        };
+    }
+    function fecharMbtiles() {
+        if (mb) { try { mb.stmt.free(); mb.db.close(); } catch (e) { /* ok */ } mb = null; }
+    }
+
+    function criarCamadaMbtiles() {
+        const dados = mb;
+        const Camada = L.GridLayer.extend({
+            createTile(coords, done) {
+                const img = document.createElement('img');
+                img.alt = '';
+                const y = dados.tms ? (Math.pow(2, coords.z) - 1 - coords.y) : coords.y;
+                let bytes = null;
+                try {
+                    dados.stmt.bind([coords.z, coords.x, y]);
+                    if (dados.stmt.step()) bytes = dados.stmt.get()[0];
+                    dados.stmt.reset();
+                } catch (e) { console.warn('[MUB] tile', e); }
+                if (!bytes) { setTimeout(() => done(null, img), 0); return img; }
+                const u = URL.createObjectURL(new Blob([bytes], { type: dados.mime }));
+                img.onload = () => { URL.revokeObjectURL(u); done(null, img); };
+                img.onerror = () => { URL.revokeObjectURL(u); done(null, img); };
+                img.src = u;
+                return img;
+            }
+        });
+        return new Camada({
+            tileSize: 256,
+            minZoom: Math.max(3, dados.minzoom),          // abaixo disso não há tiles
+            minNativeZoom: dados.minzoom,
+            maxNativeZoom: dados.maxzoom,                  // acima disso, amplia o último nível
+            maxZoom: 22,
+            bounds: dados.bounds || undefined,
+            opacity: st.opacity,
+            attribution: 'MUB'
+        });
+    }
+
+    // ---------- imagem simples (sem georreferência) ----------
     function limites() {
-        const wM = st.w / st.dpi * 0.0254 * st.escala;   // largura real em metros
+        const wM = st.w / st.dpi * 0.0254 * st.escala;
         const hM = st.h / st.dpi * 0.0254 * st.escala;
         const dLat = (hM / 2) / 110540;
         const dLng = (wM / 2) / (111320 * Math.cos(st.lat * Math.PI / 180));
         return L.latLngBounds([st.lat - dLat, st.lng - dLng], [st.lat + dLat, st.lng + dLng]);
     }
-    function montar() {
-        if (overlay) { if (map.hasLayer(overlay)) map.removeLayer(overlay); overlay = null; }
-        if (urlImg) URL.revokeObjectURL(urlImg);
-        urlImg = URL.createObjectURL(st.blob);
-        overlay = L.imageOverlay(urlImg, limites(), { opacity: st.opacity, interactive: false });
-        if (ativo) overlay.addTo(map);
-    }
-    const persistir = () => { if (st) salvarDb(st).catch(e => console.warn('[MUB] não foi possível salvar:', e)); };
     function reposicionar() {
+        if (st.tipo !== 'imagem') return;
         if (overlay) overlay.setBounds(limites());
         if (alca) alca.setLatLng([st.lat, st.lng]);
+    }
+
+    function montar() {
+        if (overlay) { if (map.hasLayer(overlay)) map.removeLayer(overlay); overlay = null; }
+        if (urlImg) { URL.revokeObjectURL(urlImg); urlImg = null; }
+        if (!st) return;
+        if (st.tipo === 'mbtiles') {
+            overlay = criarCamadaMbtiles();
+        } else {
+            urlImg = URL.createObjectURL(st.blob);
+            overlay = L.imageOverlay(urlImg, limites(), { opacity: st.opacity, interactive: false });
+        }
+        if (ativo) overlay.addTo(map);
     }
 
     function removerAlca() { if (alca) { map.removeLayer(alca); alca = null; } }
     function mostrarAlca() {
         removerAlca();
-        if (!ativo || !st || st.travado) return;
+        if (!ativo || !st || st.tipo !== 'imagem' || st.travado) return;
         alca = L.marker([st.lat, st.lng], {
             draggable: true, zIndexOffset: 3000, title: 'Arraste para mover o MUB',
             icon: L.divIcon({ className: 'mub-handle', html: '✥', iconSize: [30, 30], iconAnchor: [15, 15] })
@@ -3720,14 +3826,26 @@ function gerarSequenciaIA(quantidade, posicoes, opts = {}) {
         alca.on('dragend', persistir);
     }
 
-    // ---- painel de controle (canto superior direito do mapa) ----
+    // ---------- painel de controle ----------
     function criarControle() {
+        const mbt = st.tipo === 'mbtiles';
         const C = L.Control.extend({
             options: { position: 'topright' },
             onAdd() {
                 const div = L.DomUtil.create('div', 'mub-ctrl');
-                div.innerHTML = `
-                    <div class="mub-ctrl-title">MUB</div>
+                div.innerHTML = mbt ? `
+                    <div class="mub-ctrl-title">MUB <small>georreferenciado</small></div>
+                    <label>Transparência
+                        <input type="range" id="mubOp" min="10" max="100" value="${Math.round(st.opacity * 100)}">
+                    </label>
+                    <small class="mub-arq" title="${escapeHtml(st.nome || '')}">${escapeHtml(st.nome || '')}</small>
+                    <small>Visível do zoom ${mb ? mb.minzoom : '?'} ao ${mb ? mb.maxzoom : '?'} (acima disso é ampliado).</small>
+                    <div class="mub-row" style="margin-top:6px">
+                        <button type="button" id="mubIr">Ir para o MUB</button>
+                        <button type="button" id="mubTroca">Trocar arquivo</button>
+                        <button type="button" id="mubRem">Remover</button>
+                    </div>` : `
+                    <div class="mub-ctrl-title">MUB <small>imagem</small></div>
                     <label>Transparência
                         <input type="range" id="mubOp" min="10" max="100" value="${Math.round(st.opacity * 100)}">
                     </label>
@@ -3738,7 +3856,7 @@ function gerarSequenciaIA(quantidade, posicoes, opts = {}) {
                     <label class="mub-chk"><input type="checkbox" id="mubTrav" ${st.travado ? 'checked' : ''}> Travar posição</label>
                     <div class="mub-row">
                         <button type="button" id="mubCentro">Centralizar aqui</button>
-                        <button type="button" id="mubTroca">Trocar imagem</button>
+                        <button type="button" id="mubTroca">Trocar arquivo</button>
                         <button type="button" id="mubRem">Remover</button>
                     </div>
                     <small>Arraste a alça ✥ para posicionar o MUB sobre o mapa.</small>`;
@@ -3750,21 +3868,28 @@ function gerarSequenciaIA(quantidade, posicoes, opts = {}) {
                     if (overlay) overlay.setOpacity(st.opacity);
                 });
                 div.querySelector('#mubOp').addEventListener('change', persistir);
-                const num = (id, campo, min, max) => div.querySelector(id).addEventListener('change', (e) => {
-                    const v = parseFloat(e.target.value);
-                    if (isNaN(v) || v < min || v > max) { e.target.value = Math.round(st[campo]); return; }
-                    st[campo] = v; reposicionar(); persistir();
-                });
-                num('#mubEsc', 'escala', 1, 1000000);
-                num('#mubDpi', 'dpi', 10, 1200);
-                div.querySelector('#mubTrav').addEventListener('change', (e) => {
-                    st.travado = e.target.checked; mostrarAlca(); persistir();
-                });
-                div.querySelector('#mubCentro').addEventListener('click', () => {
-                    const c = map.getCenter(); st.lat = c.lat; st.lng = c.lng; reposicionar(); persistir();
-                });
                 div.querySelector('#mubTroca').addEventListener('click', () => input.click());
                 div.querySelector('#mubRem').addEventListener('click', remover);
+
+                if (mbt) {
+                    div.querySelector('#mubIr').addEventListener('click', () => {
+                        if (mb && mb.bounds) map.fitBounds(mb.bounds, { padding: [30, 30], maxZoom: mb.maxzoom });
+                    });
+                } else {
+                    const num = (id, campo, min, max) => div.querySelector(id).addEventListener('change', (e) => {
+                        const v = parseFloat(e.target.value);
+                        if (isNaN(v) || v < min || v > max) { e.target.value = Math.round(st[campo]); return; }
+                        st[campo] = v; reposicionar(); persistir();
+                    });
+                    num('#mubEsc', 'escala', 1, 1000000);
+                    num('#mubDpi', 'dpi', 10, 1200);
+                    div.querySelector('#mubTrav').addEventListener('change', (e) => {
+                        st.travado = e.target.checked; mostrarAlca(); persistir();
+                    });
+                    div.querySelector('#mubCentro').addEventListener('click', () => {
+                        const c = map.getCenter(); st.lat = c.lat; st.lng = c.lng; reposicionar(); persistir();
+                    });
+                }
                 return div;
             }
         });
@@ -3788,15 +3913,16 @@ function gerarSequenciaIA(quantidade, posicoes, opts = {}) {
         if (overlay && map.hasLayer(overlay)) map.removeLayer(overlay);
     }
     async function remover() {
-        if (!confirm('Remover a imagem do MUB deste navegador?')) return;
+        if (!confirm('Remover o MUB deste navegador?')) return;
         const eraAtivo = ativo;
         desativar();
-        if (overlay) { overlay = null; }
+        overlay = null;
         if (urlImg) { URL.revokeObjectURL(urlImg); urlImg = null; }
+        fecharMbtiles();
         st = null;
         try { await apagarDb(); } catch (e) { console.warn(e); }
         if (eraAtivo) ativarCamadaMapa('map');
-        showToast('MUB removido', 'A imagem foi removida.', 'success', 2500);
+        showToast('MUB removido', 'O arquivo foi removido deste navegador.', 'success', 2500);
     }
 
     // DPI gravado na própria imagem (PNG pHYs / JPEG JFIF), se existir
@@ -3804,14 +3930,14 @@ function gerarSequenciaIA(quantidade, posicoes, opts = {}) {
         try {
             const b = new Uint8Array(buf.slice(0, 65536));
             const dv = new DataView(b.buffer);
-            if (b[0] === 0x89 && b[1] === 0x50) {                         // PNG
+            if (b[0] === 0x89 && b[1] === 0x50) {
                 for (let i = 8; i < b.length - 16; i++) {
-                    if (b[i] === 0x70 && b[i + 1] === 0x48 && b[i + 2] === 0x59 && b[i + 3] === 0x73) {   // "pHYs"
+                    if (b[i] === 0x70 && b[i + 1] === 0x48 && b[i + 2] === 0x59 && b[i + 3] === 0x73) {
                         const ppm = dv.getUint32(i + 4);
                         if (b[i + 12] === 1 && ppm > 0) return ppm * 0.0254;
                     }
                 }
-            } else if (b[0] === 0xFF && b[1] === 0xD8 && b[6] === 0x4A && b[7] === 0x46) {  // JPEG "JFIF"
+            } else if (b[0] === 0xFF && b[1] === 0xD8 && b[6] === 0x4A && b[7] === 0x46) {
                 const un = b[13], x = dv.getUint16(14);
                 if (x > 0 && un === 1) return x;
                 if (x > 0 && un === 2) return x * 2.54;
@@ -3827,35 +3953,53 @@ function gerarSequenciaIA(quantidade, posicoes, opts = {}) {
         img.src = u;
     });
 
+    async function carregarMbtiles(file) {
+        showToast('Lendo o MUB...', 'Abrindo o arquivo MBTiles.', 'info', 2500);
+        const novo = await abrirMbtiles(file);
+        fecharMbtiles();
+        mb = novo;
+        st = { tipo: 'mbtiles', blob: file, nome: file.name, opacity: st ? st.opacity : 0.85 };
+        montar();
+        persistir();
+        if (camadaAtual !== 'mub') ativarCamadaMapa('mub');
+        else { removerControle(); criarControle(); }
+        if (mb.bounds) map.fitBounds(mb.bounds, { padding: [30, 30], maxZoom: mb.maxzoom });
+        showToast('MUB carregado', `Georreferenciado • zoom ${mb.minzoom} a ${mb.maxzoom}. Já está no lugar certo.`, 'success', 5000);
+    }
+
+    async function carregarImagem(file) {
+        const [dim, buf] = await Promise.all([lerDimensoes(file), file.arrayBuffer()]);
+        const dpi = detectarDpi(buf);
+        const c = map.getCenter();
+        const antes = st && st.tipo === 'imagem' ? st : null;
+        fecharMbtiles();
+        st = {
+            tipo: 'imagem', blob: file, nome: file.name, w: dim.w, h: dim.h,
+            dpi: dpi || (antes ? antes.dpi : DPI_PADRAO),
+            escala: antes ? antes.escala : ESCALA_PADRAO,
+            lat: c.lat, lng: c.lng,
+            opacity: st && st.opacity ? st.opacity : 0.8,
+            travado: false
+        };
+        montar();
+        persistir();
+        if (camadaAtual !== 'mub') ativarCamadaMapa('mub');
+        else { removerControle(); criarControle(); mostrarAlca(); }
+        map.fitBounds(limites(), { padding: [30, 30], maxZoom: 19 });
+        showToast('MUB (imagem) carregado', `Escala 1:${st.escala} • ${Math.round(st.dpi)} DPI. Imagem comum não tem georreferência: arraste a alça ✥ para posicionar.`, 'success', 7000);
+    }
+
     input.addEventListener('change', async () => {
         const file = input.files && input.files[0];
         input.value = '';
         if (!file) return;
-        if (!/^image\//.test(file.type) && !/\.(png|jpe?g|webp|gif|bmp)$/i.test(file.name)) {
-            showToast('Formato não suportado', 'Envie o MUB como imagem (PNG, JPG ou WEBP). Se estiver em PDF, converta para imagem.', 'warning', 6000);
-            return;
-        }
         try {
-            const [dim, buf] = await Promise.all([lerDimensoes(file), file.arrayBuffer()]);
-            const dpi = detectarDpi(buf);
-            const c = map.getCenter();
-            st = {
-                blob: file, w: dim.w, h: dim.h,
-                dpi: dpi || (st ? st.dpi : DPI_PADRAO),
-                escala: st ? st.escala : ESCALA_PADRAO,
-                lat: c.lat, lng: c.lng,
-                opacity: st ? st.opacity : 0.8,
-                travado: false
-            };
-            montar();
-            persistir();
-            if (camadaAtual !== 'mub') ativarCamadaMapa('mub');
-            else { removerControle(); criarControle(); mostrarAlca(); }
-            map.fitBounds(limites(), { padding: [30, 30], maxZoom: 19 });
-            showToast('MUB carregado', `Escala 1:${st.escala} • ${Math.round(st.dpi)} DPI${dpi ? ' (lido da imagem)' : ' (ajuste o DPI se o tamanho ficar errado)'}.`, 'success', 6000);
+            if (/\.mbtiles$/i.test(file.name)) await carregarMbtiles(file);
+            else if (/^image\//.test(file.type) || /\.(png|jpe?g|webp|gif|bmp)$/i.test(file.name)) await carregarImagem(file);
+            else showToast('Formato não suportado', 'Envie o MUB como arquivo .mbtiles (georreferenciado) ou como imagem PNG/JPG.', 'warning', 6000);
         } catch (err) {
             console.error('[MUB]', err);
-            showToast('Erro ao abrir a imagem', err.message, 'error', 6000);
+            showToast('Erro ao abrir o MUB', err.message, 'error', 7000);
         }
     });
 
@@ -3865,8 +4009,17 @@ function gerarSequenciaIA(quantidade, posicoes, opts = {}) {
         ativar, desativar
     };
 
-    // restaura a última imagem usada neste navegador
-    lerDb().then(v => { if (v && v.blob) { st = v; montar(); } }).catch(() => {});
+    // restaura o último MUB usado neste navegador
+    lerDb().then(async (v) => {
+        if (!v || !v.blob) return;
+        try {
+            if (v.tipo === 'mbtiles') mb = await abrirMbtiles(v.blob);
+            st = v;
+            if (!st.tipo) st.tipo = 'imagem';       // versões antigas só guardavam imagem
+            montar();
+            if (ativo) ativar();
+        } catch (e) { console.warn('[MUB] não foi possível restaurar:', e); }
+    }).catch(() => {});
 })();
 
 // ============================================

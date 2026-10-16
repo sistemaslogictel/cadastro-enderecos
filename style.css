@@ -1728,3 +1728,6 @@ tr.linha-ia .btn-ir {
 .ibge-ctrl label { display: flex; align-items: center; gap: 6px; cursor: pointer; margin: 0; }
 ul.ibge-pop { margin: 6px 0 0; padding-left: 16px; font-size: 0.8rem; }
 .ibge-substituir { display: flex; align-items: center; gap: 8px; margin-top: 10px; font-size: 0.85rem; color: var(--text-secondary); }
+
+.mub-ctrl-title small { font-weight: 400; color: var(--text-tertiary); margin-left: 4px; }
+.mub-ctrl .mub-arq { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; margin-bottom: 2px; }
