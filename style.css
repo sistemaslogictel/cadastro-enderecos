@@ -1664,7 +1664,11 @@ tr.linha-ia .btn-ir {
    ============================================ */
 .house-marker.leaflet-marker-draggable { cursor: grab !important; }
 .leaflet-dragging .house-marker.leaflet-marker-draggable { cursor: grabbing !important; }
-.house-marker.leaflet-marker-draggable svg { filter: drop-shadow(0 0 3px rgba(245, 158, 11, 0.9)); }
+.house-marker.leaflet-marker-draggable svg { filter: drop-shadow(0 0 3px rgba(220, 38, 38, 0.9)); }
+
+/* survey em modo edição: vermelho piscando */
+@keyframes piscar-edicao { 0%, 100% { opacity: 1; } 50% { opacity: 0.15; } }
+.house-marker.house-editando { animation: piscar-edicao 0.9s ease-in-out infinite; }
 
 /* ============================================
    MUB (imagem sobre o mapa)

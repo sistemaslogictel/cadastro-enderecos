@@ -533,6 +533,18 @@ function iconeCasaCor(cor) {
     }
     return _iconesCor[cor];
 }
+// Survey em MODO EDIÇÃO: casinha vermelha piscando (classe house-editando no CSS)
+let _iconeEdicao = null;
+function iconeEdicao() {
+    if (!_iconeEdicao) {
+        _iconeEdicao = L.divIcon({
+            className: 'house-marker house-editando',
+            html: houseSVG.replace(/#2a4fd6/g, '#dc2626').replace(/#1e3c72/g, '#7f1d1d'),
+            iconSize: [14, 18], iconAnchor: [7, 18], popupAnchor: [0, -18]
+        });
+    }
+    return _iconeEdicao;
+}
 // Ícone do survey: cor da linha (se veio da IA de linhas) > verde IA > azul padrão
 function iconeSurvey(s) {
     return s._cor ? iconeCasaCor(s._cor) : (s._ia ? houseIconIA : houseIcon);
@@ -1659,11 +1671,17 @@ function abrirEdicaoSurvey(idx) {
 
     expandirCard('formPanel');
     irParaCard('formPanel');
-    // casinha laranja no mapa, liberada para arrastar
+    // Modo edição COMPLETO: casinha vermelha piscando, liberada para arrastar, e formulário todo preenchido
+    if (marcadorAtual) { map.removeLayer(marcadorAtual); marcadorAtual = null; }   // tira o ponto pendente/duplicado
+    const cd = document.getElementById('coordsDisplay');
+    const od = document.getElementById('origemDisplay');
+    if (cd && s.latitude != null && s.longitude != null) cd.textContent = `${Number(s.latitude).toFixed(8)}, ${Number(s.longitude).toFixed(8)}`;
+    if (od) od.textContent = 'Survey em edição (arraste a casinha vermelha para reposicionar)';
     renderizarMarcadoresSurveys();
     const mEd = marcadoresSurveys.find(m => m._sid === s._id);
     if (mEd) map.setView(mEd.getLatLng(), Math.max(map.getZoom(), 19));
-    showToast('Modo edição', 'Ajuste os dados ou arraste a casinha laranja no mapa. Depois clique em "Salvar edição".', 'info', 4500);
+    document.getElementById('numeroInput')?.focus({ preventScroll: true });
+    showToast('Modo edição', 'Ajuste fachada, complementos e demais dados, ou arraste a casinha vermelha no mapa. Depois clique em "Salvar edição".', 'info', 5000);
 }
 
 function cancelarEdicaoSurvey(manterRoteiro) {
@@ -2023,7 +2041,7 @@ function renderizarMarcadoresSurveys() {
         if (lat == null || lng == null) return;
         const editando = (_surveyEditandoIdx === idx);
         const m = L.marker([lat, lng], {
-            icon: editando ? iconeCasaCor('#f59e0b') : iconeSurvey(s),   // laranja = em edição
+            icon: editando ? iconeEdicao() : iconeSurvey(s),   // vermelho piscando = em edição
             draggable: false,
             zIndexOffset: editando ? 2000 : 0
         }).addTo(map);
