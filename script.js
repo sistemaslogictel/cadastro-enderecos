@@ -1038,6 +1038,7 @@ function tornarMarcadorArrastavel(marker, surveyRef) {
         const pos = marker.getLatLng();
         surveyRef.latitude = +pos.lat.toFixed(8);
         surveyRef.longitude = +pos.lng.toFixed(8);
+        ibgeAtualizarOcultas();
         const setH = (id, val) => { const el = document.getElementById(id); if (el) el.value = val; };
         setH('surveyLatitude', pos.lat.toFixed(8));
         setH('surveyLongitude', pos.lng.toFixed(8));
@@ -1874,6 +1875,7 @@ function renderizarSurveys() {
 
     if (surveysMemoria.length === 0) {
         panel.style.display = 'none';
+        ibgeAtualizarOcultas();   // lista vazia: as casinhas do IBGE voltam a aparecer
         return;
     }
 
@@ -2057,6 +2059,7 @@ function renderizarMarcadoresSurveys() {
         });
         marcadoresSurveys.push(m);
     });
+    ibgeAtualizarOcultas();   // cadastrou, removeu ou limpou: atualiza quais casinhas do IBGE aparecem
 }
 
 // ============================================
@@ -4180,8 +4183,50 @@ function atualizarControleIbge() {
     const c = _ibgeControle.getContainer();
     c.querySelector('#ibgeToggle').checked = _ibgeVisivel;
     c.querySelector('#ibgeToggleTxt').textContent =
-        `IBGE: ${_ibgeResumo.fachadas} fachada(s) • ${_ibgeResumo.registros} registro(s)`;
+        `IBGE: ${_ibgeResumo.fachadas} fachada(s) • ${_ibgeResumo.registros} registro(s)` +
+        (_ibgeUsadas ? ` • ${_ibgeUsadas} já cadastrada(s)` : '');
     c.title = _ibgeCriterio ? `Cruzado por: ${_ibgeCriterio}` : '';
+}
+
+let _ibgeUsadas = 0;   // quantas casinhas do IBGE já viraram survey (ficam escondidas)
+
+// Esconde do mapa as casinhas brancas do IBGE que já foram usadas num cadastro.
+// Vínculo: survey criado a partir do IBGE guarda a "chave" da casinha (continua vinculado mesmo se for movido);
+// survey digitado manualmente vale quando tem a mesma fachada e está a até 15 m da casinha.
+function ibgeAtualizarOcultas() {
+    if (!_ibgeGrupos.length) { _ibgeUsadas = 0; return; }
+    const metros = (la1, lo1, la2, lo2) => Math.hypot((la2 - la1) * 110540, (lo2 - lo1) * 111320 * Math.cos(la1 * Math.PI / 180));
+    const usadas = new Set();
+    surveysMemoria.forEach(s => {
+        if (s._ibgeChave) {
+            const g = _ibgeGrupos.find(x => x.chave === s._ibgeChave);
+            if (g) usadas.add(g);
+            return;
+        }
+        const lat = s.latitude != null ? Number(s.latitude) : null;
+        const lng = s.longitude != null ? Number(s.longitude) : null;
+        const num = _ibgeNorm(s.numero);
+        if (lat == null || lng == null || isNaN(lat) || isNaN(lng) || !num) return;
+        let melhor = null, dmin = 15;
+        _ibgeGrupos.forEach(g => {
+            if (_ibgeNorm(g.fachada) !== num) return;
+            const d = metros(lat, lng, g.lat, g.lng);
+            if (d <= dmin) { dmin = d; melhor = g; }
+        });
+        if (melhor) usadas.add(melhor);
+    });
+    _ibgeGrupos.forEach(g => {
+        g.usada = usadas.has(g);
+        if (!_ibgeCamada || !g.marker) return;
+        if (g.usada) { if (_ibgeCamada.hasLayer(g.marker)) _ibgeCamada.removeLayer(g.marker); }
+        else if (!_ibgeCamada.hasLayer(g.marker)) _ibgeCamada.addLayer(g.marker);
+    });
+    _ibgeUsadas = usadas.size;
+    if (_ibgeSel) {   // marcação em andamento: tira da seleção as que passaram a estar usadas
+        [..._ibgeSel.sel].filter(g => g.usada).forEach(g => _ibgeSel.sel.delete(g));
+        if (_ibgeSel.atualizar) _ibgeSel.atualizar();
+    }
+    atualizarControleIbge();
 }
 
 const _ibgeSVG = houseSVG.replace(/#2a4fd6/g, '#ffffff').replace(/#1e3c72/g, '#334155');
@@ -4273,7 +4318,7 @@ async function atualizarCamadaIbge() {
         registros.forEach(r => {
             const fach = (r.numero_fachada == null ? '' : String(r.numero_fachada)).trim() || 'SN';
             const chave = [fach.toUpperCase(), Number(r.latitude).toFixed(5), Number(r.longitude).toFixed(5)].join('|');
-            if (!grupos.has(chave)) grupos.set(chave, { fachada: fach, lat: Number(r.latitude), lng: Number(r.longitude), itens: [] });
+            if (!grupos.has(chave)) grupos.set(chave, { chave, fachada: fach, lat: Number(r.latitude), lng: Number(r.longitude), itens: [] });
             grupos.get(chave).itens.push(r);
         });
 
@@ -4301,6 +4346,7 @@ async function atualizarCamadaIbge() {
 
         _ibgeGrupos = Array.from(grupos.values());
         _ibgeCamada = camada;
+        ibgeAtualizarOcultas();   // casinhas já cadastradas não aparecem
         _ibgeResumo = { fachadas: grupos.size, registros: registros.length };
         if (_ibgeVisivel) camada.addTo(map);
         atualizarControleIbge();
@@ -4356,7 +4402,12 @@ async function iniciarVerificacaoIbge() {
     // garante que as casinhas estejam visíveis e enquadra o mapa nelas
     definirIbgeVisivel(true);   // para marcar é preciso ver as casinhas: religa se estiver desligado
     atualizarControleIbge();
-    map.fitBounds(L.latLngBounds(_ibgeGrupos.map(g => [g.lat, g.lng])), { padding: [50, 50], maxZoom: 19 });
+    const livres = _ibgeGrupos.filter(g => !g.usada);
+    if (!livres.length) {
+        escreverMensagemIA(`Todas as <strong>${_ibgeGrupos.length}</strong> casinha(s) do IBGE de <strong>${escapeHtml(nomeRua)}</strong> já foram cadastradas.`, 300);
+        return;
+    }
+    map.fitBounds(L.latLngBounds(livres.map(g => [g.lat, g.lng])), { padding: [50, 50], maxZoom: 19 });
 
     iniciarSelecaoIbge(nomeRua);
 }
@@ -4370,8 +4421,9 @@ function iniciarSelecaoIbge(nomeRua) {
     _ibgeSel = S;
 
     const atualizar = () => {
-        if (S.contadorEl) S.contadorEl.textContent = `${S.sel.size} de ${_ibgeGrupos.length}`;
+        if (S.contadorEl) S.contadorEl.textContent = `${S.sel.size} de ${_ibgeGrupos.filter(g => !g.usada).length}`;
     };
+    S.atualizar = atualizar;
     const marcar = (g, on) => {
         if (on) S.sel.add(g); else S.sel.delete(g);
         g.marker.setIcon(_ibgeIcone(g, on));
@@ -4385,6 +4437,7 @@ function iniciarSelecaoIbge(nomeRua) {
         const dx = pb.x - pa.x, dy = pb.y - pa.y, len2 = dx * dx + dy * dy;
         const achados = [];
         _ibgeGrupos.forEach(g => {
+            if (g.usada) return;   // já cadastrada: escondida e fora da marcação
             const p = map.latLngToContainerPoint([g.lat, g.lng]);
             const cx = p.x, cy = p.y - 9;
             let t = len2 ? ((cx - pa.x) * dx + (cy - pa.y) * dy) / len2 : 0;
@@ -4448,7 +4501,7 @@ function iniciarSelecaoIbge(nomeRua) {
     };
 
     S.painelEl = iaMensagemInterativa(`
-        Encontrei <strong>${_ibgeGrupos.length}</strong> casinha(s) do IBGE em <strong>${escapeHtml(nomeRua)}</strong> (brancas e translúcidas no mapa; clique em uma para ver a legenda).<br><br>
+        Encontrei <strong>${_ibgeGrupos.filter(g => !g.usada).length}</strong> casinha(s) do IBGE em <strong>${escapeHtml(nomeRua)}</strong> (brancas e translúcidas no mapa; clique em uma para ver a legenda).<br><br>
         Para marcar: <strong>clique nas casinhas</strong> ou use <strong>Passar linha</strong> e eu marco todas por onde a linha passar.<br>
         <small>Cruzamento com o roteiro: <strong>${escapeHtml(_ibgeCriterio || '—')}</strong>.</small><br>
         Marcadas: <strong id="ibgeContador"></strong>
@@ -4467,7 +4520,7 @@ function iniciarSelecaoIbge(nomeRua) {
     S.btnLinha.addEventListener('click', () => ativarLinha(!S.modoLinha));
     bt('todas').addEventListener('click', () => {
         ativarLinha(false);
-        [..._ibgeGrupos]
+        _ibgeGrupos.filter(g => !g.usada)
             .sort((x, y) => String(x.fachada).localeCompare(String(y.fachada), 'pt', { numeric: true }))
             .forEach(g => marcar(g, true));
         atualizar();
@@ -4509,6 +4562,7 @@ function cadastrarMarcadasIbge() {
             _id: 'ibge_' + (++_surveyIdSeq),
             _ia: true,
             _ibge: true,
+            _ibgeChave: g.chave,   // vínculo com a casinha: ela fica escondida mesmo que o survey seja movido
             logradouro: { ...l },
             numero: numero,
             pisos: null,
