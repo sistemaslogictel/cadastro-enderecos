@@ -4110,6 +4110,23 @@ let _ibgeControle = null;
 let _ibgeResumo = null;                       // { fachadas, registros }
 let _ibgeVisivel = localStorage.getItem('ibgeVisivel') !== '0';
 
+// Liga/desliga a exibição das casinhas do IBGE e mantém os dois checkboxes (cabeçalho do mapa e canto do mapa) em sincronia
+function definirIbgeVisivel(visivel) {
+    _ibgeVisivel = !!visivel;
+    localStorage.setItem('ibgeVisivel', _ibgeVisivel ? '1' : '0');
+    if (_ibgeCamada) { if (_ibgeVisivel) _ibgeCamada.addTo(map); else map.removeLayer(_ibgeCamada); }
+    const hdr = document.getElementById('ibgeToggleHdr');
+    if (hdr) hdr.checked = _ibgeVisivel;
+    const ctl = document.getElementById('ibgeToggle');
+    if (ctl) ctl.checked = _ibgeVisivel;
+}
+(function () {
+    const hdr = document.getElementById('ibgeToggleHdr');
+    if (!hdr) return;
+    hdr.checked = _ibgeVisivel;
+    hdr.addEventListener('change', (e) => definirIbgeVisivel(e.target.checked));
+})();
+
 const _ibgeNorm = (v) => String(v == null ? '' : v).normalize('NFD').replace(/[\u0300-\u036f]/g, '').toUpperCase().replace(/\s+/g, ' ').trim();
 
 // Palavras de ligação ignoradas ao comparar nomes de logradouro
@@ -4148,11 +4165,7 @@ function atualizarControleIbge() {
                 const div = L.DomUtil.create('div', 'ibge-ctrl');
                 div.innerHTML = '<label><input type="checkbox" id="ibgeToggle"> <span id="ibgeToggleTxt"></span></label>';
                 L.DomEvent.disableClickPropagation(div);
-                div.querySelector('#ibgeToggle').addEventListener('change', (e) => {
-                    _ibgeVisivel = e.target.checked;
-                    localStorage.setItem('ibgeVisivel', _ibgeVisivel ? '1' : '0');
-                    if (_ibgeCamada) { if (_ibgeVisivel) _ibgeCamada.addTo(map); else map.removeLayer(_ibgeCamada); }
-                });
+                div.querySelector('#ibgeToggle').addEventListener('change', (e) => definirIbgeVisivel(e.target.checked));
                 return div;
             }
         });
@@ -4341,9 +4354,7 @@ async function iniciarVerificacaoIbge() {
     }
 
     // garante que as casinhas estejam visíveis e enquadra o mapa nelas
-    _ibgeVisivel = true;
-    localStorage.setItem('ibgeVisivel', '1');
-    if (_ibgeCamada && !map.hasLayer(_ibgeCamada)) _ibgeCamada.addTo(map);
+    definirIbgeVisivel(true);   // para marcar é preciso ver as casinhas: religa se estiver desligado
     atualizarControleIbge();
     map.fitBounds(L.latLngBounds(_ibgeGrupos.map(g => [g.lat, g.lng])), { padding: [50, 50], maxZoom: 19 });
 
