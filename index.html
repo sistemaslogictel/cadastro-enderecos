@@ -66,6 +66,12 @@
             <button class="icon-btn" id="themeToggle" type="button" title="Alternar tema" aria-label="Alternar tema">
                 <span aria-hidden="true">🌙</span>
             </button>
+            <button class="icon-btn" id="zipViewBtn" type="button" title="Abrir ZIP (somente leitura)" aria-label="Abrir ZIP somente leitura">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path>
+                </svg>
+            </button>
+            <input type="file" id="zipViewInput" accept=".zip,application/zip" multiple hidden>
             <button class="icon-btn" id="infoBtn" type="button" title="Informações" aria-label="Informações" aria-haspopup="dialog" aria-controls="infoModal">
                 <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                     <circle cx="12" cy="12" r="10"></circle>
@@ -608,6 +614,18 @@
         <span aria-hidden="true">🤖</span>
         <span class="ia-fab-badge" id="iaFabBadge" style="display:none;">1</span>
     </button>
+
+    <!-- LEITOR DE ZIP (SOMENTE LEITURA) -->
+    <aside class="zip-view" id="zipViewPanel" aria-label="ZIP carregado (somente leitura)" hidden>
+        <header class="zip-view-header">
+            <div>
+                <strong id="zipViewTitle">ZIP</strong>
+                <small id="zipViewSummary"></small>
+            </div>
+            <button type="button" id="zipViewClose" class="zip-view-close">Fechar</button>
+        </header>
+        <ol class="zip-view-list" id="zipViewList"></ol>
+    </aside>
 
     <!-- POPUP DE INFORMAÇÕES -->
     <div class="info-modal" id="infoModal" role="dialog" aria-modal="true" aria-labelledby="infoModalTitle" hidden>

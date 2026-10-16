@@ -394,6 +394,7 @@ async function iniciar() {
     const nome = sessionStorage.getItem('usuarioNome') || sessionStorage.getItem('usuarioLogado') || '-';
     document.getElementById('userLabel').textContent = nome;
 
+    iniciarLogoutAutomatico();
     aplicarPermissoes();
     setTimeout(() => map.invalidateSize(), 400);
     renderizarSurveys();
@@ -404,12 +405,63 @@ async function iniciar() {
     });
 }
 
-document.getElementById('logoutBtn').addEventListener('click', async () => {
-    await supabaseClient.auth.signOut();
+async function encerrarSessao(motivo) {
+    try { await supabaseClient.auth.signOut(); } catch (e) { console.warn('signOut:', e); }
     sessionStorage.removeItem('usuarioLogado');
     sessionStorage.removeItem('usuarioNome');
-    window.location.href = 'login.html';
-});
+    localStorage.removeItem('loginEm');
+    window.location.href = 'login.html' + (motivo ? '?motivo=' + motivo : '');
+}
+
+document.getElementById('logoutBtn').addEventListener('click', () => encerrarSessao());
+
+// ============================================
+// LOGOUT AUTOMÁTICO DIÁRIO ÀS 19h
+// - Quem está com o sistema aberto é desconectado quando o relógio chega às 19:00.
+// - Quem deixou a sessão salva de um dia para o outro também cai: se o login foi feito
+//   antes do último 19:00, a sessão não vale mais.
+// ============================================
+const HORA_LOGOUT_AUTOMATICO = 19;   // 19:00
+const AVISO_LOGOUT_MIN = 5;          // avisa 5 min antes
+
+function ultimoCorteLogout(agora = new Date()) {
+    const c = new Date(agora);
+    c.setHours(HORA_LOGOUT_AUTOMATICO, 0, 0, 0);
+    if (c > agora) c.setDate(c.getDate() - 1);   // ainda não deu 19h hoje → o corte foi ontem
+    return c;
+}
+function proximoCorteLogout(agora = new Date()) {
+    const c = new Date(agora);
+    c.setHours(HORA_LOGOUT_AUTOMATICO, 0, 0, 0);
+    if (c <= agora) c.setDate(c.getDate() + 1);
+    return c;
+}
+function sessaoExpiradaPorHorario() {
+    let loginEm = parseInt(localStorage.getItem('loginEm') || '', 10);
+    if (!loginEm || isNaN(loginEm)) {            // sessão antiga, sem carimbo: considera "agora"
+        loginEm = Date.now();
+        localStorage.setItem('loginEm', String(loginEm));
+    }
+    return loginEm < ultimoCorteLogout().getTime();
+}
+function iniciarLogoutAutomatico() {
+    if (sessaoExpiradaPorHorario()) { encerrarSessao('horario'); return; }
+
+    let avisou = false;
+    const verificar = () => {
+        if (sessaoExpiradaPorHorario()) { encerrarSessao('horario'); return; }
+        const falta = proximoCorteLogout().getTime() - Date.now();
+        if (!avisou && falta <= AVISO_LOGOUT_MIN * 60000) {
+            avisou = true;
+            showToast('Sessão termina às ' + HORA_LOGOUT_AUTOMATICO + 'h',
+                `Você será desconectado em até ${AVISO_LOGOUT_MIN} min. Exporte o ZIP para não perder os surveys da lista.`, 'warning', 15000);
+        }
+    };
+    verificar();
+    setInterval(verificar, 15000);
+    // ao voltar para a aba (notebook que dormiu, por exemplo), confere na hora
+    document.addEventListener('visibilitychange', () => { if (!document.hidden) verificar(); });
+}
 
 // ============================================
 // MAPA
@@ -1597,7 +1649,11 @@ function cancelarEdicaoSurvey(manterRoteiro) {
     const cancelBtn = document.getElementById('cancelarEdicaoBtn');
     if (cancelBtn) cancelBtn.style.display = 'none';
 
-    if (manterRoteiro) return; // após salvar edição, mantém o roteiro em uso
+    if (manterRoteiro) {
+        // após salvar edição, mantém o roteiro em uso, mas volta o card ao visual normal (sem o laranja de "Editando")
+        atualizarInfoBase();
+        return;
+    }
 
     const infoBox = document.getElementById('enderecoBaseInfo');
     if (infoBox) {
@@ -3342,6 +3398,178 @@ function gerarSequenciaIA(quantidade, posicoes, opts = {}) {
     _iaJaDisparou = false;
     _iaMeta = 0;
 }
+
+// ============================================
+// LEITOR DE ZIP (SOMENTE LEITURA)
+// Carrega um ZIP já exportado e mostra os surveys no mapa e em uma lista.
+// Não mexe na lista de surveys em edição, não permite editar, excluir nem exportar.
+// ============================================
+(function leitorZip() {
+    const btn = document.getElementById('zipViewBtn');
+    const input = document.getElementById('zipViewInput');
+    const painel = document.getElementById('zipViewPanel');
+    if (!btn || !input || !painel) return;
+
+    const elTitulo = document.getElementById('zipViewTitle');
+    const elResumo = document.getElementById('zipViewSummary');
+    const elLista = document.getElementById('zipViewList');
+    const COR_LEITURA = '#475569';
+
+    let camada = null;
+    let marcadores = [];
+
+    // id -> nome (a partir das mesmas tabelas usadas na exportação)
+    const mapaId = (lista) => { const m = {}; lista.forEach(([n, id]) => { if (!(String(id) in m)) m[String(id)] = n; }); return m; };
+    const NOME_COMPLEMENTO = mapaId(COMPLEMENTO_LISTA);
+    const NOME_TIPO_IMOVEL = mapaId(TIPO_IMOVEL_LISTA);
+
+    const txt = (el, sel) => {
+        const n = el.querySelector(sel);
+        return n ? (n.textContent || '').trim() : '';
+    };
+
+    function lerXmlEdificio(xmlTexto, origem) {
+        const doc = new DOMParser().parseFromString(xmlTexto, 'application/xml');
+        if (doc.querySelector('parsererror')) return null;
+        const ed = doc.documentElement;
+        if (!ed) return null;
+
+        const end = ed.querySelector('enderecoEdificio') || ed;
+        const lat = parseFloat(txt(ed, 'coordY').replace(',', '.'));
+        const lng = parseFloat(txt(ed, 'coordX').replace(',', '.'));
+
+        const comps = [];
+        for (let i = 1; i <= 10; i++) {
+            const id = txt(end, 'id_complemento' + i);
+            const arg = txt(end, 'argumento' + i);
+            if (!id && !arg) continue;
+            comps.push({ tipo: NOME_COMPLEMENTO[id] || (id ? 'ID ' + id : ''), valor: arg });
+        }
+        const idTipo = txt(end, 'id_tipo_imovel');
+
+        return {
+            origem,
+            idCE: parseInt(txt(ed, 'idCEMobile'), 10),
+            lat: isNaN(lat) ? null : lat,
+            lng: isNaN(lng) ? null : lng,
+            logradouro: txt(end, 'logradouro'),
+            numero: txt(end, 'numero_fachada'),
+            bairro: txt(end, 'bairro'),
+            cep: txt(end, 'cep'),
+            localidade: txt(ed, 'localidade'),
+            zona: txt(ed, 'nomeZona') || txt(ed, 'codigoZona'),
+            tipoImovel: idTipo ? (NOME_TIPO_IMOVEL[idTipo] || 'ID ' + idTipo) : '',
+            imovel: txt(end, 'arg_imovel'),
+            pisos: txt(ed, 'numPisos'),
+            obs: txt(ed, 'observacoes'),
+            data: txt(ed, 'data'),
+            complementos: comps
+        };
+    }
+
+    const rotulo = (v) => {
+        const comps = v.complementos.map(c => [c.tipo, c.valor].filter(Boolean).join(' ')).filter(Boolean);
+        return [v.numero, comps.length ? `(${comps.join(', ')})` : ''].filter(Boolean).join(' - ');
+    };
+
+    const popupHtml = (v) => {
+        const linhas = [];
+        linhas.push(`<strong>${escapeHtml(v.logradouro)}${rotulo(v) ? ', ' + escapeHtml(rotulo(v)) : ''}</strong>`);
+        const det = [];
+        if (v.tipoImovel) det.push('Tipo: ' + escapeHtml(v.tipoImovel) + (v.imovel ? ' ' + escapeHtml(v.imovel) : ''));
+        if (v.zona) det.push('Zona: ' + escapeHtml(v.zona));
+        if (v.pisos) det.push('Pisos: ' + escapeHtml(v.pisos));
+        if (v.bairro) det.push(escapeHtml(v.bairro));
+        if (v.obs) det.push('Obs.: ' + escapeHtml(v.obs));
+        if (det.length) linhas.push('<span style="font-size:0.8rem">' + det.join('<br>') + '</span>');
+        return linhas.join('<br>');
+    };
+
+    function limpar() {
+        marcadores.forEach(m => map.removeLayer(m));
+        marcadores = [];
+        if (camada) { map.removeLayer(camada); camada = null; }
+        elLista.innerHTML = '';
+    }
+
+    function fechar() {
+        limpar();
+        painel.hidden = true;
+    }
+
+    function mostrar(itens, nomesArquivos) {
+        limpar();
+        // ordem em que foram cadastrados: pelo idCEMobile (= nº da moradia); desempate pela ordem do arquivo
+        itens.sort((a, b) => (a.idCE || 0) - (b.idCE || 0));
+
+        elTitulo.textContent = nomesArquivos.length === 1 ? nomesArquivos[0] : `${nomesArquivos.length} arquivos ZIP`;
+        const semCoord = itens.filter(v => v.lat == null || v.lng == null).length;
+        elResumo.textContent = `${itens.length} survey(s) • somente leitura` + (semCoord ? ` • ${semCoord} sem coordenadas` : '');
+
+        camada = L.layerGroup().addTo(map);
+        const pontos = [];
+
+        itens.forEach((v, i) => {
+            const li = document.createElement('li');
+            li.className = 'zip-view-item';
+            li.innerHTML = `<span class="zip-view-n">${i + 1}</span>
+                <span class="zip-view-txt"><strong>${escapeHtml(v.logradouro || '—')}</strong>
+                <small>${escapeHtml(rotulo(v) || 'SN')}</small></span>`;
+            elLista.appendChild(li);
+
+            if (v.lat == null || v.lng == null) { li.classList.add('sem-coord'); return; }
+            const m = L.marker([v.lat, v.lng], { icon: iconeCasaCor(COR_LEITURA), draggable: false }).addTo(camada);
+            m.bindPopup(popupHtml(v));
+            marcadores.push(m);
+            pontos.push([v.lat, v.lng]);
+            li.addEventListener('click', () => {
+                map.setView([v.lat, v.lng], Math.max(map.getZoom(), 19));
+                m.openPopup();
+            });
+        });
+
+        painel.hidden = false;
+        if (pontos.length) map.fitBounds(L.latLngBounds(pontos), { padding: [40, 40], maxZoom: 19 });
+    }
+
+    async function carregar(files) {
+        if (typeof JSZip === 'undefined') { showToast('Erro', 'JSZip não carregado.', 'error'); return; }
+        const itens = [];
+        const nomes = [];
+        try {
+            for (const f of files) {
+                const zip = await JSZip.loadAsync(f);
+                const xmls = Object.keys(zip.files).filter(n => !zip.files[n].dir && /\.xml$/i.test(n));
+                let lidos = 0;
+                for (const nome of xmls) {
+                    const t = await zip.files[nome].async('string');
+                    const v = lerXmlEdificio(t.replace(/^\uFEFF/, ''), f.name);
+                    if (v && v.logradouro !== undefined && (v.lat != null || v.logradouro || v.numero)) { itens.push(v); lidos++; }
+                }
+                if (lidos) nomes.push(f.name);
+            }
+        } catch (err) {
+            console.error(err);
+            showToast('Erro ao ler o ZIP', 'O arquivo não parece ser um ZIP válido.', 'error', 6000);
+            return;
+        }
+        if (!itens.length) {
+            showToast('Nada encontrado', 'Não achei surveys (moradiaN.xml) dentro do ZIP.', 'warning', 5000);
+            return;
+        }
+        mostrar(itens, nomes);
+        showToast('ZIP carregado', `${itens.length} survey(s) em modo somente leitura.`, 'success', 3500);
+    }
+
+    btn.addEventListener('click', () => input.click());
+    input.addEventListener('change', () => {
+        const files = Array.from(input.files || []);
+        input.value = '';              // permite reabrir o mesmo arquivo depois
+        if (files.length) carregar(files);
+    });
+    document.getElementById('zipViewClose')?.addEventListener('click', fechar);
+    document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && !painel.hidden) fechar(); });
+})();
 
 // ============================================
 // INICIALIZAÇÃO
