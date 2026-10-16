@@ -1731,3 +1731,17 @@ ul.ibge-pop { margin: 6px 0 0; padding-left: 16px; font-size: 0.8rem; }
 
 .mub-ctrl-title small { font-weight: 400; color: var(--text-tertiary); margin-left: 4px; }
 .mub-ctrl .mub-arq { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; margin-bottom: 2px; }
+
+/* MUB: painel minimizável */
+.mub-ctrl .mub-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.mub-ctrl .mub-head .mub-ctrl-title { margin-bottom: 6px; }
+.mub-ctrl .mub-min-btn { flex: 0 0 auto; width: 24px; height: 24px; padding: 0; line-height: 1; font-size: 14px; margin-bottom: 6px; }
+.mub-ctrl.mub-minimizado { width: auto; padding: 6px 8px; }
+.mub-ctrl.mub-minimizado .mub-body { display: none; }
+.mub-ctrl.mub-minimizado .mub-ctrl-title { margin-bottom: 0; }
+.mub-ctrl.mub-minimizado .mub-ctrl-title small { display: none; }
+.mub-ctrl.mub-minimizado .mub-min-btn { margin-bottom: 0; }
+
+/* IBGE: casinha marcada para cadastro */
+.ibge-marker.ibge-sel svg { opacity: 1; filter: drop-shadow(0 0 3px #f59e0b); }
+.ibge-marker.ibge-sel .ibge-num { opacity: 1; }

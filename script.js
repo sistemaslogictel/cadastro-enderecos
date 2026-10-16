@@ -2518,6 +2518,47 @@ function inicializarChatIA() {
         abrirChatIA();
         detectarPadroes(true);
     });
+
+    // caixa de texto do chat: o usuário pode digitar comandos (ex.: "Verificar IBGE")
+    const inp = document.getElementById('iaChatInput');
+    const enviar = () => {
+        const txt = (inp.value || '').trim();
+        if (!txt) return;
+        inp.value = '';
+        processarComandoChatIA(txt);
+    };
+    document.getElementById('iaChatSendBtn')?.addEventListener('click', enviar);
+    inp?.addEventListener('keypress', (e) => { if (e.key === 'Enter') { e.preventDefault(); enviar(); } });
+}
+
+// ---- entendimento de comandos digitados (tolera maiúsculas, acentos e erros de digitação) ----
+function _normTxt(s) {
+    return String(s || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase()
+        .replace(/[^a-z0-9\s]/g, ' ').replace(/\s+/g, ' ').trim();
+}
+// distância de edição (inclui troca de letras vizinhas: "igbe" → "ibge")
+function _distEdicao(a, b) {
+    const d = Array.from({ length: a.length + 1 }, (_, i) => [i]);
+    for (let j = 1; j <= b.length; j++) d[0][j] = j;
+    for (let i = 1; i <= a.length; i++) {
+        for (let j = 1; j <= b.length; j++) {
+            const custo = a[i - 1] === b[j - 1] ? 0 : 1;
+            d[i][j] = Math.min(d[i - 1][j] + 1, d[i][j - 1] + 1, d[i - 1][j - 1] + custo);
+            if (i > 1 && j > 1 && a[i - 1] === b[j - 2] && a[i - 2] === b[j - 1]) d[i][j] = Math.min(d[i][j], d[i - 2][j - 2] + 1);
+        }
+    }
+    return d[a.length][b.length];
+}
+function intencaoVerificarIbge(txt) {
+    const n = _normTxt(txt);
+    if (!n) return false;
+    if (n.replace(/\s/g, '').includes('ibge')) return true;        // "verificaribge", "ibge", "ver o ibge"...
+    return n.split(' ').some(t => t.length >= 3 && t.length <= 6 && _distEdicao(t, 'ibge') <= 1);   // "ibje", "ibg", "igbe"...
+}
+function processarComandoChatIA(txt) {
+    escreverMensagemUser(txt);
+    if (intencaoVerificarIbge(txt)) { iniciarVerificacaoIbge(); return; }
+    escreverMensagemIA('Não entendi esse comando. Por enquanto eu entendo: <strong>Verificar IBGE</strong>.', 300);
 }
 
 function abrirChatIA() {
@@ -3860,6 +3901,27 @@ function gerarSequenciaIA(quantidade, posicoes, opts = {}) {
                         <button type="button" id="mubRem">Remover</button>
                     </div>
                     <small>Arraste a alça ✥ para posicionar o MUB sobre o mapa.</small>`;
+                // cabeçalho com botão de minimizar; o restante do painel vai para o "corpo"
+                const titulo = div.querySelector('.mub-ctrl-title');
+                const corpo = L.DomUtil.create('div', 'mub-body');
+                Array.from(div.children).forEach(ch => { if (ch !== titulo) corpo.appendChild(ch); });
+                const cab = L.DomUtil.create('div', 'mub-head');
+                const btnMin = L.DomUtil.create('button', 'mub-min-btn');
+                btnMin.type = 'button';
+                cab.appendChild(titulo);
+                cab.appendChild(btnMin);
+                div.appendChild(cab);
+                div.appendChild(corpo);
+                const aplicarMin = (min) => {
+                    div.classList.toggle('mub-minimizado', min);
+                    btnMin.textContent = min ? '▢' : '–';
+                    btnMin.title = min ? 'Restaurar painel do MUB' : 'Minimizar painel do MUB';
+                    btnMin.setAttribute('aria-label', btnMin.title);
+                    localStorage.setItem('mubMinimizado', min ? '1' : '0');
+                };
+                btnMin.addEventListener('click', () => aplicarMin(!div.classList.contains('mub-minimizado')));
+                aplicarMin(localStorage.getItem('mubMinimizado') === '1');
+
                 L.DomEvent.disableClickPropagation(div);
                 L.DomEvent.disableScrollPropagation(div);
 
@@ -4028,6 +4090,8 @@ function gerarSequenciaIA(quantidade, posicoes, opts = {}) {
 // Clique na casinha mostra os complementos. Fachadas repetidas ficam juntas na mesma casinha.
 // ============================================
 let _ibgeSeq = 0;
+let _ibgeGrupos = [];                        // casinhas do IBGE carregadas: { fachada, lat, lng, itens, marker }
+let _ibgeSel = null;                         // sessão de marcação ("Verificar IBGE") em andamento
 let _ibgeCamada = null;
 let _ibgeControle = null;
 let _ibgeResumo = null;                       // { fachadas, registros }
@@ -4036,6 +4100,8 @@ let _ibgeVisivel = localStorage.getItem('ibgeVisivel') !== '0';
 const _ibgeNorm = (v) => String(v == null ? '' : v).normalize('NFD').replace(/[\u0300-\u036f]/g, '').toUpperCase().replace(/\s+/g, ' ').trim();
 
 function limparIbge() {
+    encerrarSelecaoIbge(true);   // a marcação pertence à camada atual
+    _ibgeGrupos = [];
     if (_ibgeCamada) { map.removeLayer(_ibgeCamada); _ibgeCamada = null; }
     _ibgeResumo = null;
     atualizarControleIbge();
@@ -4072,6 +4138,15 @@ function atualizarControleIbge() {
 }
 
 const _ibgeSVG = houseSVG.replace(/#2a4fd6/g, '#ffffff').replace(/#1e3c72/g, '#334155');
+const _ibgeSVGSel = houseSVG.replace(/#2a4fd6/g, '#facc15').replace(/#1e3c72/g, '#b45309');   // marcada = amarela
+
+function _ibgeIcone(g, marcada) {
+    return L.divIcon({
+        className: 'ibge-marker' + (marcada ? ' ibge-sel' : ''),
+        html: `${marcada ? _ibgeSVGSel : _ibgeSVG}<span class="ibge-num">${escapeHtml(g.fachada)}</span>`,
+        iconSize: [14, 18], iconAnchor: [7, 18], popupAnchor: [0, -18]
+    });
+}
 
 function _ibgeComplementos(r) {
     const out = [];
@@ -4134,13 +4209,9 @@ async function atualizarCamadaIbge() {
 
         const camada = L.layerGroup();
         grupos.forEach(g => {
-            const icone = L.divIcon({
-                className: 'ibge-marker',
-                html: `${_ibgeSVG}<span class="ibge-num">${escapeHtml(g.fachada)}</span>`,
-                iconSize: [14, 18], iconAnchor: [7, 18], popupAnchor: [0, -18]
-            });
             // zIndexOffset negativo: fica ATRÁS dos surveys cadastrados
-            const m = L.marker([g.lat, g.lng], { icon: icone, zIndexOffset: -1000, keyboard: false });
+            const m = L.marker([g.lat, g.lng], { icon: _ibgeIcone(g, false), zIndexOffset: -1000, keyboard: false });
+            g.marker = m;
             const linhas = g.itens.slice(0, 30).map(r => {
                 const comps = _ibgeComplementos(r);
                 const and = r.qtd_andares != null && r.qtd_andares !== '' ? ` • ${escapeHtml(String(r.qtd_andares))} andar(es)` : '';
@@ -4149,9 +4220,16 @@ async function atualizarCamadaIbge() {
             const mais = g.itens.length > 30 ? `<small>+ ${g.itens.length - 30} registro(s)</small>` : '';
             m.bindPopup(`<strong>IBGE — ${escapeHtml([l.tipo, l.rua].filter(Boolean).join(' '))}, ${escapeHtml(g.fachada)}</strong>` +
                 `<ul class="ibge-pop">${linhas}</ul>${mais}`);
+            // durante a marcação, o clique também marca/desmarca (a legenda continua abrindo)
+            m.on('click', () => {
+                if (!_ibgeSel) return;
+                if (_ibgeSel.modoLinha) { _ibgeSel.cliqueLinha(m.getLatLng()); m.closePopup(); return; }
+                _ibgeSel.alternar(g);
+            });
             m.addTo(camada);
         });
 
+        _ibgeGrupos = Array.from(grupos.values());
         _ibgeCamada = camada;
         _ibgeResumo = { fachadas: grupos.size, registros: registros.length };
         if (_ibgeVisivel) camada.addTo(map);
@@ -4159,6 +4237,239 @@ async function atualizarCamadaIbge() {
     } catch (err) {
         console.warn('[IBGE] não foi possível carregar a base:', err);
     }
+}
+
+
+// ============================================
+// IA — "VERIFICAR IBGE": marcar casinhas e cadastrar
+// Marca clicando nas casinhas ou passando uma linha por cima delas, e cria os surveys
+// conforme o roteiro selecionado, aproveitando só a fachada e as coordenadas do IBGE.
+// ============================================
+function iaMensagemInterativa(html) {
+    const div = document.createElement('div');
+    div.className = 'ia-msg ia-msg-ia';
+    div.innerHTML = html;
+    iaChatBody.appendChild(div);
+    iaChatBody.scrollTop = iaChatBody.scrollHeight;
+    return div;
+}
+
+function encerrarSelecaoIbge(silencioso) {
+    const S = _ibgeSel;
+    if (!S) return;
+    _ibgeSel = null;
+    if (S.modoLinha) { map.off('click', S.onMapClick); map.getContainer().style.cursor = ''; }
+    if (S.linhas) map.removeLayer(S.linhas);
+    S.sel.forEach(g => { if (g.marker) { g.marker.setIcon(_ibgeIcone(g, false)); g.marker.setZIndexOffset(-1000); } });
+    S.painelEl && S.painelEl.remove();
+    S.perguntaEl && S.perguntaEl.remove();
+}
+
+async function iniciarVerificacaoIbge() {
+    abrirChatIA();
+    const l = enderecoBaseSelecionado;
+    if (!l || !l.rua) {
+        escreverMensagemIA('Para verificar o IBGE, primeiro escolha o logradouro nos passos <strong>1 e 2</strong>. Depois é só pedir de novo.', 300);
+        return;
+    }
+    const nomeRua = [l.tipo, l.rua].filter(Boolean).join(' ');
+    iaMensagemInterativa(`🔎 Consultando a base do IBGE para <strong>${escapeHtml(nomeRua)}</strong>...`);
+
+    try { await comTimeout(atualizarCamadaIbge(), 30000, 'A consulta ao IBGE demorou demais'); }
+    catch (err) { console.warn('[IBGE]', err); }
+
+    if (!_ibgeGrupos.length) {
+        escreverMensagemIA(`Não encontrei fachadas do IBGE para <strong>${escapeHtml(nomeRua)}</strong>. Confira se o logradouro escolhido é o certo ou tente de novo em instantes.`, 300);
+        return;
+    }
+
+    // garante que as casinhas estejam visíveis e enquadra o mapa nelas
+    _ibgeVisivel = true;
+    localStorage.setItem('ibgeVisivel', '1');
+    if (_ibgeCamada && !map.hasLayer(_ibgeCamada)) _ibgeCamada.addTo(map);
+    atualizarControleIbge();
+    map.fitBounds(L.latLngBounds(_ibgeGrupos.map(g => [g.lat, g.lng])), { padding: [50, 50], maxZoom: 19 });
+
+    iniciarSelecaoIbge(nomeRua);
+}
+
+function iniciarSelecaoIbge(nomeRua) {
+    const S = {
+        sel: new Set(), modoLinha: false, pendente: null,
+        linhas: L.layerGroup().addTo(map),
+        painelEl: null, perguntaEl: null, contadorEl: null, btnLinha: null
+    };
+    _ibgeSel = S;
+
+    const atualizar = () => {
+        if (S.contadorEl) S.contadorEl.textContent = `${S.sel.size} de ${_ibgeGrupos.length}`;
+    };
+    const marcar = (g, on) => {
+        if (on) S.sel.add(g); else S.sel.delete(g);
+        g.marker.setIcon(_ibgeIcone(g, on));
+        g.marker.setZIndexOffset(on ? -500 : -1000);
+    };
+    S.alternar = (g) => { marcar(g, !S.sel.has(g)); atualizar(); };
+
+    // casinhas por onde a linha passa (distância em pixels, medida a partir do centro do ícone)
+    const porLinha = (a, b) => {
+        const pa = map.latLngToContainerPoint(a), pb = map.latLngToContainerPoint(b);
+        const dx = pb.x - pa.x, dy = pb.y - pa.y, len2 = dx * dx + dy * dy;
+        const achados = [];
+        _ibgeGrupos.forEach(g => {
+            const p = map.latLngToContainerPoint([g.lat, g.lng]);
+            const cx = p.x, cy = p.y - 9;
+            let t = len2 ? ((cx - pa.x) * dx + (cy - pa.y) * dy) / len2 : 0;
+            t = Math.max(0, Math.min(1, t));
+            if (Math.hypot(cx - (pa.x + t * dx), cy - (pa.y + t * dy)) <= 12) achados.push({ g, t });
+        });
+        return achados.sort((x, y) => x.t - y.t).map(x => x.g);   // na ordem em que a linha passa
+    };
+
+    const ativarLinha = (on) => {
+        if (S.modoLinha === on) return;
+        S.modoLinha = on;
+        map.getContainer().style.cursor = on ? 'crosshair' : '';
+        if (on) map.on('click', S.onMapClick); else map.off('click', S.onMapClick);
+        if (!on && S.pendente) { S.linhas.removeLayer(S.marcaPend); S.pendente = null; S.marcaPend = null; }
+        if (S.btnLinha) S.btnLinha.textContent = on ? 'Cancelar linha' : '✏️ Passar linha';
+        if (on) showToast('Passar linha', 'Clique no início e no fim da linha, passando por cima das casinhas.', 'info', 4500);
+    };
+    S.onMapClick = (e) => S.cliqueLinha(e.latlng);
+    S.cliqueLinha = (ll) => {
+        const ponto = () => L.circleMarker(ll, { radius: 5, color: '#f59e0b', fillColor: '#f59e0b', fillOpacity: 1 });
+        if (!S.pendente) {
+            S.pendente = ll;
+            S.marcaPend = ponto().addTo(S.linhas);
+            return;
+        }
+        const a = S.pendente, b = ll;
+        S.pendente = null; S.marcaPend = null;
+        L.polyline([a, b], { color: '#f59e0b', weight: 3, dashArray: '6 6' }).addTo(S.linhas);
+        ponto().addTo(S.linhas);
+        const achados = porLinha(a, b);
+        achados.forEach(g => marcar(g, true));
+        ativarLinha(false);
+        atualizar();
+        if (!achados.length) {
+            escreverMensagemIA('A linha não passou por nenhuma casinha. Aproxime o zoom e passe por cima delas.', 300);
+            return;
+        }
+        perguntarCadastro(`A linha passou por <strong>${achados.length}</strong> casinha(s).`);
+    };
+
+    const perguntarCadastro = (intro) => {
+        if (S.sel.size === 0) { showToast('Nada marcado', 'Marque ao menos uma casinha do IBGE.', 'warning'); return; }
+        S.perguntaEl && S.perguntaEl.remove();
+        S.perguntaEl = iaMensagemInterativa(`
+            ${intro ? intro + '<br>' : ''}Total marcado: <strong>${S.sel.size}</strong> casinha(s).<br>
+            Deseja <strong>cadastrar ${S.sel.size} survey(s)</strong> conforme o roteiro selecionado (<strong>${escapeHtml(nomeRua)}</strong>), aproveitando apenas a <strong>fachada</strong> e as <strong>coordenadas</strong> de cada uma?
+            <div class="ia-msg-actions" style="margin-top:8px;">
+                <button class="ia-btn ia-btn-success" data-acao="sim" type="button">Sim, cadastrar</button>
+                <button class="ia-btn ia-btn-secondary" data-acao="nao" type="button">Continuar marcando</button>
+            </div>`);
+        S.perguntaEl.querySelector('[data-acao="sim"]').addEventListener('click', () => {
+            S.perguntaEl.remove(); S.perguntaEl = null;
+            escreverMensagemUser('Sim, cadastrar');
+            cadastrarMarcadasIbge();
+        });
+        S.perguntaEl.querySelector('[data-acao="nao"]').addEventListener('click', () => {
+            S.perguntaEl.remove(); S.perguntaEl = null;
+            escreverMensagemUser('Continuar marcando');
+        });
+    };
+
+    S.painelEl = iaMensagemInterativa(`
+        Encontrei <strong>${_ibgeGrupos.length}</strong> casinha(s) do IBGE em <strong>${escapeHtml(nomeRua)}</strong> (brancas e translúcidas no mapa; clique em uma para ver a legenda).<br><br>
+        Para marcar: <strong>clique nas casinhas</strong> ou use <strong>Passar linha</strong> e eu marco todas por onde a linha passar.<br>
+        Marcadas: <strong id="ibgeContador"></strong>
+        <div class="ia-msg-actions" style="margin-top:8px;">
+            <button class="ia-btn ia-btn-success" data-acao="linha" type="button">✏️ Passar linha</button>
+            <button class="ia-btn ia-btn-secondary" data-acao="todas" type="button">Marcar todas</button>
+            <button class="ia-btn ia-btn-secondary" data-acao="limpar" type="button">Limpar marcação</button>
+        </div>
+        <div class="ia-msg-actions" style="margin-top:6px;">
+            <button class="ia-btn ia-btn-success" data-acao="cadastrar" type="button">Cadastrar marcadas</button>
+            <button class="ia-btn ia-btn-secondary" data-acao="encerrar" type="button">Encerrar</button>
+        </div>`);
+    S.contadorEl = S.painelEl.querySelector('#ibgeContador');
+    S.btnLinha = S.painelEl.querySelector('[data-acao="linha"]');
+    const bt = (a) => S.painelEl.querySelector(`[data-acao="${a}"]`);
+    S.btnLinha.addEventListener('click', () => ativarLinha(!S.modoLinha));
+    bt('todas').addEventListener('click', () => {
+        ativarLinha(false);
+        [..._ibgeGrupos]
+            .sort((x, y) => String(x.fachada).localeCompare(String(y.fachada), 'pt', { numeric: true }))
+            .forEach(g => marcar(g, true));
+        atualizar();
+        perguntarCadastro('Marquei todas as casinhas.');
+    });
+    bt('limpar').addEventListener('click', () => { [...S.sel].forEach(g => marcar(g, false)); atualizar(); });
+    bt('cadastrar').addEventListener('click', () => perguntarCadastro(''));
+    bt('encerrar').addEventListener('click', () => {
+        escreverMensagemUser('Encerrar');
+        encerrarSelecaoIbge();
+        escreverMensagemIA('Tudo bem! As casinhas do IBGE continuam no mapa só para consulta.', 300);
+    });
+    atualizar();
+}
+
+function cadastrarMarcadasIbge() {
+    const S = _ibgeSel;
+    const l = enderecoBaseSelecionado;
+    if (!S || !l) return;
+
+    const metros = (lat1, lng1, lat2, lng2) =>
+        Math.hypot((lat2 - lat1) * 110540, (lng2 - lng1) * 111320 * Math.cos(lat1 * Math.PI / 180));
+    const base = Date.now();
+    let criados = 0, ignorados = 0;
+
+    [...S.sel].forEach(g => {
+        const numero = String(g.fachada == null ? '' : g.fachada).trim();
+        // não duplica: mesmo número, na mesma rua e a menos de 3 m de um survey já cadastrado
+        const repetido = surveysMemoria.some(s => {
+            const sl = s.latitude != null ? Number(s.latitude) : null;
+            const sg = s.longitude != null ? Number(s.longitude) : null;
+            return sl != null && sg != null &&
+                _ibgeNorm(s.numero) === _ibgeNorm(numero) &&
+                _ibgeNorm(s.logradouro && s.logradouro.rua) === _ibgeNorm(l.rua) &&
+                metros(sl, sg, g.lat, g.lng) < 3;
+        });
+        if (repetido) { ignorados++; return; }
+        surveysMemoria.push({
+            _id: 'ibge_' + (++_surveyIdSeq),
+            _ia: true,
+            _ibge: true,
+            logradouro: { ...l },
+            numero: numero,
+            pisos: null,
+            zona: null,
+            observacoes: null,
+            imovel: null,
+            tipoImovel: null,
+            complementos: [],
+            latitude: +g.lat.toFixed(8),
+            longitude: +g.lng.toFixed(8),
+            created_at: new Date(base + criados).toISOString()   // mantém a ordem da marcação
+        });
+        criados++;
+    });
+
+    renderizarSurveys();
+    expandirCard('listPanel');
+    encerrarSelecaoIbge();
+
+    escreverMensagemIA(
+        `✅ Pronto! Criei <strong>${criados} survey(s)</strong> a partir do IBGE, com a fachada e as coordenadas de cada casinha.` +
+        (ignorados ? `<br>${ignorados} já estava(m) cadastrado(s) no mesmo ponto e foi(ram) ignorado(s).` : '') +
+        `<br><br>Eles aparecem na lista com <strong>fundo verde</strong> e a etiqueta <strong>🤖 IA</strong>.`,
+        300
+    );
+
+    // libera a IA para um novo ciclo (os surveys criados aqui não disparam a análise de padrão)
+    _iaCorte = surveysMemoria.length;
+    _iaJaDisparou = false;
+    _iaMeta = 0;
 }
 
 // ============================================
