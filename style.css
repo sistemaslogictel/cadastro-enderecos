@@ -1569,3 +1569,40 @@ tr.linha-ia .btn-ir {
     white-space: nowrap;
 }
 .leaflet-tooltip.survey-label::before { display: none; }
+
+/* ============================================
+   POPUP DE INFORMAÇÕES (botão "i" do cabeçalho)
+   ============================================ */
+.info-modal {
+    position: fixed; inset: 0;
+    z-index: 10000;
+    display: flex; align-items: center; justify-content: center;
+    padding: 20px;
+    background: rgba(15, 23, 42, 0.55);
+}
+.info-modal[hidden] { display: none; }
+.info-modal-box {
+    position: relative;
+    width: 100%; max-width: 420px;
+    background: var(--bg-card);
+    color: var(--text-primary);
+    border: 1px solid var(--border-light);
+    border-radius: var(--radius-lg);
+    box-shadow: var(--shadow-xl);
+    padding: 24px;
+}
+.info-modal-box h3 { font-size: 1.1rem; font-weight: 700; margin: 0 0 16px; }
+.info-modal-close {
+    position: absolute; top: 10px; right: 12px;
+    background: none; border: none; cursor: pointer;
+    font-size: 1.6rem; line-height: 1;
+    color: var(--text-secondary);
+}
+.info-modal-close:hover { color: var(--text-primary); }
+.info-modal-item { display: flex; flex-direction: column; gap: 2px; margin-top: 12px; }
+.info-modal-label {
+    font-size: 0.75rem; font-weight: 600;
+    text-transform: uppercase; letter-spacing: 0.04em;
+    color: var(--text-secondary);
+}
+.info-modal-value { font-size: 0.95rem; font-weight: 500; }
