@@ -455,7 +455,8 @@ const houseIconIA = L.divIcon({
 });
 
 // Cores das linhas desenhadas pela IA (cada linha = uma cor, repetindo se passar de 10)
-const PALETA_LINHAS = ['#16a34a', '#2563eb', '#dc2626', '#d97706', '#9333ea', '#0891b2', '#db2777', '#65a30d', '#ea580c', '#4f46e5'];
+// NUNCA usar vermelho: ele é reservado para o ponto clicado ainda não cadastrado.
+const PALETA_LINHAS = ['#16a34a', '#2563eb', '#d97706', '#9333ea', '#0891b2', '#65a30d', '#4f46e5', '#0d9488', '#a16207', '#c026d3'];
 const corLinha = (i) => PALETA_LINHAS[i % PALETA_LINHAS.length];
 const _iconesCor = {};
 function iconeCasaCor(cor) {
@@ -1900,19 +1901,13 @@ function popupSurveyHtml(s) {
     return `<strong>${escapeHtml(nome)}${rotulo ? ', ' + escapeHtml(rotulo) : ''}</strong>`;
 }
 
-// Clique na casinha mostra/esconde o rótulo embaixo dela. Troque para true para exibir sempre.
-const ROTULOS_SEMPRE_VISIVEIS = false;
-const _rotulosAbertos = new Set();   // ids com rótulo aberto (sobrevive à re-renderização dos marcadores)
+// O Nº da fachada e os complementos aparecem SÓ na legenda (popup) ao clicar na casinha.
+// Não existe mais rótulo fixo embaixo do survey.
+const _rotulosAbertos = new Set();   // mantido por compatibilidade
 function configurarRotuloSurvey(m, s) {
-    const abrir = () => {
-        const txt = textoRotuloSurvey(s);
-        if (!txt) return;
-        m.bindTooltip(escapeHtml(txt), { permanent: true, direction: 'bottom', offset: [0, 3], className: 'survey-label' }).openTooltip();
-        _rotulosAbertos.add(s._id);
-    };
-    const fechar = () => { m.unbindTooltip(); _rotulosAbertos.delete(s._id); };
-    m.on('click', () => { if (m.getTooltip()) fechar(); else abrir(); });
-    if (ROTULOS_SEMPRE_VISIVEIS || _rotulosAbertos.has(s._id)) abrir();
+    // Garante que nenhum rótulo "no pé" fique preso ao marcador
+    if (m.getTooltip && m.getTooltip()) m.unbindTooltip();
+    _rotulosAbertos.delete(s._id);
 }
 
 function renderizarMarcadoresSurveys() {
@@ -2721,8 +2716,8 @@ function perguntarLinhas(g) {
             </div>
             ${tipoPadrao && tipoPadrao !== 'sn' ? `
             <label style="display:flex;gap:6px;align-items:center;margin-top:8px;">
-                <input type="checkbox" id="iaLinReiniciar" ${tipoPadrao === 'complemento' ? 'checked' : ''}>
-                <span>Reiniciar a numeração em cada linha (ex.: A1, A2, A3… em todas)</span>
+                <input type="checkbox" id="iaLinReiniciar">
+                <span>Reiniciar a numeração em cada linha (por padrão a sequência continua entre as linhas)</span>
             </label>` : ''}
         </div>
         <small id="iaLinInfo" style="display:block;margin-top:6px;color:var(--text-tertiary)"></small>
