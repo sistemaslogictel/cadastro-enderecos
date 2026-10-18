@@ -386,6 +386,8 @@ function limparSetorIA() {
     _iaSetor = null;
 }
 let _surveyEditandoIdx = null;
+let _espSel = null;   // sessão em andamento: { sel:Set(_id), modoLinha, camada, painelEl, ... }
+let _modoIA = null;   // modo que continua ativo no mapa (IBGE e Espacialização); os demais são de uso único
 
 // ============================================
 // INICIAR
@@ -1475,7 +1477,10 @@ document.getElementById('coordsOkBtn').addEventListener('click', () => {
 // ADICIONAR AO SURVEY / SALVAR EDIÇÃO
 // ============================================
 document.getElementById('addBtn').addEventListener('click', async () => {
-    if (!enderecoBaseSelecionado || !enderecoBaseSelecionado._registro_id) {
+    // Em edição o survey já carrega o próprio logradouro: não exige escolher o roteiro de novo
+    const sEdicao = (_surveyEditandoIdx != null && surveysMemoria[_surveyEditandoIdx]) ? surveysMemoria[_surveyEditandoIdx] : null;
+    if (sEdicao && !enderecoBaseSelecionado) enderecoBaseSelecionado = { ...(sEdicao.logradouro || {}) };
+    if (!sEdicao && (!enderecoBaseSelecionado || !enderecoBaseSelecionado._registro_id)) {
         showToast('Sem logradouro do roteiro', 'Selecione um logradouro na busca primeiro.', 'warning', 6000);
         return;
     }
@@ -1485,12 +1490,15 @@ document.getElementById('addBtn').addEventListener('click', async () => {
 
     const pisos = (document.getElementById('pisosInput')?.value || '').trim();
     const zona = (document.getElementById('zonaInput')?.value || '').trim().toUpperCase();
-    if (!zona) {
+    // Zona é obrigatória ao cadastrar. Ao editar, só exige se o survey já tinha zona
+    // (surveys criados pela IA/IBGE nascem sem zona e antes não conseguiam ser salvos na edição).
+    const zonaObrigatoria = !sEdicao || !!(sEdicao.zona && String(sEdicao.zona).trim());
+    if (!zona && zonaObrigatoria) {
         showToast('Zona obrigatória', 'Preencha o campo Zona para cadastrar o survey.', 'warning', 4000);
         document.getElementById('zonaInput')?.focus();
         return;
     }
-    salvarZonaNoBanco(zona); // grava/atualiza no histórico de zonas
+    if (zona) salvarZonaNoBanco(zona); // grava/atualiza no histórico de zonas
     const obs = (document.getElementById('obsInput')?.value || '').trim();
     const imovel = (document.getElementById('imovelInput')?.value || '').trim();
     const tipoImovel = (document.getElementById('tipoImovelInput')?.value || '').trim();
@@ -1513,8 +1521,8 @@ document.getElementById('addBtn').addEventListener('click', async () => {
     if (comp3Tipo || comp3Valor) complementos.push({ tipo: comp3Tipo || '', valor: comp3Valor || '' });
 
     // ===== CASO 1: SALVAR EDIÇÃO =====
-    if (_surveyEditandoIdx != null && surveysMemoria[_surveyEditandoIdx]) {
-        const s = surveysMemoria[_surveyEditandoIdx];
+    if (sEdicao) {
+        const s = sEdicao;
         s.logradouro = { ...enderecoBaseSelecionado };
         s.numero = numero;
         s.pisos = pisos || null;
@@ -1527,17 +1535,22 @@ document.getElementById('addBtn').addEventListener('click', async () => {
         s.longitude = lng;
         s._ia = false;
 
-        showToast('Edição salva', 'Survey atualizado.', 'success', 2500);
-
-        ['numeroInput','pisosInput','zonaInput','obsInput','imovelInput','tipoImovelInput','comp1Tipo','comp1Valor','comp2Tipo','comp2Valor','comp3Tipo','comp3Valor'].forEach(id => {
-            const el = document.getElementById(id);
-            if (el) el.value = '';
-        });
-
-        cancelarEdicaoSurvey(true);
-        fixarMarcadorPendente();
-        renderizarSurveys();
-        irParaListaAposSalvar();
+        // Sai do modo edição ANTES de redesenhar a tela: mesmo que algo falhe depois, o modo não fica preso
+        try {
+            ['numeroInput','pisosInput','zonaInput','obsInput','imovelInput','tipoImovelInput','comp1Tipo','comp1Valor','comp2Tipo','comp2Valor','comp3Tipo','comp3Valor'].forEach(id => {
+                const el = document.getElementById(id);
+                if (el) el.value = '';
+            });
+            cancelarEdicaoSurvey(true);
+            fixarMarcadorPendente();
+            renderizarSurveys();
+            irParaListaAposSalvar();
+            showToast('Edição salva', 'Survey atualizado.', 'success', 2500);
+        } catch (err) {
+            console.error('[Edição] erro ao atualizar a tela após salvar:', err);
+            _surveyEditandoIdx = null;
+            showToast('Edição salva', 'O survey foi atualizado, mas a tela não recarregou por completo. Atualize a lista se precisar.', 'warning', 6000);
+        }
         return;
     }
 
@@ -2042,8 +2055,9 @@ function renderizarMarcadoresSurveys() {
         const lng = s.longitude != null ? Number(s.longitude) : (s.logradouro && s.logradouro.lng);
         if (lat == null || lng == null) return;
         const editando = (_surveyEditandoIdx === idx);
+        const selEsp = !!(_espSel && _espSel.sel.has(s._id));   // amarelo = selecionado na Espacialização
         const m = L.marker([lat, lng], {
-            icon: editando ? iconeEdicao() : iconeSurvey(s),   // vermelho piscando = em edição
+            icon: editando ? iconeEdicao() : (selEsp ? iconeCasaCor('#facc15') : iconeSurvey(s)),   // vermelho piscando = em edição
             draggable: false,
             zIndexOffset: editando ? 2000 : 0
         }).addTo(map);
@@ -2051,9 +2065,17 @@ function renderizarMarcadoresSurveys() {
         m.bindPopup(popupSurveyHtml(s));
         configurarRotuloSurvey(m, s);
         tornarMarcadorArrastavel(m, s);
+        // Espacialização: o clique seleciona/desmarca (ou marca um ponto da linha)
+        m.on('click', () => {
+            if (!_espSel) return;
+            m.closePopup();
+            if (_espSel.modoLinha) _espSel.onMapClick({ latlng: m.getLatLng() });
+            else _espSel.alternar(s);
+        });
         // dois cliques na casinha = entrar em modo de edição
         m.on('dblclick', (ev) => {
             if (ev.originalEvent) L.DomEvent.stop(ev.originalEvent);
+            if (_espSel) return;   // durante a Espacialização os cliques são de seleção
             m.closePopup();
             abrirEdicaoSurvey(idx);
         });
@@ -2505,10 +2527,24 @@ function inicializarChatIA() {
     if (iaFabEl) iaFabEl.style.display = 'none';
     if (iaCloseBtn) iaCloseBtn.style.display = 'none';   // não há mais "fechar": só minimizar
     iaMensagemInterativa(
-        `Olá! Eu sou a <strong>IA Logictel</strong>. 👋<br>
-        Digite <strong>Verificar IBGE</strong> para ver as fachadas do IBGE do logradouro escolhido. 
-        Quando você cadastrar 5 surveys no mesmo endereço, eu também procuro o padrão.`
+        `<div class="ia-card-title">👋 Olá! Eu sou a IA Logictel</div>
+        Escolha um modo nos botões acima ou digite o nome dele:
+        <ul class="ia-lista">
+            <li><strong>IBGE</strong> mostra as fachadas do IBGE e cadastra as que você marcar.</li>
+            <li><strong>Padrões</strong> procura sequências nos surveys cadastrados.</li>
+            <li><strong>Linhas</strong> cadastra seguindo linhas que você desenha no mapa.</li>
+            <li><strong>Espacializar</strong> alinha surveys em uma linha, mantendo a distância entre eles.</li>
+        </ul>
+        <small>Ao cadastrar 5 surveys no mesmo endereço, eu também procuro o padrão automaticamente.</small>`
     );
+
+    document.querySelectorAll('#iaModes .ia-mode').forEach(b => {
+        b.addEventListener('click', () => {
+            abrirChatIA();
+            escreverMensagemUser(NOMES_MODO_IA[b.dataset.modo] || b.dataset.modo);
+            executarModoIA(b.dataset.modo);
+        });
+    });
 
     iaChatHeader?.addEventListener('click', (e) => {
         if (e.target.closest('.ia-chat-actions')) return;
@@ -2531,7 +2567,7 @@ function inicializarChatIA() {
 
     document.getElementById('detectarPadroesBtn')?.addEventListener('click', () => {
         abrirChatIA();
-        detectarPadroes(true);
+        executarModoIA('padroes');
     });
 
     // caixa de texto do chat: o usuário pode digitar comandos (ex.: "Verificar IBGE")
@@ -2570,10 +2606,29 @@ function intencaoVerificarIbge(txt) {
     if (n.replace(/\s/g, '').includes('ibge')) return true;        // "verificaribge", "ibge", "ver o ibge"...
     return n.split(' ').some(t => t.length >= 3 && t.length <= 6 && _distEdicao(t, 'ibge') <= 1);   // "ibje", "ibg", "igbe"...
 }
+// ---- modos da IA (botões acima do chat e comandos digitados) ----
+const NOMES_MODO_IA = { ibge: 'Verificar IBGE', padroes: 'Detectar padrões', linhas: 'Desenhar linhas', espacializacao: 'Espacialização' };
+function definirModoIA(modo) {
+    _modoIA = modo || null;
+    document.querySelectorAll('#iaModes .ia-mode').forEach(b => b.classList.toggle('active', b.dataset.modo === _modoIA));
+}
+function executarModoIA(modo) {
+    // um modo por vez: ao trocar, encerra a marcação/seleção que estava aberta
+    if (modo !== 'ibge') encerrarSelecaoIbge(true);
+    if (modo !== 'espacializacao') encerrarEspacializacao();
+    if (modo === 'ibge') iniciarVerificacaoIbge();
+    else if (modo === 'padroes') detectarPadroes(true);
+    else if (modo === 'linhas') iniciarDesenhoLinhas();
+    else if (modo === 'espacializacao') iniciarEspacializacao();
+}
 function processarComandoChatIA(txt) {
     escreverMensagemUser(txt);
-    if (intencaoVerificarIbge(txt)) { iniciarVerificacaoIbge(); return; }
-    escreverMensagemIA('Não entendi esse comando. Por enquanto eu entendo: <strong>Verificar IBGE</strong>.', 300);
+    const n = _normTxt(txt);
+    if (/espac|alinh|organiz/.test(n)) { executarModoIA('espacializacao'); return; }
+    if (intencaoVerificarIbge(txt)) { executarModoIA('ibge'); return; }
+    if (/padr/.test(n)) { executarModoIA('padroes'); return; }
+    if (/linha/.test(n)) { executarModoIA('linhas'); return; }
+    escreverMensagemIA('Não entendi esse comando. Eu entendo: <strong>IBGE</strong>, <strong>Padrões</strong>, <strong>Linhas</strong> e <strong>Espacialização</strong>. Você também pode usar os botões acima.', 300);
 }
 
 function abrirChatIA() {
@@ -4379,6 +4434,7 @@ function encerrarSelecaoIbge(silencioso) {
     S.sel.forEach(g => { if (g.marker) { g.marker.setIcon(_ibgeIcone(g, false)); g.marker.setZIndexOffset(-1000); } });
     S.painelEl && S.painelEl.remove();
     S.perguntaEl && S.perguntaEl.remove();
+    if (_modoIA === 'ibge') definirModoIA(null);
 }
 
 async function iniciarVerificacaoIbge() {
@@ -4500,17 +4556,25 @@ function iniciarSelecaoIbge(nomeRua) {
         });
     };
 
+    definirModoIA('ibge');
     S.painelEl = iaMensagemInterativa(`
-        Encontrei <strong>${_ibgeGrupos.filter(g => !g.usada).length}</strong> casinha(s) do IBGE em <strong>${escapeHtml(nomeRua)}</strong> (brancas e translúcidas no mapa; clique em uma para ver a legenda).<br><br>
-        Para marcar: <strong>clique nas casinhas</strong> ou use <strong>Passar linha</strong> e eu marco todas por onde a linha passar.<br>
-        <small>Cruzamento com o roteiro: <strong>${escapeHtml(_ibgeCriterio || '—')}</strong>.</small><br>
-        Marcadas: <strong id="ibgeContador"></strong>
-        <div class="ia-msg-actions" style="margin-top:8px;">
-            <button class="ia-btn ia-btn-success" data-acao="linha" type="button">✏️ Passar linha</button>
-            <button class="ia-btn ia-btn-secondary" data-acao="todas" type="button">Marcar todas</button>
-            <button class="ia-btn ia-btn-secondary" data-acao="limpar" type="button">Limpar marcação</button>
+        <div class="ia-card-title">🏠 Verificar IBGE</div>
+        <strong>${escapeHtml(nomeRua)}</strong>
+        <small>Cruzamento com o roteiro: ${escapeHtml(_ibgeCriterio || '—')}</small>
+        <div class="ia-stats">
+            <span class="ia-stat">Disponíveis <strong>${_ibgeGrupos.filter(g => !g.usada).length}</strong></span>
+            <span class="ia-stat ia-stat-destaque">Marcadas <strong id="ibgeContador"></strong></span>
         </div>
-        <div class="ia-msg-actions" style="margin-top:6px;">
+        <ol class="ia-passos">
+            <li>Clique nas casinhas brancas do mapa, ou use <strong>Passar linha</strong> para marcar todas por onde a linha passar.</li>
+            <li>Clique em <strong>Cadastrar marcadas</strong>. Fachadas repetidas também são cadastradas.</li>
+        </ol>
+        <div class="ia-msg-actions">
+            <button class="ia-btn ia-btn-secondary" data-acao="linha" type="button">✏️ Passar linha</button>
+            <button class="ia-btn ia-btn-secondary" data-acao="todas" type="button">Marcar todas</button>
+            <button class="ia-btn ia-btn-secondary" data-acao="limpar" type="button">Limpar</button>
+        </div>
+        <div class="ia-msg-actions">
             <button class="ia-btn ia-btn-success" data-acao="cadastrar" type="button">Cadastrar marcadas</button>
             <button class="ia-btn ia-btn-secondary" data-acao="encerrar" type="button">Encerrar</button>
         </div>`);
@@ -4541,23 +4605,13 @@ function cadastrarMarcadasIbge() {
     const l = enderecoBaseSelecionado;
     if (!S || !l) return;
 
-    const metros = (lat1, lng1, lat2, lng2) =>
-        Math.hypot((lat2 - lat1) * 110540, (lng2 - lng1) * 111320 * Math.cos(lat1 * Math.PI / 180));
     const base = Date.now();
-    let criados = 0, ignorados = 0;
+    let criados = 0;
 
     [...S.sel].forEach(g => {
         const numero = String(g.fachada == null ? '' : g.fachada).trim();
-        // não duplica: mesmo número, na mesma rua e a menos de 3 m de um survey já cadastrado
-        const repetido = surveysMemoria.some(s => {
-            const sl = s.latitude != null ? Number(s.latitude) : null;
-            const sg = s.longitude != null ? Number(s.longitude) : null;
-            return sl != null && sg != null &&
-                _ibgeNorm(s.numero) === _ibgeNorm(numero) &&
-                _ibgeNorm(s.logradouro && s.logradouro.rua) === _ibgeNorm(l.rua) &&
-                metros(sl, sg, g.lat, g.lng) < 3;
-        });
-        if (repetido) { ignorados++; return; }
+        // Fachada repetida é permitida: cada casinha marcada vira um survey, mesmo que já exista outro com o mesmo número.
+        // (Uma mesma casinha não é cadastrada duas vezes porque, depois de usada, ela some da seleção.)
         surveysMemoria.push({
             _id: 'ibge_' + (++_surveyIdSeq),
             _ia: true,
@@ -4584,7 +4638,6 @@ function cadastrarMarcadasIbge() {
 
     escreverMensagemIA(
         `✅ Pronto! Criei <strong>${criados} survey(s)</strong> a partir do IBGE, com a fachada e as coordenadas de cada casinha.` +
-        (ignorados ? `<br>${ignorados} já estava(m) cadastrado(s) no mesmo ponto e foi(ram) ignorado(s).` : '') +
         `<br><br>Eles aparecem na lista com <strong>fundo verde</strong> e a etiqueta <strong>🤖 IA</strong>.`,
         300
     );
@@ -4593,6 +4646,184 @@ function cadastrarMarcadasIbge() {
     _iaCorte = surveysMemoria.length;
     _iaJaDisparou = false;
     _iaMeta = 0;
+}
+
+// ============================================
+// IA — ESPACIALIZAÇÃO
+// Seleciona surveys já cadastrados, o usuário marca 2 pontos (uma linha) e os surveys
+// são alinhados sobre ela, na mesma ordem e mantendo a distância original entre um e outro.
+// ============================================
+
+function encerrarEspacializacao() {
+    const E = _espSel;
+    if (!E) return;
+    _espSel = null;
+    if (E.modoLinha) { map.off('click', E.onMapClick); map.getContainer().style.cursor = ''; }
+    if (E.camada) map.removeLayer(E.camada);
+    E.painelEl && E.painelEl.remove();
+    if (_modoIA === 'espacializacao') definirModoIA(null);
+    renderizarMarcadoresSurveys();   // tira o destaque amarelo
+}
+
+function iniciarEspacializacao() {
+    abrirChatIA();
+    encerrarSelecaoIbge(true);
+    encerrarEspacializacao();
+
+    const temCoord = (s) => s.latitude != null && s.longitude != null && !isNaN(Number(s.latitude)) && !isNaN(Number(s.longitude));
+    const disponiveis = () => surveysMemoria.filter(temCoord);
+    if (disponiveis().length < 2) {
+        escreverMensagemIA('Para espacializar preciso de pelo menos <strong>2 surveys</strong> cadastrados com coordenadas.', 300);
+        return;
+    }
+
+    const M_LAT = 110540;
+    const mLng = (lat) => 111320 * Math.cos(lat * Math.PI / 180);
+
+    const E = {
+        sel: new Set(), modoLinha: false, pendente: null, marca: null,
+        camada: L.layerGroup().addTo(map), painelEl: null, contadorEl: null, btnLinha: null
+    };
+    _espSel = E;
+    definirModoIA('espacializacao');
+
+    const pintar = (s) => {
+        const m = marcadoresSurveys.find(x => x._sid === s._id);
+        if (m) m.setIcon(E.sel.has(s._id) ? iconeCasaCor('#facc15') : iconeSurvey(s));
+    };
+    E.atualizar = () => {
+        E.contadorEl.textContent = `${E.sel.size} de ${disponiveis().length}`;
+        E.btnLinha.disabled = E.sel.size < 2 && !E.modoLinha;
+    };
+    E.alternar = (s) => {
+        if (_surveyEditandoIdx != null && surveysMemoria[_surveyEditandoIdx] === s) return;   // survey em edição não entra
+        if (E.sel.has(s._id)) E.sel.delete(s._id); else E.sel.add(s._id);
+        pintar(s);
+        E.atualizar();
+    };
+
+    const ativarLinha = (on) => {
+        if (E.modoLinha === on) return;
+        E.modoLinha = on;
+        map.getContainer().style.cursor = on ? 'crosshair' : '';
+        if (on) map.on('click', E.onMapClick); else map.off('click', E.onMapClick);
+        if (!on && E.marca) { E.camada.removeLayer(E.marca); E.marca = null; E.pendente = null; }
+        E.btnLinha.textContent = on ? 'Cancelar linha' : '📐 Definir linha';
+        E.atualizar();
+        if (on) showToast('Definir linha', 'Clique no ponto inicial e depois no ponto final da linha.', 'info', 4500);
+    };
+
+    const aplicar = (a, b) => {
+        ativarLinha(false);
+        const lista = [...E.sel].map(id => surveysMemoria.find(s => s._id === id)).filter(s => s && temCoord(s));
+        const k = mLng(a.lat);
+        const xy = (lat, lng) => ({ x: (lng - a.lng) * k, y: (lat - a.lat) * M_LAT });
+        const vb = xy(b.lat, b.lng);
+        const comp = Math.hypot(vb.x, vb.y);
+        if (comp < 0.5) {
+            showToast('Pontos muito próximos', 'Marque dois pontos mais distantes para formar a linha.', 'warning', 4000);
+            return;
+        }
+        const ux = vb.x / comp, uy = vb.y / comp;
+
+        // ordem: a posição de cada survey projetada sobre a direção da linha (do ponto inicial para o final)
+        const itens = lista
+            .map((s, i) => { const p = xy(Number(s.latitude), Number(s.longitude)); return { s, p, t: p.x * ux + p.y * uy, i }; })
+            .sort((m, n) => (m.t - n.t) || (m.i - n.i));
+
+        const original = itens.map(it => ({ s: it.s, lat: it.s.latitude, lng: it.s.longitude }));
+
+        // o 1º vai para o ponto inicial; cada seguinte fica à mesma distância (em metros) do anterior que tinha originalmente
+        let acum = 0;
+        itens.forEach((it, n) => {
+            if (n > 0) acum += Math.hypot(it.p.x - itens[n - 1].p.x, it.p.y - itens[n - 1].p.y);
+            it.s.latitude = +(a.lat + (uy * acum) / M_LAT).toFixed(8);
+            it.s.longitude = +(a.lng + (ux * acum) / k).toFixed(8);
+        });
+
+        const qtd = itens.length;
+        const alem = acum - comp;
+        encerrarEspacializacao();   // redesenha os marcadores nas novas posições
+
+        const msg = iaMensagemInterativa(`
+            <div class="ia-card-title">✅ Espacialização concluída</div>
+            <strong>${qtd} surveys</strong> foram alinhados na linha, na mesma ordem e com a distância original entre cada um.
+            <div class="ia-stats">
+                <span class="ia-stat">Extensão <strong>${acum.toFixed(1)} m</strong></span>
+                <span class="ia-stat">Linha <strong>${comp.toFixed(1)} m</strong></span>
+            </div>
+            ${alem > 0.5 ? `<small>O conjunto é maior que a linha: os últimos ficaram até ${alem.toFixed(1)} m além do ponto final.</small>` : ''}
+            <div class="ia-msg-actions">
+                <button class="ia-btn ia-btn-secondary" data-acao="desfazer" type="button">↩️ Desfazer</button>
+            </div>`);
+        msg.querySelector('[data-acao="desfazer"]').addEventListener('click', () => {
+            original.forEach(o => { o.s.latitude = o.lat; o.s.longitude = o.lng; });
+            renderizarMarcadoresSurveys();
+            msg.querySelector('.ia-msg-actions').remove();
+            escreverMensagemUser('Desfazer');
+            escreverMensagemIA('Pronto, os surveys voltaram às posições originais.', 300);
+        });
+    };
+
+    E.onMapClick = (e) => {
+        const ponto = () => L.circleMarker(e.latlng, { radius: 5, color: '#7c3aed', fillColor: '#7c3aed', fillOpacity: 1 });
+        if (!E.pendente) {
+            E.pendente = e.latlng;
+            E.marca = ponto().addTo(E.camada);
+            return;
+        }
+        const a = E.pendente, b = e.latlng;
+        E.pendente = null; E.marca = null;
+        L.polyline([a, b], { color: '#7c3aed', weight: 3, dashArray: '6 6' }).addTo(E.camada);
+        ponto().addTo(E.camada);
+        aplicar(a, b);
+    };
+
+    E.painelEl = iaMensagemInterativa(`
+        <div class="ia-card-title">📐 Espacialização</div>
+        Organiza surveys já cadastrados em linha reta, <strong>mantendo a distância original</strong> entre um e outro.
+        <div class="ia-stats">
+            <span class="ia-stat ia-stat-destaque">Selecionados <strong id="espContador"></strong></span>
+        </div>
+        <ol class="ia-passos">
+            <li>Clique nas casinhas dos surveys no mapa (ficam amarelas). Clique de novo para desmarcar.</li>
+            <li>Clique em <strong>Definir linha</strong> e marque <strong>2 pontos</strong> no mapa.</li>
+        </ol>
+        <div class="ia-msg-actions">
+            <button class="ia-btn ia-btn-secondary" data-acao="todos" type="button">Selecionar todos</button>
+            <button class="ia-btn ia-btn-secondary" data-acao="limpar" type="button">Limpar</button>
+        </div>
+        <div class="ia-msg-actions">
+            <button class="ia-btn ia-btn-success" data-acao="linha" type="button">📐 Definir linha</button>
+            <button class="ia-btn ia-btn-secondary" data-acao="encerrar" type="button">Encerrar</button>
+        </div>`);
+    E.contadorEl = E.painelEl.querySelector('#espContador');
+    E.btnLinha = E.painelEl.querySelector('[data-acao="linha"]');
+    const bt = (a) => E.painelEl.querySelector(`[data-acao="${a}"]`);
+    E.btnLinha.addEventListener('click', () => {
+        if (E.modoLinha) { ativarLinha(false); return; }
+        if (E.sel.size < 2) { showToast('Selecione surveys', 'Marque ao menos 2 surveys antes de definir a linha.', 'warning', 3500); return; }
+        ativarLinha(true);
+    });
+    bt('todos').addEventListener('click', () => {
+        disponiveis().forEach(s => {
+            if (_surveyEditandoIdx != null && surveysMemoria[_surveyEditandoIdx] === s) return;
+            E.sel.add(s._id); pintar(s);
+        });
+        E.atualizar();
+    });
+    bt('limpar').addEventListener('click', () => {
+        ativarLinha(false);
+        const ids = [...E.sel]; E.sel.clear();
+        ids.forEach(id => { const s = surveysMemoria.find(x => x._id === id); if (s) pintar(s); });
+        E.atualizar();
+    });
+    bt('encerrar').addEventListener('click', () => {
+        escreverMensagemUser('Encerrar');
+        encerrarEspacializacao();
+        escreverMensagemIA('Tudo bem! Nada foi alterado.', 300);
+    });
+    E.atualizar();
 }
 
 // ============================================

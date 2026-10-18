@@ -589,7 +589,7 @@
                         </svg>
                         <h2 class="card-title">Mapa</h2>
                         <label class="ibge-toggle-hdr" title="Mostrar ou ocultar as casinhas brancas do IBGE">
-                            <input type="checkbox" id="ibgeToggleHdr" checked> Casinhas IBGE
+                            <input type="checkbox" id="ibgeToggleHdr" checked> IBGE
                         </label>
                         <div class="map-tabs">
                             <button class="map-tab" data-layer="mub" type="button" title="MUB (arquivo .mbtiles georreferenciado)">MUB</button>
@@ -639,10 +639,25 @@
             </div>
         </div>
 
+        <div class="ia-modes" id="iaModes" role="toolbar" aria-label="Modos da IA">
+            <button class="ia-mode" type="button" data-modo="ibge" title="Verificar fachadas do IBGE e cadastrar">
+                <span class="ia-mode-ico" aria-hidden="true">🏠</span><span>IBGE</span>
+            </button>
+            <button class="ia-mode" type="button" data-modo="padroes" title="Detectar padrões nos surveys cadastrados">
+                <span class="ia-mode-ico" aria-hidden="true">🔍</span><span>Padrões</span>
+            </button>
+            <button class="ia-mode" type="button" data-modo="linhas" title="Desenhar linhas no mapa para cadastrar">
+                <span class="ia-mode-ico" aria-hidden="true">📏</span><span>Linhas</span>
+            </button>
+            <button class="ia-mode" type="button" data-modo="espacializacao" title="Alinhar surveys em uma linha mantendo as distâncias">
+                <span class="ia-mode-ico" aria-hidden="true">📐</span><span>Espacializar</span>
+            </button>
+        </div>
+
         <div class="ia-chat-body" id="iaChatBody"></div>
 
         <div class="ia-chat-footer" id="iaChatFooter">
-            <input type="text" id="iaChatInput" placeholder="Digite um comando (ex.: Verificar IBGE)" autocomplete="off">
+            <input type="text" id="iaChatInput" placeholder="Ou digite: IBGE, padrões, linhas, espacializar" autocomplete="off">
             <button id="iaChatSendBtn" type="button" title="Enviar" aria-label="Enviar">
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                     <line x1="22" y1="2" x2="11" y2="13"></line>
