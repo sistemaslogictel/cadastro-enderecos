@@ -551,6 +551,17 @@ function iconeEdicao() {
 function iconeSurvey(s) {
     return s._cor ? iconeCasaCor(s._cor) : (s._ia ? houseIconIA : houseIcon);
 }
+// Acrescenta o número da fachada sempre visível embaixo da casinha (igual às casinhas do IBGE)
+function iconeComNumero(icone, s) {
+    const num = (s && s.numero != null ? String(s.numero) : '').trim();
+    if (!num) return icone;
+    const o = icone.options;
+    return L.divIcon({
+        className: o.className,
+        html: `${o.html}<span class="house-num">${escapeHtml(num)}</span>`,
+        iconSize: o.iconSize, iconAnchor: o.iconAnchor, popupAnchor: o.popupAnchor
+    });
+}
 
 // Casinha VERMELHA = posição ainda não cadastrada (pendente)
 const houseIconPendente = L.divIcon({
@@ -1998,7 +2009,7 @@ function renderizarSurveys() {
             }
             map.setView([lat, lng], 18);
             if (marcadorAtual) map.removeLayer(marcadorAtual);
-            marcadorAtual = L.marker([lat, lng], { icon: iconeSurvey(s), draggable: false }).addTo(map);
+            marcadorAtual = L.marker([lat, lng], { icon: iconeComNumero(iconeSurvey(s), s), draggable: false }).addTo(map);
             marcadorAtual.bindPopup(popupSurveyHtml(s)).openPopup();
             tornarMarcadorArrastavel(marcadorAtual, s);
             document.getElementById('panel2').scrollIntoView({ behavior: 'smooth', block: 'start' });
@@ -2057,7 +2068,7 @@ function renderizarMarcadoresSurveys() {
         const editando = (_surveyEditandoIdx === idx);
         const selEsp = !!(_espSel && _espSel.sel.has(s._id));   // amarelo = selecionado na Espacialização
         const m = L.marker([lat, lng], {
-            icon: editando ? iconeEdicao() : (selEsp ? iconeCasaCor('#facc15') : iconeSurvey(s)),   // vermelho piscando = em edição
+            icon: iconeComNumero(editando ? iconeEdicao() : (selEsp ? iconeCasaCor('#facc15') : iconeSurvey(s)), s),   // vermelho piscando = em edição; número da fachada sempre visível
             draggable: false,
             zIndexOffset: editando ? 2000 : 0
         }).addTo(map);
@@ -4747,7 +4758,7 @@ function iniciarEspacializacao() {
 
     const pintar = (s) => {
         const m = marcadoresSurveys.find(x => x._sid === s._id);
-        if (m) m.setIcon(E.sel.has(s._id) ? iconeCasaCor('#facc15') : iconeSurvey(s));
+        if (m) m.setIcon(iconeComNumero(E.sel.has(s._id) ? iconeCasaCor('#facc15') : iconeSurvey(s), s));
     };
     E.fase = 'selecao';   // 'selecao' (escolhendo os surveys) → 'linha' (seleção confirmada, marcando os 2 pontos)
     E.atualizar = () => {
