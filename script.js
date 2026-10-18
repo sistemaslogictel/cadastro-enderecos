@@ -2696,6 +2696,42 @@ function escreverMensagemUser(texto) {
 }
 
 // ============================================
+// IA — PEDIR A ZONA (toda criação feita pela IA precisa de zona)
+// ============================================
+function pedirZonaIA(texto, aoConfirmar, aoCancelar) {
+    abrirChatIA();
+    const sugerida = (document.getElementById('zonaInput')?.value || '').trim().toUpperCase();
+    const div = iaMensagemInterativa(`
+        <div class="ia-card-title">🗺️ Zona</div>
+        ${texto}
+        <div class="ia-msg-input-group">
+            <input type="text" list="zonaDatalist" placeholder="Digite a zona" autocomplete="off" value="${escapeHtml(sugerida)}">
+            <button class="ia-btn ia-btn-success" data-acao="ok" type="button">Confirmar</button>
+        </div>
+        <div class="ia-msg-actions">
+            <button class="ia-btn ia-btn-secondary" data-acao="cancelar" type="button">Cancelar</button>
+        </div>`);
+    const inp = div.querySelector('input');
+    const confirmar = () => {
+        const zona = inp.value.trim().toUpperCase();
+        if (!zona) { showToast('Zona obrigatória', 'Informe a zona para cadastrar.', 'warning', 3500); inp.focus(); return; }
+        salvarZonaNoBanco(zona);   // grava/atualiza no histórico de zonas
+        div.remove();
+        escreverMensagemUser(zona);
+        aoConfirmar(zona);
+    };
+    div.querySelector('[data-acao="ok"]').addEventListener('click', confirmar);
+    inp.addEventListener('keypress', (e) => { if (e.key === 'Enter') { e.preventDefault(); confirmar(); } });
+    div.querySelector('[data-acao="cancelar"]').addEventListener('click', () => {
+        div.remove();
+        escreverMensagemUser('Cancelar');
+        if (aoCancelar) aoCancelar();
+    });
+    inp.focus();
+    return div;
+}
+
+// ============================================
 // IA — VERIFICAR SE DEVE DISPARAR APÓS 5 SURVEYS
 // ============================================
 function verificarIAAutomatica() {
@@ -3508,6 +3544,22 @@ function gerarSequenciaIA(quantidade, posicoes, opts = {}) {
     const pad = iaPendencia;
     const ultimos = pad.ultimos;
 
+    // Os novos surveys herdam o último; se ele não tem zona, pergunta antes de criar
+    const baseSv = ultimos && ultimos[ultimos.length - 1];
+    if (!opts._zona && baseSv && !(baseSv.zona && String(baseSv.zona).trim())) {
+        pedirZonaIA(
+            `Qual a <strong>zona</strong> dos <strong>${quantidade} survey(s)</strong> que vou criar?`,
+            (zona) => gerarSequenciaIA(quantidade, posicoes, { ...opts, _zona: zona }),
+            () => {
+                escreverMensagemIA('Tudo bem! Não criei nada.', 300);
+                iaPendencia = null;
+                limparSetorIA();
+                _iaJaDisparou = false;
+            }
+        );
+        return;
+    }
+
     let deltaLat = 0, deltaLng = 0, contDelta = 0;
     for (let i = 1; i < ultimos.length; i++) {
         const a = ultimos[i - 1];
@@ -3547,6 +3599,7 @@ function gerarSequenciaIA(quantidade, posicoes, opts = {}) {
         novo._ia = true;
         if (posicoes && posicoes[i - 1].cor) novo._cor = posicoes[i - 1].cor; else delete novo._cor;
         novo.created_at = new Date().toISOString();
+        if (opts._zona) novo.zona = opts._zona;
 
         if (pad.tipo === 'fachada') {
             novo.numero = String(pad.ultimoValor + pad.delta * idx);
@@ -4434,6 +4487,7 @@ function encerrarSelecaoIbge(silencioso) {
     S.sel.forEach(g => { if (g.marker) { g.marker.setIcon(_ibgeIcone(g, false)); g.marker.setZIndexOffset(-1000); } });
     S.painelEl && S.painelEl.remove();
     S.perguntaEl && S.perguntaEl.remove();
+    S.zonaEl && S.zonaEl.remove();
     if (_modoIA === 'ibge') definirModoIA(null);
 }
 
@@ -4548,7 +4602,11 @@ function iniciarSelecaoIbge(nomeRua) {
         S.perguntaEl.querySelector('[data-acao="sim"]').addEventListener('click', () => {
             S.perguntaEl.remove(); S.perguntaEl = null;
             escreverMensagemUser('Sim, cadastrar');
-            cadastrarMarcadasIbge();
+            S.zonaEl = pedirZonaIA(
+                `Qual a <strong>zona</strong> dos <strong>${S.sel.size} survey(s)</strong> que vou cadastrar?`,
+                (zona) => { S.zonaEl = null; cadastrarMarcadasIbge(zona); },
+                () => { S.zonaEl = null; escreverMensagemIA('Cadastro cancelado. As casinhas continuam marcadas; clique em <strong>Cadastrar marcadas</strong> quando quiser.', 300); }
+            );
         });
         S.perguntaEl.querySelector('[data-acao="nao"]').addEventListener('click', () => {
             S.perguntaEl.remove(); S.perguntaEl = null;
@@ -4600,7 +4658,7 @@ function iniciarSelecaoIbge(nomeRua) {
     atualizar();
 }
 
-function cadastrarMarcadasIbge() {
+function cadastrarMarcadasIbge(zona) {
     const S = _ibgeSel;
     const l = enderecoBaseSelecionado;
     if (!S || !l) return;
@@ -4620,7 +4678,7 @@ function cadastrarMarcadasIbge() {
             logradouro: { ...l },
             numero: numero,
             pisos: null,
-            zona: null,
+            zona: zona || null,
             observacoes: null,
             imovel: null,
             tipoImovel: null,
@@ -4691,11 +4749,13 @@ function iniciarEspacializacao() {
         const m = marcadoresSurveys.find(x => x._sid === s._id);
         if (m) m.setIcon(E.sel.has(s._id) ? iconeCasaCor('#facc15') : iconeSurvey(s));
     };
+    E.fase = 'selecao';   // 'selecao' (escolhendo os surveys) → 'linha' (seleção confirmada, marcando os 2 pontos)
     E.atualizar = () => {
         E.contadorEl.textContent = `${E.sel.size} de ${disponiveis().length}`;
-        E.btnLinha.disabled = E.sel.size < 2 && !E.modoLinha;
+        E.btnConfirmar.disabled = E.sel.size < 2;
     };
     E.alternar = (s) => {
+        if (E.fase !== 'selecao') return;   // seleção travada depois de confirmada
         if (_surveyEditandoIdx != null && surveysMemoria[_surveyEditandoIdx] === s) return;   // survey em edição não entra
         if (E.sel.has(s._id)) E.sel.delete(s._id); else E.sel.add(s._id);
         pintar(s);
@@ -4708,9 +4768,16 @@ function iniciarEspacializacao() {
         map.getContainer().style.cursor = on ? 'crosshair' : '';
         if (on) map.on('click', E.onMapClick); else map.off('click', E.onMapClick);
         if (!on && E.marca) { E.camada.removeLayer(E.marca); E.marca = null; E.pendente = null; }
-        E.btnLinha.textContent = on ? 'Cancelar linha' : '📐 Definir linha';
-        E.atualizar();
         if (on) showToast('Definir linha', 'Clique no ponto inicial e depois no ponto final da linha.', 'info', 4500);
+    };
+
+    const irParaFase = (fase) => {
+        E.fase = fase;
+        E.painelEl.querySelector('[data-fase="selecao"]').hidden = fase !== 'selecao';
+        E.painelEl.querySelector('[data-fase="linha"]').hidden = fase !== 'linha';
+        ativarLinha(fase === 'linha');
+        if (fase === 'linha') E.painelEl.querySelector('#espContador2').textContent = String(E.sel.size);
+        iaChatBody.scrollTop = iaChatBody.scrollHeight;
     };
 
     const aplicar = (a, b) => {
@@ -4755,7 +4822,13 @@ function iniciarEspacializacao() {
             ${alem > 0.5 ? `<small>O conjunto é maior que a linha: os últimos ficaram até ${alem.toFixed(1)} m além do ponto final.</small>` : ''}
             <div class="ia-msg-actions">
                 <button class="ia-btn ia-btn-secondary" data-acao="desfazer" type="button">↩️ Desfazer</button>
+                <button class="ia-btn ia-btn-success" data-acao="outro" type="button">📐 Espacializar outro grupo</button>
             </div>`);
+        msg.querySelector('[data-acao="outro"]').addEventListener('click', () => {
+            msg.querySelector('.ia-msg-actions').remove();
+            escreverMensagemUser('Espacializar outro grupo');
+            iniciarEspacializacao();
+        });
         msg.querySelector('[data-acao="desfazer"]').addEventListener('click', () => {
             original.forEach(o => { o.s.latitude = o.lat; o.s.longitude = o.lng; });
             renderizarMarcadoresSurveys();
@@ -4781,39 +4854,41 @@ function iniciarEspacializacao() {
 
     E.painelEl = iaMensagemInterativa(`
         <div class="ia-card-title">📐 Espacialização</div>
-        Organiza surveys já cadastrados em linha reta, <strong>mantendo a distância original</strong> entre um e outro.
-        <div class="ia-stats">
-            <span class="ia-stat ia-stat-destaque">Selecionados <strong id="espContador"></strong></span>
+        <div data-fase="selecao">
+            <strong>Passo 1: escolha os surveys</strong> que serão alinhados.
+            <small>Marque só os que ficam na mesma fileira (por exemplo, um lado da rua). Os que não forem marcados não se movem.</small>
+            <div class="ia-stats">
+                <span class="ia-stat ia-stat-destaque">Selecionados <strong id="espContador"></strong></span>
+            </div>
+            <ol class="ia-passos">
+                <li>Clique nas casinhas no mapa (ficam amarelas). Clique de novo para desmarcar.</li>
+                <li>Quando terminar, clique em <strong>Confirmar seleção</strong>.</li>
+            </ol>
+            <div class="ia-msg-actions">
+                <button class="ia-btn ia-btn-secondary" data-acao="limpar" type="button">Limpar seleção</button>
+                <button class="ia-btn ia-btn-success" data-acao="confirmar" type="button">✅ Confirmar seleção</button>
+            </div>
         </div>
-        <ol class="ia-passos">
-            <li>Clique nas casinhas dos surveys no mapa (ficam amarelas). Clique de novo para desmarcar.</li>
-            <li>Clique em <strong>Definir linha</strong> e marque <strong>2 pontos</strong> no mapa.</li>
-        </ol>
-        <div class="ia-msg-actions">
-            <button class="ia-btn ia-btn-secondary" data-acao="todos" type="button">Selecionar todos</button>
-            <button class="ia-btn ia-btn-secondary" data-acao="limpar" type="button">Limpar</button>
+        <div data-fase="linha" hidden>
+            <strong>Passo 2: defina a linha.</strong> Seleção confirmada: <strong id="espContador2"></strong> survey(s).
+            <small>Clique no <strong>ponto inicial</strong> e depois no <strong>ponto final</strong> no mapa. Só os surveys selecionados serão ajustados.</small>
+            <div class="ia-msg-actions">
+                <button class="ia-btn ia-btn-secondary" data-acao="voltar" type="button">← Voltar à seleção</button>
+            </div>
         </div>
         <div class="ia-msg-actions">
-            <button class="ia-btn ia-btn-success" data-acao="linha" type="button">📐 Definir linha</button>
             <button class="ia-btn ia-btn-secondary" data-acao="encerrar" type="button">Encerrar</button>
         </div>`);
     E.contadorEl = E.painelEl.querySelector('#espContador');
-    E.btnLinha = E.painelEl.querySelector('[data-acao="linha"]');
+    E.btnConfirmar = E.painelEl.querySelector('[data-acao="confirmar"]');
     const bt = (a) => E.painelEl.querySelector(`[data-acao="${a}"]`);
-    E.btnLinha.addEventListener('click', () => {
-        if (E.modoLinha) { ativarLinha(false); return; }
-        if (E.sel.size < 2) { showToast('Selecione surveys', 'Marque ao menos 2 surveys antes de definir a linha.', 'warning', 3500); return; }
-        ativarLinha(true);
+    E.btnConfirmar.addEventListener('click', () => {
+        if (E.sel.size < 2) { showToast('Selecione surveys', 'Marque ao menos 2 surveys para espacializar.', 'warning', 3500); return; }
+        escreverMensagemUser(`${E.sel.size} surveys selecionados`);
+        irParaFase('linha');
     });
-    bt('todos').addEventListener('click', () => {
-        disponiveis().forEach(s => {
-            if (_surveyEditandoIdx != null && surveysMemoria[_surveyEditandoIdx] === s) return;
-            E.sel.add(s._id); pintar(s);
-        });
-        E.atualizar();
-    });
+    bt('voltar').addEventListener('click', () => irParaFase('selecao'));
     bt('limpar').addEventListener('click', () => {
-        ativarLinha(false);
         const ids = [...E.sel]; E.sel.clear();
         ids.forEach(id => { const s = surveysMemoria.find(x => x._id === id); if (s) pintar(s); });
         E.atualizar();

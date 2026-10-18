@@ -1480,6 +1480,8 @@ tr.linha-ia .btn-ir {
 .ia-stat-destaque { background: rgba(124, 58, 237, 0.10); border-color: rgba(124, 58, 237, 0.35); }
 .ia-stat-destaque strong { color: var(--ia-purple); }
 
+.ia-msg [hidden] { display: none !important; }
+
 /* Botões: linhas separadas e com o mesmo tamanho */
 .ia-msg-actions { gap: 6px; margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--border-light); }
 .ia-msg-actions + .ia-msg-actions { margin-top: 6px; padding-top: 0; border-top: none; }
