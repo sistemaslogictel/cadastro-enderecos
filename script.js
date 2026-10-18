@@ -2559,9 +2559,11 @@ function inicializarChatIA() {
 
     iaChatHeader?.addEventListener('click', (e) => {
         if (e.target.closest('.ia-chat-actions')) return;
+        // clicar na barra alterna: aberto → minimiza; minimizado → abre
         const estavaAberto = iaChatEl.dataset.state === 'open';
+        if (estavaAberto) { minimizarChatIA(); return; }
         abrirChatIA();
-        if (!estavaAberto) document.getElementById('iaChatInput')?.focus();
+        document.getElementById('iaChatInput')?.focus();
     });
 
     iaMinimizeBtn?.addEventListener('click', (e) => {
