@@ -1857,13 +1857,3 @@ ul.ibge-pop { margin: 6px 0 0; padding-left: 16px; font-size: 0.8rem; }
     display: inline-flex; align-items: center; justify-content: center;
 }
 
-/* Checkbox das casinhas do IBGE no cabeçalho do mapa */
-.ibge-toggle-hdr {
-    display: inline-flex; align-items: center; gap: 6px;
-    margin-left: auto; padding: 4px 10px;
-    font-size: 0.78rem; font-weight: 500; color: var(--text-secondary);
-    background: var(--bg-input); border-radius: var(--radius-md);
-    cursor: pointer; user-select: none; white-space: nowrap;
-}
-.ibge-toggle-hdr input { cursor: pointer; margin: 0; }
-.ibge-toggle-hdr + .map-tabs { margin-left: 0; }

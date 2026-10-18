@@ -4234,22 +4234,14 @@ let _ibgeControle = null;
 let _ibgeResumo = null;                       // { fachadas, registros }
 let _ibgeVisivel = localStorage.getItem('ibgeVisivel') !== '0';
 
-// Liga/desliga a exibição das casinhas do IBGE e mantém os dois checkboxes (cabeçalho do mapa e canto do mapa) em sincronia
+// Liga/desliga a exibição das casinhas do IBGE (checkbox no canto do mapa, que mostra a quantidade)
 function definirIbgeVisivel(visivel) {
     _ibgeVisivel = !!visivel;
     localStorage.setItem('ibgeVisivel', _ibgeVisivel ? '1' : '0');
     if (_ibgeCamada) { if (_ibgeVisivel) _ibgeCamada.addTo(map); else map.removeLayer(_ibgeCamada); }
-    const hdr = document.getElementById('ibgeToggleHdr');
-    if (hdr) hdr.checked = _ibgeVisivel;
     const ctl = document.getElementById('ibgeToggle');
     if (ctl) ctl.checked = _ibgeVisivel;
 }
-(function () {
-    const hdr = document.getElementById('ibgeToggleHdr');
-    if (!hdr) return;
-    hdr.checked = _ibgeVisivel;
-    hdr.addEventListener('change', (e) => definirIbgeVisivel(e.target.checked));
-})();
 
 const _ibgeNorm = (v) => String(v == null ? '' : v).normalize('NFD').replace(/[\u0300-\u036f]/g, '').toUpperCase().replace(/\s+/g, ' ').trim();
 
@@ -4813,13 +4805,43 @@ function iniciarEspacializacao() {
 
         const original = itens.map(it => ({ s: it.s, lat: it.s.latitude, lng: it.s.longitude }));
 
-        // o 1º vai para o ponto inicial; cada seguinte fica à mesma distância (em metros) do anterior que tinha originalmente
-        let acum = 0;
-        itens.forEach((it, n) => {
-            if (n > 0) acum += Math.hypot(it.p.x - itens[n - 1].p.x, it.p.y - itens[n - 1].p.y);
-            it.s.latitude = +(a.lat + (uy * acum) / M_LAT).toFixed(8);
-            it.s.longitude = +(a.lng + (ux * acum) / k).toFixed(8);
+        // Mesma fachada (mesmo logradouro + mesmo número, exceto "SN"): os surveys ficam juntos, um atrás do outro
+        // ao longo da linha, para nunca caírem no exato mesmo ponto.
+        const chaveFachada = (sv) => {
+            const num = _ibgeNorm(sv.numero);
+            if (!num || /^(SN|S\/N|S N|SEM NUMERO)$/.test(num)) return null;   // sem número não é "a mesma fachada"
+            const lg = sv.logradouro || {};
+            const rua = _ibgeNorm([lg.tipo, lg.rua].filter(Boolean).join(' '));
+            const via = rua ? `${rua}|${_ibgeNorm(lg.cep)}` : `id:${lg._registro_id == null ? '' : lg._registro_id}`;
+            return `${via}|${num}`;
+        };
+        const gruposFachada = [];            // cada grupo = surveys da mesma fachada (fachada única = grupo de 1)
+        const grupoPorChave = new Map();
+        itens.forEach(it => {
+            const ch = chaveFachada(it.s);
+            if (ch && grupoPorChave.has(ch)) { grupoPorChave.get(ch).push(it); return; }
+            const g = [it];
+            gruposFachada.push(g);
+            if (ch) grupoPorChave.set(ch, g);
         });
+
+        // o 1º vai para o ponto inicial; cada fachada seguinte fica à mesma distância (em metros) da anterior que tinha originalmente.
+        // Dentro da mesma fachada, cada survey fica ESP_PASSO_MESMA_FACHADA_M metros atrás do anterior.
+        const ESP_PASSO_MESMA_FACHADA_M = 4;   // distância entre surveys da mesma fachada (≈ 2 casinhas no zoom máximo)
+        let acum = 0;        // posição (m) da fachada atual sobre a linha
+        let ext = 0;         // extensão total ocupada pelos surveys
+        let empilhados = 0;  // quantos surveys foram enfileirados por dividirem a fachada
+        gruposFachada.forEach((g, gi) => {
+            if (gi > 0) acum += Math.hypot(g[0].p.x - gruposFachada[gi - 1][0].p.x, g[0].p.y - gruposFachada[gi - 1][0].p.y);
+            g.forEach((it, pos) => {
+                const d = acum + pos * ESP_PASSO_MESMA_FACHADA_M;
+                it.s.latitude = +(a.lat + (uy * d) / M_LAT).toFixed(8);
+                it.s.longitude = +(a.lng + (ux * d) / k).toFixed(8);
+                if (d > ext) ext = d;
+            });
+            if (g.length > 1) empilhados += g.length;
+        });
+        acum = ext;
 
         const qtd = itens.length;
         const alem = acum - comp;
@@ -4833,6 +4855,7 @@ function iniciarEspacializacao() {
                 <span class="ia-stat">Linha <strong>${comp.toFixed(1)} m</strong></span>
             </div>
             ${alem > 0.5 ? `<small>O conjunto é maior que a linha: os últimos ficaram até ${alem.toFixed(1)} m além do ponto final.</small>` : ''}
+            ${empilhados ? `<small>${empilhados} surveys de fachadas repetidas foram enfileirados, um atrás do outro, a ${ESP_PASSO_MESMA_FACHADA_M} m de distância.</small>` : ''}
             <div class="ia-msg-actions">
                 <button class="ia-btn ia-btn-secondary" data-acao="desfazer" type="button">↩️ Desfazer</button>
                 <button class="ia-btn ia-btn-success" data-acao="outro" type="button">📐 Espacializar outro grupo</button>
