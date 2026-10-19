@@ -2467,21 +2467,27 @@ function _mucGarantirModal() {
                     <strong>${rotulo}</strong>
                     <small>${blob ? Math.round(blob.size / 1000) + ' kB' : 'obrigatória'.replace('obrigatória', k === 'interior' ? 'opcional' : 'obrigatória')}</small>
                     <div class="muc-foto-bt">
-                        <button type="button" data-a="escolher">${blob ? 'Trocar' : 'Escolher foto'}</button>
+                        <button type="button" data-a="escolher">${blob ? 'Trocar foto' : '📁 Carregar foto'}</button>
+                        <button type="button" data-a="camera" title="No celular abre a câmera; no computador abre a seleção de arquivo">📷 Tirar foto</button>
                         <button type="button" data-a="proibida" title="Morador não autorizou a foto">Foto proibida</button>
                         ${blob ? '<button type="button" data-a="remover">Remover</button>' : ''}
                     </div>
-                    <input type="file" accept="image/*" hidden>
+                    <input type="file" accept="image/*" hidden data-i="arquivo">
+                    <input type="file" accept="image/*" capture="environment" hidden data-i="camera">
                 </div>`;
-            const inp = d.querySelector('input');
-            d.querySelector('[data-a="escolher"]').addEventListener('click', () => inp.click());
-            inp.addEventListener('change', async () => {
+            const aceitarFoto = async (inp) => {
                 const f = inp.files && inp.files[0];
+                inp.value = '';   // permite escolher a mesma foto de novo
                 if (!f) return;
                 try { _multiUc.fotos[k] = await _ucProcessarFoto(f); }
                 catch (e) { showToast('Foto não aceita', e.message, 'error', 5000); return; }
                 renderFotos(); multiUcAtualizarResumo();
-            });
+            };
+            const inpArq = d.querySelector('[data-i="arquivo"]'), inpCam = d.querySelector('[data-i="camera"]');
+            d.querySelector('[data-a="escolher"]').addEventListener('click', () => inpArq.click());
+            d.querySelector('[data-a="camera"]').addEventListener('click', () => inpCam.click());
+            inpArq.addEventListener('change', () => aceitarFoto(inpArq));
+            inpCam.addEventListener('change', () => aceitarFoto(inpCam));
             d.querySelector('[data-a="proibida"]').addEventListener('click', () => {
                 _multiUc.fotos[k] = _ucBlobDeBase64(FOTO_PROIBIDA_B64, 'image/jpeg');
                 renderFotos(); multiUcAtualizarResumo();
