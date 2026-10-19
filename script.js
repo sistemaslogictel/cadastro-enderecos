@@ -5120,3 +5120,250 @@ document.addEventListener('DOMContentLoaded', () => {
         showToast('Erro ao iniciar', err.message, 'error');
     });
 });
+
+// ============================================
+// PADRONIZAR ENDEREÇOS DO REPORT (.xlsx)
+// Lê a coluna F (a partir de F5) da planilha "report", converte cada endereço para o
+// padrão "Logradouro fachada, Bairro, Cidade - UF (CEP)" + "Complemento N: ..." e grava
+// o resultado na coluna A (título "Endereço Padrão"). Devolve a planilha para download.
+// A planilha original é preservada (formatação, colunas e demais abas): só a coluna A muda.
+// ============================================
+(function padronizarEnderecoReport() {
+    const COL_ORIGEM = 'F';
+    const COL_DESTINO = 'A';
+    const LINHA_CABECALHO = 4;
+    const LINHA_INICIAL = 5;
+    const TITULO = 'Endereço Padrão';
+    const LARGURA_COLUNA_A = 62;
+    const NS_REL = 'http://schemas.openxmlformats.org/officeDocument/2006/relationships';
+    const NS_XML = 'http://www.w3.org/XML/1998/namespace';
+
+    // ---------- Formatação do endereço ----------
+    const MINUSCULAS = new Set(['de', 'da', 'do', 'das', 'dos', 'e']);
+
+    function titulo(texto) {
+        const palavras = String(texto || '').trim().toLowerCase().replace(/\s+/g, ' ')
+            .replace(/(^|[\s\-\/(.])(\p{L})/gu, (m, sep, ch) => sep + ch.toUpperCase())
+            .split(' ');
+        return palavras.map((p, i) => {
+            const baixa = p.toLowerCase();
+            if (i > 0 && MINUSCULAS.has(baixa)) return baixa;
+            if (/^[IVX]{2,}$/i.test(p)) return p.toUpperCase();   // algarismos romanos (Vila Nova II)
+            return p;
+        }).join(' ');
+    }
+
+    function formatarCep(digitos) {
+        const d = String(digitos || '').replace(/\D/g, '');
+        return d.length === 8 ? `${d.slice(0, 5)}-${d.slice(5)}` : d;
+    }
+
+    // Entrada: "AVENIDA RIO AMAZONAS, 3254, Casa 122, ESTADOS, FAZENDA RIO GRANDE - PR 83830289 "
+    // Retorno: { texto, ok }  (ok=false => fora do padrão; devolve o original sem alterar)
+    function formatarEnderecoPadrao(bruto) {
+        const original = String(bruto == null ? '' : bruto).replace(/\s+/g, ' ').trim();
+        if (!original) return { texto: '', ok: true, vazio: true };
+
+        const partes = original.split(',').map(p => p.trim());
+        if (partes.length < 4) return { texto: original, ok: false };
+
+        const ultima = partes[partes.length - 1];                   // "CIDADE - UF 12345678"
+        const bairro = partes[partes.length - 2];
+        const m = ultima.match(/^(.*?)\s*-\s*([A-Za-z]{2})\b\s*(\d{5}-?\d{3})?\s*$/);
+        if (!m || !m[1] || !bairro) return { texto: original, ok: false };
+
+        const logradouro = partes[0];
+        const fachada = partes[1];
+        const complementos = partes.slice(2, -2).filter(Boolean);
+        const cidade = titulo(m[1]);
+        const uf = m[2].toUpperCase();
+        const cep = m[3] ? formatarCep(m[3]) : '';
+
+        const rua = [titulo(logradouro), /^s\/?n$/i.test(fachada) ? 'S/N' : fachada].filter(Boolean).join(' ');
+        let linha1 = `${rua}, ${titulo(bairro)}, ${cidade} - ${uf}`;
+        if (cep) linha1 += ` (${cep})`;
+
+        const linhas = [linha1];
+        complementos.forEach((c, i) => linhas.push(`Complemento ${i + 1}: ${c}`));
+        return { texto: linhas.join('\n'), ok: true, complementos: complementos.length };
+    }
+
+    // ---------- Leitura/escrita do .xlsx (JSZip + XML) ----------
+    const filhos = (el, nome) => Array.from(el.getElementsByTagNameNS('*', nome));
+    const parseXml = (txt) => new DOMParser().parseFromString(txt, 'application/xml');
+    const serializar = (doc) => '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n' +
+        new XMLSerializer().serializeToString(doc).replace(/^<\?xml[^>]*\?>\s*/, '');
+
+    function textoDe(el) {
+        return filhos(el, 't').filter(t => t.parentNode.localName !== 'rPh').map(t => t.textContent).join('');
+    }
+
+    async function caminhoDaPrimeiraAba(zip) {
+        const wb = parseXml(await zip.file('xl/workbook.xml').async('string'));
+        const aba = filhos(wb, 'sheet')[0];
+        const rid = aba && aba.getAttributeNS(NS_REL, 'id');
+        if (rid && zip.file('xl/_rels/workbook.xml.rels')) {
+            const rels = parseXml(await zip.file('xl/_rels/workbook.xml.rels').async('string'));
+            const rel = filhos(rels, 'Relationship').find(r => r.getAttribute('Id') === rid);
+            if (rel) {
+                const alvo = rel.getAttribute('Target').replace(/^\//, '');
+                const caminho = alvo.startsWith('xl/') ? alvo : 'xl/' + alvo;
+                if (zip.file(caminho)) return caminho;
+            }
+        }
+        return 'xl/worksheets/sheet1.xml';
+    }
+
+    async function lerTextosCompartilhados(zip) {
+        const arq = zip.file('xl/sharedStrings.xml');
+        if (!arq) return [];
+        return filhos(parseXml(await arq.async('string')), 'si').map(textoDe);
+    }
+
+    function valorDaCelula(c, compartilhados) {
+        const tipo = c.getAttribute('t');
+        if (tipo === 'inlineStr') return textoDe(c);
+        const v = filhos(c, 'v')[0];
+        if (!v) return '';
+        if (tipo === 's') return compartilhados[parseInt(v.textContent, 10)] || '';
+        return v.textContent;
+    }
+
+    function celulaDoRow(row, ref) {
+        return Array.from(row.children).find(c => c.localName === 'c' && c.getAttribute('r') === ref) || null;
+    }
+
+    function escreverTexto(doc, row, ref, texto, estilo) {
+        const ns = doc.documentElement.namespaceURI;
+        let c = celulaDoRow(row, ref);
+        if (!c) {
+            c = doc.createElementNS(ns, 'c');
+            c.setAttribute('r', ref);
+            row.insertBefore(c, row.firstChild);                   // coluna A é sempre a primeira
+        }
+        while (c.firstChild) c.removeChild(c.firstChild);
+        c.setAttribute('t', 'inlineStr');
+        if (estilo != null) c.setAttribute('s', String(estilo));
+        const is = doc.createElementNS(ns, 'is');
+        const t = doc.createElementNS(ns, 't');
+        t.setAttributeNS(NS_XML, 'xml:space', 'preserve');
+        t.textContent = texto;
+        is.appendChild(t);
+        c.appendChild(is);
+    }
+
+    // Cria um estilo de célula igual ao da coluna F (fonte/borda), alinhado à esquerda e com quebra de linha
+    function criarEstiloEndereco(stylesDoc, estiloBase) {
+        const cellXfs = filhos(stylesDoc, 'cellXfs')[0];
+        const xfs = Array.from(cellXfs.children).filter(x => x.localName === 'xf');
+        const base = xfs[estiloBase] || xfs[0];
+        const novo = base.cloneNode(true);
+        Array.from(novo.children).filter(x => x.localName === 'alignment').forEach(x => novo.removeChild(x));
+        const al = stylesDoc.createElementNS(stylesDoc.documentElement.namespaceURI, 'alignment');
+        al.setAttribute('horizontal', 'left');
+        al.setAttribute('vertical', 'center');
+        al.setAttribute('wrapText', '1');
+        novo.appendChild(al);
+        novo.setAttribute('applyAlignment', '1');
+        cellXfs.appendChild(novo);
+        cellXfs.setAttribute('count', String(xfs.length + 1));
+        return xfs.length;
+    }
+
+    async function padronizarPlanilha(arrayBuffer) {
+        if (typeof JSZip === 'undefined') throw new Error('JSZip não carregado.');
+        const zip = await JSZip.loadAsync(arrayBuffer);
+        if (!zip.file('xl/workbook.xml')) throw new Error('Arquivo não é uma planilha .xlsx válida.');
+
+        const caminhoAba = await caminhoDaPrimeiraAba(zip);
+        const compartilhados = await lerTextosCompartilhados(zip);
+        const sheet = parseXml(await zip.file(caminhoAba).async('string'));
+        const styles = parseXml(await zip.file('xl/styles.xml').async('string'));
+
+        const linhas = filhos(sheet, 'row');
+        const rowDe = (n) => linhas.find(r => parseInt(r.getAttribute('r'), 10) === n);
+
+        // estilos: cabeçalho copia o da coluna F do cabeçalho; dados usam novo estilo baseado em F5
+        const estiloCab = (() => { const r = rowDe(LINHA_CABECALHO); const c = r && celulaDoRow(r, COL_ORIGEM + LINHA_CABECALHO); return c ? c.getAttribute('s') : null; })();
+        const estiloF5 = (() => { const r = rowDe(LINHA_INICIAL); const c = r && celulaDoRow(r, COL_ORIGEM + LINHA_INICIAL); return c && c.getAttribute('s') ? parseInt(c.getAttribute('s'), 10) : 0; })();
+        const estiloDados = criarEstiloEndereco(styles, estiloF5);
+
+        const rowCab = rowDe(LINHA_CABECALHO);
+        if (rowCab) escreverTexto(sheet, rowCab, COL_DESTINO + LINHA_CABECALHO, TITULO, estiloCab);
+
+        let total = 0, convertidos = 0;
+        const foraDoPadrao = [];
+        linhas.forEach(row => {
+            const n = parseInt(row.getAttribute('r'), 10);
+            if (n < LINHA_INICIAL) return;
+            const cel = celulaDoRow(row, COL_ORIGEM + n);
+            if (!cel) return;
+            const bruto = valorDaCelula(cel, compartilhados);
+            if (!String(bruto).trim()) return;
+            total++;
+            const r = formatarEnderecoPadrao(bruto);
+            if (r.ok) convertidos++; else foraDoPadrao.push(n);
+            escreverTexto(sheet, row, COL_DESTINO + n, r.texto, estiloDados);
+            // garante altura suficiente para as linhas de complemento
+            const linhasTexto = r.texto.split('\n').length;
+            const ht = parseFloat(row.getAttribute('ht'));
+            const precisa = linhasTexto * 12 + 10;
+            if (!isNaN(ht) && ht < precisa) { row.setAttribute('ht', String(precisa)); row.setAttribute('customHeight', '1'); }
+        });
+
+        // alarga a coluna A (no arquivo original ela é só uma margem estreita)
+        const colA = filhos(sheet, 'col').find(c => c.getAttribute('min') === '1' && c.getAttribute('max') === '1');
+        if (colA) { colA.setAttribute('width', String(LARGURA_COLUNA_A)); colA.setAttribute('customWidth', '1'); }
+
+        zip.file(caminhoAba, serializar(sheet));
+        zip.file('xl/styles.xml', serializar(styles));
+        const blob = await zip.generateAsync({
+            type: 'blob',
+            mimeType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+            compression: 'DEFLATE'
+        });
+        return { blob, total, convertidos, foraDoPadrao };
+    }
+
+    window.PadronizarEndereco = { formatarEnderecoPadrao, padronizarPlanilha };
+
+    // ---------- Botão do cabeçalho ----------
+    const btn = document.getElementById('padronizarEnderecoBtn');
+    const input = document.getElementById('padronizarEnderecoInput');
+    if (!btn || !input) return;
+
+    btn.addEventListener('click', () => input.click());
+    input.addEventListener('change', async () => {
+        const arquivo = input.files && input.files[0];
+        input.value = '';
+        if (!arquivo) return;
+        if (!/\.xlsx$/i.test(arquivo.name)) {
+            showToast('Arquivo inválido', 'Selecione a planilha report no formato .xlsx.', 'error');
+            return;
+        }
+        try {
+            showToast('Processando planilha…', arquivo.name, 'info', 2000);
+            const res = await padronizarPlanilha(await arquivo.arrayBuffer());
+            if (!res.total) {
+                showToast('Nenhum endereço encontrado', 'Não há valores na coluna F a partir da linha 5.', 'warning', 6000);
+                return;
+            }
+            const nome = arquivo.name.replace(/\.xlsx$/i, '') + '_endereco_padrao.xlsx';
+            const url = URL.createObjectURL(res.blob);
+            const a = document.createElement('a');
+            a.href = url; a.download = nome;
+            document.body.appendChild(a); a.click(); a.remove();
+            setTimeout(() => URL.revokeObjectURL(url), 5000);
+            if (res.foraDoPadrao.length) {
+                showToast('Planilha gerada com avisos',
+                    `${res.convertidos} de ${res.total} endereços padronizados. ${res.foraDoPadrao.length} fora do padrão foram mantidos como estavam (linhas: ${res.foraDoPadrao.slice(0, 10).join(', ')}${res.foraDoPadrao.length > 10 ? '…' : ''}).`,
+                    'warning', 9000);
+            } else {
+                showToast('Planilha gerada', `${res.total} endereços padronizados na coluna A. Download iniciado.`, 'success', 5000);
+            }
+        } catch (err) {
+            console.error('Erro ao padronizar planilha:', err);
+            showToast('Erro ao processar a planilha', err.message, 'error', 7000);
+        }
+    });
+})();
