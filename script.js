@@ -549,6 +549,7 @@ function iconeEdicao() {
 }
 // Ícone do survey: cor da linha (se veio da IA de linhas) > verde IA > azul padrão
 function iconeSurvey(s) {
+    if (s.multiUc) return iconeCasaCor('#7c3aed');   // roxo = imóvel com várias UCs
     return s._cor ? iconeCasaCor(s._cor) : (s._ia ? houseIconIA : houseIcon);
 }
 // Acrescenta o número da fachada sempre visível embaixo da casinha (igual às casinhas do IBGE)
@@ -1531,6 +1532,14 @@ document.getElementById('addBtn').addEventListener('click', async () => {
     if (comp2Tipo || comp2Valor) complementos.push({ tipo: comp2Tipo || '', valor: comp2Valor || '' });
     if (comp3Tipo || comp3Valor) complementos.push({ tipo: comp3Tipo || '', valor: comp3Valor || '' });
 
+    // ===== imóvel com várias UCs: precisa de UCs e das fotos do exterior e da fachada =====
+    const multi = multiUcSnapshot();
+    if (_multiUc.ativo) {
+        if (!multi) { showToast('Configure as UCs', 'Clique em "Configurar UCs" e adicione ao menos um grupo de UCs.', 'warning', 5000); multiUcAbrirModal(); return; }
+        if (!multi.fotos.fachada) { showToast('Falta a foto da fachada', 'Acrescente uma foto para a Fachada da Edificação (ou use "Foto proibida").', 'warning', 6000); multiUcAbrirModal(); return; }
+        if (!multi.fotos.exterior) { showToast('Falta a foto do exterior', 'Acrescente uma foto para o Exterior da Edificação (ou use "Foto proibida").', 'warning', 6000); multiUcAbrirModal(); return; }
+    }
+
     // ===== CASO 1: SALVAR EDIÇÃO =====
     if (sEdicao) {
         const s = sEdicao;
@@ -1545,6 +1554,7 @@ document.getElementById('addBtn').addEventListener('click', async () => {
         s.latitude = lat;
         s.longitude = lng;
         s._ia = false;
+        if (multi) s.multiUc = multi; else delete s.multiUc;
 
         // Sai do modo edição ANTES de redesenhar a tela: mesmo que algo falhe depois, o modo não fica preso
         try {
@@ -1580,7 +1590,8 @@ document.getElementById('addBtn').addEventListener('click', async () => {
         complementos: complementos,
         latitude: lat,
         longitude: lng,
-        created_at: new Date().toISOString()
+        created_at: new Date().toISOString(),
+        ...(multi ? { multiUc: multi } : {})
     });
 
     showToast('Survey salvo', 'Nº e complementos adicionados à lista.', 'success', 2500);
@@ -1605,6 +1616,7 @@ document.getElementById('addBtn').addEventListener('click', async () => {
     limpar('comp3Tipo', 'comp3Recorrente');
     limpar('comp3Valor', 'comp3Recorrente');
 
+    multiUcAposSalvar();
     fixarMarcadorPendente(); // casinha vermelha vira azul fixa
 
     renderizarSurveys();
@@ -1645,6 +1657,7 @@ function abrirEdicaoSurvey(idx) {
     setH('comp2Valor', comps[1] ? comps[1].valor : '');
     setH('comp3Tipo', comps[2] ? comps[2].tipo : '');
     setH('comp3Valor', comps[2] ? comps[2].valor : '');
+    multiUcCarregar(s.multiUc || null);
 
     setH('surveyLatitude', s.latitude != null ? Number(s.latitude).toFixed(8) : '');
     setH('surveyLongitude', s.longitude != null ? Number(s.longitude).toFixed(8) : '');
@@ -1711,6 +1724,7 @@ function abrirEdicaoSurvey(idx) {
 
 function cancelarEdicaoSurvey(manterRoteiro) {
     _surveyEditandoIdx = null;
+    multiUcReset();
     renderizarMarcadoresSurveys();   // casinha volta à cor normal e deixa de ser arrastável
     const addBtn = document.getElementById('addBtn');
     if (addBtn) {
@@ -1943,7 +1957,7 @@ function renderizarSurveys() {
         const tr = document.createElement('tr');
         if (s._ia) tr.className = 'linha-ia';
         tr.innerHTML = `
-            <td title="${escapeHtml([l.tipo, l.rua].filter(Boolean).join(' '))}">${escapeHtml([l.tipo, l.rua].filter(Boolean).join(' ') || '—')}${s._ia ? '<span class="ia-tag">🤖 IA</span>' : ''}</td>
+            <td title="${escapeHtml([l.tipo, l.rua].filter(Boolean).join(' '))}">${escapeHtml([l.tipo, l.rua].filter(Boolean).join(' ') || '—')}${s._ia ? '<span class="ia-tag">🤖 IA</span>' : ''}${s.multiUc ? `<span class="uc-tag">🏢 ${s.multiUc.ucs.length} UCs</span>` : ''}</td>
             <td>${escapeHtml(s.numero || '')}</td>
             <td title="${escapeHtml(compTexto)}">${escapeHtml(compTexto)}</td>
             <td>${escapeHtml(l.bairro || '')}</td>
@@ -2045,7 +2059,8 @@ function textoRotuloSurvey(s) {
 function popupSurveyHtml(s) {
     const nome = s.logradouro ? s.logradouro.rua : '';
     const rotulo = textoRotuloSurvey(s);
-    return `<strong>${escapeHtml(nome)}${rotulo ? ', ' + escapeHtml(rotulo) : ''}</strong>`;
+    const ucs = s.multiUc ? `<br>🏢 ${s.multiUc.ucs.length} UC(s) em ${new Set(s.multiUc.ucs.map(u => u.pisoLogico)).size} piso(s)` : '';
+    return `<strong>${escapeHtml(nome)}${rotulo ? ', ' + escapeHtml(rotulo) : ''}</strong>${ucs}`;
 }
 
 // O Nº da fachada e os complementos aparecem SÓ na legenda (popup) ao clicar na casinha.
@@ -2113,6 +2128,395 @@ document.getElementById('clearBtn')?.addEventListener('click', () => {
 });
 
 // ============================================
+// IMÓVEIS COM VÁRIAS UCs (prédios, condomínios, galerias...)
+// Baseado no CE-Mobile 7.9.2 ("Edifícios ou Condomínios"):
+//  • tipo="E" (Completa, sem infraestrutura interna) ou tipo="P" (Parcial): as UCs vão direto no <ucs>,
+//    distribuídas por piso (piso lógico/real) com tipo de unidade + argumento (ex.: Apartamento 101)
+//  • o app exige foto do EXTERIOR e da FACHADA (até 100 kB, 640 px de largura); o interior é opcional
+// ============================================
+const UC_DESTINACOES = [['RESIDENCIA', 'Residência'], ['ADMINISTRACAO', 'Administração'], ['COMERCIOEXTERNO', 'Comércio Externo'], ['COMERCIOINTERNO', 'Comércio Interno'], ['NAODISPONIVEL', 'Não Disponível']];
+const UC_OCUPACOES = [['EDIFICACAOCOMPLETA', 'Edificação completa'], ['EDIFICACAOEMCONSTRUCAO', 'Edificação em construção'], ['LOTEVAZIO', 'Lote vazio']];
+const UC_PISO_IDS = [7, 25, 47, 65, 74, 76, 77, 80, 104, 107];                 // Andar, Cobertura, Garagem, Mezanino, Pavimento, Piso, Plataforma, Porão, Subsolo, Térreo
+const UC_COMPL_COMUNS_IDS = [9, 25, 37, 38, 59, 91, 96, 101, 114, 120, 121];        // tipos de unidade mais usados (Apartamento, Sala, Loja...)
+const UC_COMPL_OUTROS_IDS = [3, 6, 8, 10, 13, 16, 17, 21, 22, 23, 31, 32, 34, 39, 42, 45, 46, 47, 50, 52, 57, 58, 64, 66, 67, 68, 69, 83, 86, 89, 92, 93, 97, 98, 100, 102, 113, 115, 116];
+const UC_COMPL_SEMARG_IDS = [118, 119];        // Sem complemento / Não disponível (não têm argumento)
+const UC_COMPL_ARG_OBRIG = new Set([9, 16, 17, 22, 34, 39, 45, 50, 58, 59, 66, 67, 69, 86, 96, 97, 98, 113]); // tipos em que o argumento é obrigatório
+const UC_FOTO_NOMES = { exterior: 'fotoExterior.jpg', fachada: 'fotoFachada.jpg', interior: 'fotoInterior.jpg' };
+// Imagem usada pela equipe quando o morador não autoriza a foto ("PROIBIDO FOTO")
+const FOTO_PROIBIDA_B64 = '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';
+
+const _ucNomeTipo = (id) => { const it = COMPLEMENTO_LISTA.find(([, i]) => Number(i) === Number(id)); return it ? it[0] : String(id); };
+const _ucFotosVazias = () => ({ exterior: null, fachada: null, interior: null });
+let _ucGidSeq = 0;
+let _multiUc = { ativo: false, tipo: 'E', ocupacao: 'EDIFICACAOCOMPLETA', grupos: [], ucs: [], fotos: _ucFotosVazias() };
+
+// Gera as UCs de um grupo (mesma lógica da tela "Distribuição" do app). Retorna { ucs, descricao } ou { erro }
+function ucGerarGrupo(cfg) {
+    const pad2 = (n) => String(n).padStart(2, '0');
+    const li = parseInt(cfg.pisoLogicoInicial, 10);
+    if (isNaN(li)) return { erro: 'Informe o piso lógico inicial.' };
+    const vazioLf = cfg.pisoLogicoFinal === '' || cfg.pisoLogicoFinal == null;
+    const lf = vazioLf ? li : parseInt(cfg.pisoLogicoFinal, 10);
+    if (isNaN(lf) || lf < li) return { erro: 'O piso lógico final deve ser maior ou igual ao inicial.' };
+    const nPisos = lf - li + 1;
+    if (nPisos > 200) return { erro: 'Máximo de 200 pisos por grupo.' };
+
+    const realTxt = String(cfg.pisoRealInicial == null ? '' : cfg.pisoRealInicial).trim();
+    const realNum = /^-?\d+$/.test(realTxt) ? parseInt(realTxt, 10) : null;
+    if (realTxt && realNum === null && nPisos > 1) return { erro: 'Piso real que não é número (ex.: T) só vale para um piso. Use número ou deixe em branco.' };
+    const pisoReal = (k) => !realTxt ? String(li + k) : (realNum !== null ? String(realNum + k) : realTxt);
+
+    const idCompl = Number(cfg.idTipoComplemento);
+    const semArgTipo = UC_COMPL_SEMARG_IDS.includes(idCompl);
+    const modo = semArgTipo ? 'semArg' : cfg.modo;
+    if (modo === 'semArg' && UC_COMPL_ARG_OBRIG.has(idCompl)) return { erro: `"${_ucNomeTipo(idCompl)}" exige argumento (número ou texto).` };
+
+    const base = (arg, k) => ({
+        destinacao: cfg.destinacao,
+        idTipoComplemento: idCompl, tipoComplemento: _ucNomeTipo(idCompl),
+        complemento: arg,
+        idTipoPiso: Number(cfg.idTipoPiso), tipoPiso: _ucNomeTipo(cfg.idTipoPiso),
+        pisoLogico: String(li + k), pisoReal: pisoReal(k)
+    });
+    const ucs = [];
+    let resumo = '';
+
+    if (modo === 'faixa') {
+        const uI = parseInt(cfg.ucInicial, 10), uF = parseInt(cfg.ucFinal, 10);
+        if (isNaN(uI) || isNaN(uF)) return { erro: 'Informe a primeira e a última UC.' };
+        if (uI < 100 || uF < 100 || uI > 9999 || uF > 9999) return { erro: 'Na faixa, a centena é o piso (ex.: 101 a 104). Para números menores, use "Quantidade por piso".' };
+        const h1 = Math.floor(uI / 100), h2 = Math.floor(uF / 100);
+        if (h2 - h1 !== nPisos - 1) return { erro: `A faixa vai da centena ${h1} à ${h2} (${h2 - h1 + 1} piso(s)), mas os pisos informados são ${nPisos}.` };
+        const u1 = uI - h1 * 100, u2 = uF - h2 * 100;
+        if (u2 < u1) return { erro: 'A última UC deve ser maior que a primeira.' };
+        const passo = cfg.numeracao === 'continua' ? 1 : 2;
+        if (cfg.numeracao === 'impares' && u1 % 2 !== 1) return { erro: 'Para números ímpares, a primeira UC deve ser ímpar (ex.: 101).' };
+        if (cfg.numeracao === 'pares' && u1 % 2 !== 0) return { erro: 'Para números pares, a primeira UC deve ser par (ex.: 102).' };
+        if ((u2 - u1) % passo !== 0) return { erro: 'A última UC não bate com a numeração escolhida (ímpar/par).' };
+        for (let k = 0; k < nPisos; k++) for (let u = u1; u <= u2; u += passo) ucs.push(base(String(h1 + k) + pad2(u), k));
+        resumo = `${uI} a ${uF}` + (cfg.numeracao === 'impares' ? ' (ímpares)' : cfg.numeracao === 'pares' ? ' (pares)' : '');
+    } else if (modo === 'porPiso') {
+        const n = parseInt(cfg.ucsPorPiso, 10);
+        if (isNaN(n) || n < 1 || n > 99) return { erro: 'Informe de 1 a 99 UCs por piso.' };
+        for (let k = 0; k < nPisos; k++) for (let j = 1; j <= n; j++) ucs.push(base(String(j), k));
+        resumo = n === 1 ? '1 por piso' : `1 a ${n} por piso`;
+    } else if (modo === 'texto') {
+        const txt = String(cfg.texto || '').trim();
+        if (!txt) return { erro: 'Digite o argumento (ex.: A).' };
+        if (txt.length > 50) return { erro: 'O argumento aceita até 50 caracteres.' };
+        for (let k = 0; k < nPisos; k++) ucs.push(base(txt, k));
+        resumo = `"${txt}" em cada piso`;
+    } else {
+        for (let k = 0; k < nPisos; k++) ucs.push(base('', k));
+        resumo = 'sem argumento';
+    }
+    if (ucs.length > 2000) return { erro: 'Máximo de 2000 UCs por grupo.' };
+
+    const dest = (UC_DESTINACOES.find(([v]) => v === cfg.destinacao) || [, cfg.destinacao])[1];
+    const pisosTxt = nPisos > 1 ? `${li}–${lf}` : String(li);
+    return { ucs, descricao: `${_ucNomeTipo(idCompl)} ${resumo} • ${_ucNomeTipo(cfg.idTipoPiso)} ${pisosTxt} • ${dest}` };
+}
+
+// ---- fotos (iguais ao app: até 100 kB e 640 px de largura) ----
+function _ucBlobDeBase64(b64, tipo) {
+    const bin = atob(b64), arr = new Uint8Array(bin.length);
+    for (let i = 0; i < bin.length; i++) arr[i] = bin.charCodeAt(i);
+    return new Blob([arr], { type: tipo });
+}
+async function _ucProcessarFoto(file) {
+    const MAX = 100 * 1000;
+    const img = await new Promise((ok, erro) => {
+        const url = URL.createObjectURL(file);
+        const im = new Image();
+        im.onload = () => { URL.revokeObjectURL(url); ok(im); };
+        im.onerror = () => { URL.revokeObjectURL(url); erro(new Error('Não consegui abrir essa imagem.')); };
+        im.src = url;
+    });
+    let w = Math.min(640, img.naturalWidth), h = Math.round(img.naturalHeight * w / img.naturalWidth);
+    for (let tent = 0; tent < 6; tent++) {
+        const cv = document.createElement('canvas');
+        cv.width = w; cv.height = h;
+        cv.getContext('2d').drawImage(img, 0, 0, w, h);
+        for (let q = 0.85; q >= 0.35; q -= 0.1) {
+            const blob = await new Promise(r => cv.toBlob(r, 'image/jpeg', q));
+            if (blob && blob.size <= MAX) return blob;
+        }
+        w = Math.round(w * 0.8); h = Math.round(h * 0.8);
+    }
+    throw new Error('A foto continua maior que 100 kB mesmo reduzida.');
+}
+function multiUcFotosParaZip(multi) {
+    return ['exterior', 'fachada', 'interior']
+        .filter(k => multi.fotos && multi.fotos[k])
+        .map(k => ({ nome: UC_FOTO_NOMES[k], blob: multi.fotos[k] }));
+}
+
+// ---- estado do formulário ----
+function multiUcSnapshot() {
+    if (!_multiUc.ativo || !_multiUc.ucs.length) return null;
+    const { fotos, ativo, ...resto } = _multiUc;
+    const c = JSON.parse(JSON.stringify(resto));
+    c.fotos = { ...fotos };
+    return c;
+}
+function multiUcCarregar(m) {
+    if (m) {
+        _multiUc = {
+            ativo: true, tipo: m.tipo || 'E', ocupacao: m.ocupacao || 'EDIFICACAOCOMPLETA',
+            grupos: JSON.parse(JSON.stringify(m.grupos || [])), ucs: JSON.parse(JSON.stringify(m.ucs || [])),
+            fotos: { ..._ucFotosVazias(), ...(m.fotos || {}) }
+        };
+        _ucGidSeq = Math.max(_ucGidSeq, ..._multiUc.grupos.map(g => g.gid || 0));
+    } else multiUcReset();
+    multiUcAtualizarResumo();
+}
+function multiUcReset() {
+    _multiUc = { ativo: false, tipo: 'E', ocupacao: 'EDIFICACAOCOMPLETA', grupos: [], ucs: [], fotos: _ucFotosVazias() };
+    multiUcAtualizarResumo();
+}
+// Depois de salvar um prédio: continua no modo "várias UCs" (para o próximo), mas zera UCs e fotos
+function multiUcAposSalvar() {
+    _multiUc.grupos = []; _multiUc.ucs = []; _multiUc.fotos = _ucFotosVazias();
+    multiUcAtualizarResumo();
+}
+function multiUcAtualizarResumo() {
+    const t = document.getElementById('multiUcToggle');
+    const b = document.getElementById('multiUcBtn');
+    const r = document.getElementById('multiUcResumo');
+    if (t) t.checked = _multiUc.ativo;
+    if (b) b.style.display = _multiUc.ativo ? '' : 'none';
+    if (!r) return;
+    if (!_multiUc.ativo) { r.textContent = ''; return; }
+    const pisos = new Set(_multiUc.ucs.map(u => u.pisoLogico)).size;
+    const fotos = (_multiUc.fotos.exterior ? 1 : 0) + (_multiUc.fotos.fachada ? 1 : 0);
+    r.textContent = _multiUc.ucs.length
+        ? `${_multiUc.ucs.length} UC(s) • ${pisos} piso(s) • fotos ${fotos}/2`
+        : 'Nenhuma UC configurada';
+    r.classList.toggle('multiuc-pendente', !_multiUc.ucs.length || fotos < 2);
+}
+
+// ---- janela de configuração ----
+let _mucOverlay = null;
+const _mucUrls = {};
+function _mucOpcoes(sel, itens, vazio) {
+    sel.innerHTML = (vazio ? `<option value="">${vazio}</option>` : '') + itens.map(([v, n]) => `<option value="${v}">${escapeHtml(n)}</option>`).join('');
+}
+function _mucGarantirModal() {
+    if (_mucOverlay) return _mucOverlay;
+    const ov = document.createElement('div');
+    ov.className = 'multiuc-overlay';
+    ov.innerHTML = `
+    <div class="multiuc-modal" role="dialog" aria-modal="true" aria-label="Unidades de Cliente">
+        <div class="multiuc-head"><strong>🏢 Imóvel com várias UCs</strong><button type="button" class="multiuc-x" id="mucFechar" aria-label="Fechar">×</button></div>
+        <div class="multiuc-body">
+            <div class="muc-grid2">
+                <label>Tipo de edificação
+                    <select id="mucTipo"><option value="E">Completa (sem infraestrutura interna)</option><option value="P">Parcial</option></select>
+                </label>
+                <label>Ocupação <select id="mucOcup"></select></label>
+            </div>
+
+            <div class="muc-card">
+                <div class="muc-titulo">Adicionar grupo de UCs</div>
+                <div class="muc-grid2">
+                    <label>Destinação <select id="mucDest"></select></label>
+                    <label>Tipo de unidade <select id="mucTipoUc"></select></label>
+                </div>
+                <div class="muc-grid2">
+                    <label>Tipo de piso <select id="mucTipoPiso"></select></label>
+                    <label>Numeração
+                        <select id="mucModo">
+                            <option value="faixa">Faixa por piso (ex.: 101 a 104)</option>
+                            <option value="porPiso">Quantidade por piso (1, 2, 3…)</option>
+                            <option value="texto">Texto (ex.: A)</option>
+                            <option value="semArg">Sem argumento</option>
+                        </select>
+                    </label>
+                </div>
+                <div class="muc-grid3">
+                    <label>Piso lógico inicial <input type="number" id="mucLi" step="1" value="1"></label>
+                    <label>Piso lógico final <input type="number" id="mucLf" step="1" placeholder="só um piso"></label>
+                    <label>Piso real inicial <input type="text" id="mucRi" maxlength="20" placeholder="igual ao lógico"></label>
+                </div>
+                <div id="mucFaixa" class="muc-grid3">
+                    <label>Primeira UC <input type="number" id="mucUi" step="1" placeholder="101"></label>
+                    <label>Última UC <input type="number" id="mucUf" step="1" placeholder="104"></label>
+                    <label>Sequência <select id="mucNum"><option value="continua">Contínua</option><option value="impares">Ímpares</option><option value="pares">Pares</option></select></label>
+                </div>
+                <div id="mucPorPiso" class="muc-grid2" style="display:none;"><label>UCs por piso <input type="number" id="mucQtd" min="1" max="99" step="1" placeholder="4"></label></div>
+                <div id="mucTexto" class="muc-grid2" style="display:none;"><label>Argumento <input type="text" id="mucTxt" maxlength="50" placeholder="A"></label></div>
+                <div class="muc-prev" id="mucPrev"></div>
+                <button type="button" class="btn-add-survey" id="mucAdd">+ Adicionar grupo</button>
+            </div>
+
+            <div class="muc-titulo">Grupos criados <span id="mucTotal"></span></div>
+            <div id="mucGrupos" class="muc-grupos"></div>
+
+            <div class="muc-card">
+                <div class="muc-titulo">Fotos da edificação <small>(até 100 kB, 640 px — ajusto sozinho)</small></div>
+                <div id="mucFotos" class="muc-fotos"></div>
+            </div>
+        </div>
+        <div class="multiuc-foot">
+            <button type="button" class="muc-sec" id="mucLimpar">Limpar tudo</button>
+            <button type="button" class="btn-add-survey" id="mucOk" style="width:auto;margin:0;padding:10px 22px;">Concluir</button>
+        </div>
+    </div>`;
+    document.body.appendChild(ov);
+    _mucOverlay = ov;
+    const $ = (id) => ov.querySelector('#' + id);
+
+    _mucOpcoes($('mucOcup'), UC_OCUPACOES);
+    _mucOpcoes($('mucDest'), UC_DESTINACOES);
+    _mucOpcoes($('mucTipoPiso'), UC_PISO_IDS.map(id => [id, _ucNomeTipo(id)]));
+    $('mucTipoPiso').value = '7';
+    const porNome = (a, b) => a[1].localeCompare(b[1], 'pt');
+    $('mucTipoUc').innerHTML =
+        `<optgroup label="Mais comuns">${UC_COMPL_COMUNS_IDS.map(id => [id, _ucNomeTipo(id)]).sort(porNome).map(([v, n]) => `<option value="${v}">${escapeHtml(n)}</option>`).join('')}</optgroup>` +
+        `<optgroup label="Outros">${UC_COMPL_OUTROS_IDS.map(id => [id, _ucNomeTipo(id)]).sort(porNome).map(([v, n]) => `<option value="${v}">${escapeHtml(n)}</option>`).join('')}</optgroup>` +
+        `<optgroup label="Sem argumento">${UC_COMPL_SEMARG_IDS.map(id => `<option value="${id}">${escapeHtml(_ucNomeTipo(id))}</option>`).join('')}</optgroup>`;
+    $('mucTipoUc').value = '9';   // Apartamento
+
+    const lerCfg = () => ({
+        destinacao: $('mucDest').value, idTipoComplemento: $('mucTipoUc').value, idTipoPiso: $('mucTipoPiso').value,
+        modo: $('mucModo').value, numeracao: $('mucNum').value,
+        pisoLogicoInicial: $('mucLi').value, pisoLogicoFinal: $('mucLf').value, pisoRealInicial: $('mucRi').value,
+        ucInicial: $('mucUi').value, ucFinal: $('mucUf').value, ucsPorPiso: $('mucQtd').value, texto: $('mucTxt').value
+    });
+    const camposDoModo = () => {
+        const sem = UC_COMPL_SEMARG_IDS.includes(Number($('mucTipoUc').value));
+        const opSem = $('mucModo').querySelector('option[value="semArg"]');
+        opSem.disabled = UC_COMPL_ARG_OBRIG.has(Number($('mucTipoUc').value));
+        if (sem) $('mucModo').value = 'semArg';
+        else if ($('mucModo').value === 'semArg' && opSem.disabled) $('mucModo').value = 'faixa';
+        $('mucModo').disabled = sem;
+        const m = $('mucModo').value;
+        $('mucFaixa').style.display = m === 'faixa' ? '' : 'none';
+        $('mucPorPiso').style.display = m === 'porPiso' ? '' : 'none';
+        $('mucTexto').style.display = m === 'texto' ? '' : 'none';
+    };
+    const prev = () => {
+        camposDoModo();
+        const r = ucGerarGrupo(lerCfg());
+        const el = $('mucPrev');
+        if (r.erro) { el.className = 'muc-prev muc-prev-erro'; el.textContent = r.erro; return; }
+        el.className = 'muc-prev';
+        const amostra = r.ucs.slice(0, 8).map(u => (u.complemento || '—') + (u.pisoLogico !== r.ucs[0].pisoLogico ? '' : '')).join(', ');
+        el.textContent = `Vai criar ${r.ucs.length} UC(s): ${amostra}${r.ucs.length > 8 ? '…' : ''}`;
+    };
+    ['mucDest', 'mucTipoUc', 'mucTipoPiso', 'mucModo', 'mucNum', 'mucLi', 'mucLf', 'mucRi', 'mucUi', 'mucUf', 'mucQtd', 'mucTxt']
+        .forEach(id => { $(id).addEventListener('input', prev); $(id).addEventListener('change', prev); });
+
+    $('mucTipo').addEventListener('change', () => { _multiUc.tipo = $('mucTipo').value; });
+    $('mucOcup').addEventListener('change', () => { _multiUc.ocupacao = $('mucOcup').value; });
+
+    $('mucAdd').addEventListener('click', () => {
+        const r = ucGerarGrupo(lerCfg());
+        if (r.erro) { showToast('Verifique os dados', r.erro, 'warning', 5000); return; }
+        const chaves = new Set(_multiUc.ucs.map(u => `${u.idTipoComplemento}|${u.complemento}|${u.pisoLogico}`));
+        const rep = r.ucs.find(u => u.complemento && chaves.has(`${u.idTipoComplemento}|${u.complemento}|${u.pisoLogico}`));
+        if (rep) { showToast('UC repetida', `Já existe ${rep.tipoComplemento} ${rep.complemento} no piso ${rep.pisoLogico}.`, 'warning', 5000); return; }
+        const gid = ++_ucGidSeq;
+        r.ucs.forEach(u => { u.gid = gid; });
+        _multiUc.ucs.push(...r.ucs);
+        _multiUc.grupos.push({ gid, descricao: r.descricao, qtd: r.ucs.length });
+        renderGrupos();
+        multiUcAtualizarResumo();
+    });
+    $('mucLimpar').addEventListener('click', () => {
+        if (!_multiUc.ucs.length && !Object.values(_multiUc.fotos).some(Boolean)) return;
+        if (!confirm('Apagar todos os grupos de UCs e as fotos deste imóvel?')) return;
+        _multiUc.grupos = []; _multiUc.ucs = []; _multiUc.fotos = _ucFotosVazias();
+        renderGrupos(); renderFotos(); multiUcAtualizarResumo();
+    });
+    const fechar = () => { ov.style.display = 'none'; multiUcAtualizarResumo(); };
+    $('mucOk').addEventListener('click', fechar);
+    $('mucFechar').addEventListener('click', fechar);
+    ov.addEventListener('mousedown', (e) => { if (e.target === ov) fechar(); });
+    document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && ov.style.display === 'flex') fechar(); });
+
+    function renderGrupos() {
+        const box = $('mucGrupos');
+        $('mucTotal').textContent = _multiUc.ucs.length ? `— ${_multiUc.ucs.length} UC(s) no total` : '';
+        if (!_multiUc.grupos.length) { box.innerHTML = '<p class="muc-vazio">Nenhum grupo ainda.</p>'; return; }
+        box.innerHTML = '';
+        _multiUc.grupos.forEach(g => {
+            const row = document.createElement('div');
+            row.className = 'muc-grupo';
+            row.innerHTML = `<span><strong>${g.qtd}</strong> UC(s) — ${escapeHtml(g.descricao)}</span><button type="button" title="Remover grupo">🗑</button>`;
+            row.querySelector('button').addEventListener('click', () => {
+                _multiUc.ucs = _multiUc.ucs.filter(u => u.gid !== g.gid);
+                _multiUc.grupos = _multiUc.grupos.filter(x => x.gid !== g.gid);
+                renderGrupos(); multiUcAtualizarResumo();
+            });
+            box.appendChild(row);
+        });
+    }
+    function renderFotos() {
+        const box = $('mucFotos');
+        box.innerHTML = '';
+        [['exterior', 'Exterior da edificação *'], ['fachada', 'Fachada da edificação *'], ['interior', 'Interior (opcional)']].forEach(([k, rotulo]) => {
+            const blob = _multiUc.fotos[k];
+            if (_mucUrls[k]) { URL.revokeObjectURL(_mucUrls[k]); _mucUrls[k] = null; }
+            if (blob) _mucUrls[k] = URL.createObjectURL(blob);
+            const d = document.createElement('div');
+            d.className = 'muc-foto';
+            d.innerHTML = `
+                <div class="muc-foto-img">${blob ? `<img src="${_mucUrls[k]}" alt="${rotulo}">` : '<span>sem foto</span>'}</div>
+                <div class="muc-foto-info">
+                    <strong>${rotulo}</strong>
+                    <small>${blob ? Math.round(blob.size / 1000) + ' kB' : 'obrigatória'.replace('obrigatória', k === 'interior' ? 'opcional' : 'obrigatória')}</small>
+                    <div class="muc-foto-bt">
+                        <button type="button" data-a="escolher">${blob ? 'Trocar' : 'Escolher foto'}</button>
+                        <button type="button" data-a="proibida" title="Morador não autorizou a foto">Foto proibida</button>
+                        ${blob ? '<button type="button" data-a="remover">Remover</button>' : ''}
+                    </div>
+                    <input type="file" accept="image/*" hidden>
+                </div>`;
+            const inp = d.querySelector('input');
+            d.querySelector('[data-a="escolher"]').addEventListener('click', () => inp.click());
+            inp.addEventListener('change', async () => {
+                const f = inp.files && inp.files[0];
+                if (!f) return;
+                try { _multiUc.fotos[k] = await _ucProcessarFoto(f); }
+                catch (e) { showToast('Foto não aceita', e.message, 'error', 5000); return; }
+                renderFotos(); multiUcAtualizarResumo();
+            });
+            d.querySelector('[data-a="proibida"]').addEventListener('click', () => {
+                _multiUc.fotos[k] = _ucBlobDeBase64(FOTO_PROIBIDA_B64, 'image/jpeg');
+                renderFotos(); multiUcAtualizarResumo();
+            });
+            d.querySelector('[data-a="remover"]')?.addEventListener('click', () => {
+                _multiUc.fotos[k] = null; renderFotos(); multiUcAtualizarResumo();
+            });
+            box.appendChild(d);
+        });
+    }
+    ov._sincronizar = () => {
+        $('mucTipo').value = _multiUc.tipo;
+        $('mucOcup').value = _multiUc.ocupacao;
+        renderGrupos(); renderFotos(); prev();
+    };
+    return ov;
+}
+function multiUcAbrirModal() {
+    const ov = _mucGarantirModal();
+    ov._sincronizar();
+    ov.style.display = 'flex';
+}
+(function () {
+    const t = document.getElementById('multiUcToggle');
+    if (!t) return;
+    t.addEventListener('change', () => {
+        _multiUc.ativo = t.checked;
+        multiUcAtualizarResumo();
+        if (t.checked && !_multiUc.ucs.length) multiUcAbrirModal();
+    });
+    document.getElementById('multiUcBtn')?.addEventListener('click', multiUcAbrirModal);
+    document.getElementById('multiUcResumo')?.addEventListener('click', multiUcAbrirModal);
+})();
+
+// ============================================
 // EXPORTAR XMLs (ZIP)
 // ============================================
 document.getElementById('exportBtn')?.addEventListener('click', async () => {
@@ -2136,9 +2540,12 @@ document.getElementById('exportBtn')?.addEventListener('click', async () => {
 
         surveysMemoria.forEach((s, idx) => {
             const numero = idx + 1;
-            const nomePasta = `moradia${numero}`;
-            const nomeArquivo = `moradia${numero}.xml`;
-            zip.folder(nomePasta).file(nomeArquivo, gerarXMLEdificio(s, s.logradouro, numero));
+            const multi = s.multiUc && Array.isArray(s.multiUc.ucs) && s.multiUc.ucs.length ? s.multiUc : null;
+            const nomePasta = `${multi ? 'edificio' : 'moradia'}${numero}`;   // prédio: edificioN/edificioN.xml (+ fotos)
+            const nomeArquivo = `${nomePasta}.xml`;
+            const pasta = zip.folder(nomePasta);
+            pasta.file(nomeArquivo, gerarXMLEdificio(s, s.logradouro, numero));
+            if (multi) multiUcFotosParaZip(multi).forEach(f => pasta.file(f.nome, f.blob));
         });
 
         const blob = await zip.generateAsync({ type: 'blob', compression: 'DEFLATE' });
@@ -2156,7 +2563,7 @@ document.getElementById('exportBtn')?.addEventListener('click', async () => {
         marcadoresSurveys = [];
         _iaJaDisparou = false; _iaMeta = 0; _iaJanela = 5; _iaCorte = 0; limparSetorIA();
 
-        showToast('ZIP gerado', `${total} moradia(s) exportada(s). Lista limpa.`, 'success', 4000);
+        showToast('ZIP gerado', `${total} survey(s) exportado(s). Lista limpa.`, 'success', 4000);
         renderizarSurveys();
     } catch (err) {
         console.error(err);
@@ -2257,10 +2664,14 @@ function gerarXMLEdificio(survey, logradouro, numero) {
         blocoComplementos += '    ' + tag('argumento' + n, c.valor) + '\r\n';
     });
 
+    // --- imóvel com várias UCs: tipo E (completa, sem infraestrutura interna) ou P (parcial) ---
+    const multi = survey.multiUc && Array.isArray(survey.multiUc.ucs) && survey.multiUc.ucs.length ? survey.multiUc : null;
+    const tipoRaiz = multi ? (multi.tipo === 'P' ? 'P' : 'E') : 'M';
+
     // --- monta o XML (CRLF, igual ao arquivo que o site aceita) ---
     let xml = '';
     xml += "<?xml version='1.0' encoding='UTF-8' standalone='yes' ?>\r\n";
-    xml += `<edificio xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:xsd="http://www.w3.org/2001/XMLSchema" versao="7.9.2" autorizacao="${AUTORIZACAO_FIXA}" tipo="M">\r\n`;
+    xml += `<edificio xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:xsd="http://www.w3.org/2001/XMLSchema" versao="7.9.2" autorizacao="${AUTORIZACAO_FIXA}" tipo="${tipoRaiz}">\r\n`;
     xml += '  ' + tag('gravado', 'false') + '\r\n';
     xml += '  ' + tag('idCEMobile', idCEMobile) + '\r\n';
     xml += '  ' + tag('coordX', coordX) + '\r\n';
@@ -2293,10 +2704,38 @@ function gerarXMLEdificio(survey, logradouro, numero) {
     xml += '  ' + tag('data', dataFormatada) + '\r\n';
     const obsTxt = (survey.observacoes || '').toString().trim();
     if (obsTxt) xml += '  ' + tag('observacoes', obsTxt) + '\r\n';
-    xml += '  ' + tag('totalUCs', '1') + '\r\n';
-    xml += '  ' + tag('ocupacao', 'EDIFICACAOCOMPLETA') + '\r\n';
-    xml += '  ' + tag('numPisos', numPisos) + '\r\n';
-    xml += '  ' + tag('destinacao', 'RESIDENCIA') + '\r\n';
+    if (multi) {
+        // prédio: total de UCs, ocupação, sem rede interna, fotos e a lista de UCs (igual ao edificioN.xml do app)
+        xml += '  ' + tag('totalUCs', String(multi.ucs.length)) + '\r\n';
+        xml += '  ' + tag('ocupacao', multi.ocupacao || 'EDIFICACAOCOMPLETA') + '\r\n';
+        xml += '  ' + tag('redeInterna', 'N') + '\r\n';
+        const fotos = multiUcFotosParaZip(multi);
+        if (fotos.length) {
+            xml += '  <infoFotos>\r\n';
+            if (multi.fotos.exterior) xml += '    ' + tag('fotoExteriorEdificio', UC_FOTO_NOMES.exterior) + '\r\n';
+            if (multi.fotos.fachada) xml += '    ' + tag('fotoFachadaEdificio', UC_FOTO_NOMES.fachada) + '\r\n';
+            if (multi.fotos.interior) xml += '    ' + tag('fotoInteriorEdificio', UC_FOTO_NOMES.interior) + '\r\n';
+            xml += '  </infoFotos>\r\n';
+        }
+        xml += '  <ucs>\r\n';
+        multi.ucs.forEach((u, i) => {
+            xml += '    <uc>\r\n';
+            xml += '      ' + tag('id', String(i + 1)) + '\r\n';
+            if (u.destinacao) xml += '      ' + tag('destinacao', u.destinacao) + '\r\n';
+            if (u.idTipoComplemento) xml += '      ' + tag('id_complemento3', u.idTipoComplemento) + '\r\n';
+            if (u.complemento) xml += '      ' + tag('argumento3', u.complemento) + '\r\n';
+            if (u.idTipoPiso) xml += '      ' + tag('id_complemento4', u.idTipoPiso) + '\r\n';
+            xml += '      ' + tag('argumento4_logico', u.pisoLogico) + '\r\n';
+            if (u.pisoReal) xml += '      ' + tag('argumento4_real', u.pisoReal) + '\r\n';
+            xml += '    </uc>\r\n';
+        });
+        xml += '  </ucs>\r\n';
+    } else {
+        xml += '  ' + tag('totalUCs', '1') + '\r\n';
+        xml += '  ' + tag('ocupacao', 'EDIFICACAOCOMPLETA') + '\r\n';
+        xml += '  ' + tag('numPisos', numPisos) + '\r\n';
+        xml += '  ' + tag('destinacao', 'RESIDENCIA') + '\r\n';
+    }
     xml += '</edificio>'; // sem quebra de linha no final, igual ao arquivo original
 
     // passada final de segurança contra qualquer <tag/>
@@ -2750,7 +3189,7 @@ function pedirZonaIA(texto, aoConfirmar, aoCancelar) {
 function verificarIAAutomatica() {
     if (_iaJaDisparou) return;
     const alvo = _iaMeta > 0 ? _iaMeta : 5;
-    const recentes = surveysMemoria.slice(_iaCorte);
+    const recentes = surveysMemoria.slice(_iaCorte).filter(s => !s.multiUc);
     if (recentes.length < alvo) return;
 
     const grupos = {};
@@ -3103,17 +3542,18 @@ function detectarPadroes(manual) {
     const janela = manual ? 5 : _iaJanela;
     _iaJanela = 5;
 
-    if (!surveysMemoria || surveysMemoria.length < 5) {
+    const apenas1Uc = (surveysMemoria || []).filter(s => !s.multiUc);
+    if (apenas1Uc.length < 5) {
         escreverMensagemIA(
             `Olá! Eu sou a <strong>IA Logictel</strong>.<br><br>
             Para detectar padrões, preciso de pelo menos <strong>5 surveys</strong> cadastrados.
-            Você tem <strong>${surveysMemoria ? surveysMemoria.length : 0}</strong> até agora.<br><br>
+            Você tem <strong>${apenas1Uc.length}</strong> até agora.<br><br>
             Cadastre mais alguns e clique em <strong>🔍 Detectar Padrões</strong> novamente.`
         );
         return;
     }
 
-    const lista = [...surveysMemoria].sort((a, b) =>
+    const lista = [...apenas1Uc].sort((a, b) =>
         new Date(a.created_at) - new Date(b.created_at)
     );
 
