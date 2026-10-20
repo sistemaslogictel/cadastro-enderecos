@@ -1897,3 +1897,6 @@ ul.ibge-pop { margin: 6px 0 0; padding-left: 16px; font-size: 0.8rem; }
 .muc-foto-bt button, .muc-sec { background: var(--bg-card); color: var(--text-primary); border: 1px solid var(--border-medium); border-radius: var(--radius-md); padding: 5px 10px; font-size: 0.75rem; font-family: inherit; cursor: pointer; }
 .muc-foto-bt button:hover, .muc-sec:hover { background: var(--bg-hover); }
 @media (max-width: 520px) { .muc-grid3 { grid-template-columns: 1fr 1fr; } }
+
+/* Janela de Informações: versão e atualização, com duas linhas de espaço após os nomes */
+.info-modal-versao { margin-top: 2.8em; }
