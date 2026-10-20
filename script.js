@@ -1957,7 +1957,7 @@ function renderizarSurveys() {
         const tr = document.createElement('tr');
         if (s._ia) tr.className = 'linha-ia';
         tr.innerHTML = `
-            <td title="${escapeHtml([l.tipo, l.rua].filter(Boolean).join(' '))}">${escapeHtml([l.tipo, l.rua].filter(Boolean).join(' ') || '—')}${s._ia ? '<span class="ia-tag">🤖 IA</span>' : ''}${s.multiUc ? `<span class="uc-tag">🏢 ${s.multiUc.ucs.length} UCs</span>` : ''}</td>
+            <td title="${escapeHtml([l.tipo, l.rua].filter(Boolean).join(' '))}">${escapeHtml([l.tipo, l.rua].filter(Boolean).join(' ') || '—')}${s._ia ? '<span class="ia-tag">🤖 IA</span>' : ''}${s.multiUc ? `<span class="uc-tag">${s.multiUc.ucs.length} UCs</span>` : ''}</td>
             <td>${escapeHtml(s.numero || '')}</td>
             <td title="${escapeHtml(compTexto)}">${escapeHtml(compTexto)}</td>
             <td>${escapeHtml(l.bairro || '')}</td>
@@ -2059,7 +2059,7 @@ function textoRotuloSurvey(s) {
 function popupSurveyHtml(s) {
     const nome = s.logradouro ? s.logradouro.rua : '';
     const rotulo = textoRotuloSurvey(s);
-    const ucs = s.multiUc ? `<br>🏢 ${s.multiUc.ucs.length} UC(s) em ${new Set(s.multiUc.ucs.map(u => u.pisoLogico)).size} piso(s)` : '';
+    const ucs = s.multiUc ? `<br>${s.multiUc.ucs.length} UC(s) em ${new Set(s.multiUc.ucs.map(u => u.pisoLogico)).size} piso(s)` : '';
     return `<strong>${escapeHtml(nome)}${rotulo ? ', ' + escapeHtml(rotulo) : ''}</strong>${ucs}`;
 }
 
@@ -2274,9 +2274,13 @@ function multiUcReset() {
     _multiUc = { ativo: false, tipo: 'E', ocupacao: 'EDIFICACAOCOMPLETA', grupos: [], ucs: [], fotos: _ucFotosVazias() };
     multiUcAtualizarResumo();
 }
-// Depois de salvar um prédio: continua no modo "várias UCs" (para o próximo), mas zera UCs e fotos
+// Depois de salvar um prédio: continua no modo "várias UCs" para o próximo.
+// Com "Recorrência" marcada, mantém UCs, tipo de edificação e ocupação (ex.: condomínio de prédios iguais,
+// em que só muda a fachada). As fotos são sempre zeradas: cada prédio tem as suas.
 function multiUcAposSalvar() {
-    _multiUc.grupos = []; _multiUc.ucs = []; _multiUc.fotos = _ucFotosVazias();
+    const manter = !!document.getElementById('multiUcRecorrente')?.checked;
+    if (!manter) { _multiUc.grupos = []; _multiUc.ucs = []; }
+    _multiUc.fotos = _ucFotosVazias();
     multiUcAtualizarResumo();
 }
 function multiUcAtualizarResumo() {
@@ -2285,6 +2289,8 @@ function multiUcAtualizarResumo() {
     const r = document.getElementById('multiUcResumo');
     if (t) t.checked = _multiUc.ativo;
     if (b) b.style.display = _multiUc.ativo ? '' : 'none';
+    const rw = document.getElementById('multiUcRecWrap');
+    if (rw) rw.style.display = _multiUc.ativo ? '' : 'none';
     if (!r) return;
     if (!_multiUc.ativo) { r.textContent = ''; return; }
     const pisos = new Set(_multiUc.ucs.map(u => u.pisoLogico)).size;
@@ -2307,7 +2313,7 @@ function _mucGarantirModal() {
     ov.className = 'multiuc-overlay';
     ov.innerHTML = `
     <div class="multiuc-modal" role="dialog" aria-modal="true" aria-label="Unidades de Cliente">
-        <div class="multiuc-head"><strong>🏢 Imóvel com várias UCs</strong><button type="button" class="multiuc-x" id="mucFechar" aria-label="Fechar">×</button></div>
+        <div class="multiuc-head"><strong>Imóvel com várias UCs</strong><button type="button" class="multiuc-x" id="mucFechar" aria-label="Fechar">×</button></div>
         <div class="multiuc-body">
             <div class="muc-grid2">
                 <label>Tipo de edificação

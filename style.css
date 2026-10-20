@@ -1900,3 +1900,5 @@ ul.ibge-pop { margin: 6px 0 0; padding-left: 16px; font-size: 0.8rem; }
 
 /* Janela de Informações: versão e atualização, com duas linhas de espaço após os nomes */
 .info-modal-versao { margin-top: 2.8em; }
+
+.multiuc-rec { margin-left: auto; }
