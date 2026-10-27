@@ -46,6 +46,7 @@
                 <button data-goto="listPanel" title="4. Surveys Salvos" type="button">4</button>
                 <button data-goto="uploadPanel" title="5. Cadastrar Roteiro" type="button" id="navUploadBtn">5</button>
                 <button data-goto="ibgePanel" title="6. Cadastrar Base IBGE" type="button" id="navIbgeBtn" style="display:none">6</button>
+                <button data-goto="editZipPanel" title="7. Editar ZIP em lote" type="button" id="navEditZipBtn">7</button>
             </nav>
         </div>
         <div class="app-header-right">
@@ -598,6 +599,42 @@
                         <div id="ibgeStatus" class="upload-status" role="status" aria-live="polite"></div>
                     </div>
                 </section>
+                <!-- 7. Editar ZIP em lote (todos os logins) -->
+                <section class="card" id="editZipPanel">
+                    <header class="card-header">
+                        <span class="card-badge">7</span>
+                        <h2 class="card-title">Editar ZIP em lote</h2>
+                        <button class="toggle-btn" data-target="editZipBody" type="button" aria-expanded="true">&#9660;</button>
+                    </header>
+                    <div class="card-body" id="editZipBody">
+                        <div class="info-box">
+                            <span class="info-icon">i</span>
+                            <span>Envie o ZIP cadastrado e informe os números dos surveys, um por linha (ex.: R10, R11, R12). Cada número entra em <strong>&lt;gravado&gt;</strong> de cada moradia, na ordem das pastas. Depois edite um a um ou em lote e gere o novo ZIP.</span>
+                        </div>
+                        <div class="ez-row">
+                            <input type="file" id="ezFile" accept=".zip" aria-label="Selecionar ZIP">
+                            <textarea id="ezSurveys" placeholder="R10&#10;R11&#10;R12"></textarea>
+                            <button id="ezCarregar" class="btn-primary" type="button">Carregar ZIP</button>
+                        </div>
+                        <div id="ezStatus" class="upload-status" role="status" aria-live="polite"></div>
+                        <div id="ezWork" style="display:none">
+                            <div class="ez-box">
+                                <h3>Edição em lote (nos surveys marcados)</h3>
+                                <div class="ez-bar" style="margin-top:0">
+                                    <label><input type="checkbox" id="ezSelTodos" checked> Todos</label>
+                                    <select id="ezCampo"></select>
+                                    <span id="ezValorBox"></span>
+                                    <button id="ezAplicar" class="btn-secondary" type="button">Aplicar</button>
+                                </div>
+                            </div>
+                            <div id="ezList"></div>
+                            <div class="ez-bar">
+                                <button id="ezGerar" class="btn-primary" type="button">Gerar novo ZIP</button>
+                            </div>
+                        </div>
+                    </div>
+                </section>
+
             </div>
 
             <!-- COLUNA DIREITA — MAPA -->
@@ -719,11 +756,11 @@
             </div>
             <div class="info-modal-item info-modal-versao">
                 <span class="info-modal-label">Versão</span>
-                <span class="info-modal-value">v.22</span>
+                <span class="info-modal-value">v.23</span>
             </div>
             <div class="info-modal-item">
                 <span class="info-modal-label">Atualização</span>
-                <span class="info-modal-value">Acrescentado o campo &quot;Imóvel com várias UCs&quot;</span>
+                <span class="info-modal-value">Novo painel 7: editar ZIP em lote (números de survey e edições)</span>
             </div>
         </div>
     </div>
@@ -754,5 +791,6 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
     <script src="supabase-config.js"></script>
     <script src="script.js"></script>
+    <script src="editor-zip.js"></script>
 </body>
 </html>
